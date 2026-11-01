@@ -35,7 +35,4 @@ git tag v1.0.0 && git push origin v1.0.0
 
 ## License
 
-All rights reserved, see `LICENSE`. The only permitted use without written consent is the
-Melancholy application downloading and running the cart.
-
-The TIC-80 engine is MIT-licensed; its license does not apply to carts made for it.
+MIT, see `LICENSE`.
