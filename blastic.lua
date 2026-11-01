@@ -7,10 +7,18 @@
 W,H=30,17
 TILE=8
 MAX_BOMBS=2
+BOMB_CAP=5
 BOMB_TIMER=120
 BLAST_LEN=2
+LEN_CAP=6
 BLAST_TIME=30
+DEATH_TIME=20
 SPEED=1
+POWERUP_CHANCE=0.25
+POWERUP_KINDS={"B","R","S"}
+SHIELD_INVUL=60
+MATCH_WINS=3
+MATCH_TIME=210
 
 T_EMPTY,T_WALL,T_BLOCK=0,1,2
 
@@ -19,10 +27,12 @@ local COLORS={12,11,9,14}
 
 local B_UP,B_DOWN,B_LEFT,B_RIGHT,B_BOMB=0,1,2,3,4
 
-map,bombs,blasts,players={},{},{},{}
+humans={true,true,false,false}
+map,bombs,blasts,players,powerups={},{},{},{},{}
 frame=0
 state="title"
 winner=nil
+score={0,0,0,0}
 restartTimer=0
 titleTimer=0
 
@@ -43,7 +53,7 @@ local function initMap()
     for c=0,W-1 do
       if r==0 or r==H-1 or c==0 or c==W-1 then
         map[r][c]=T_WALL
-      elseif r%2==0 and c%2==0 then
+      elseif r%2==0 and (c<W//2 and c%2==0 or c>=W//2 and (W-1-c)%2==0) then
         map[r][c]=T_WALL
       elseif math.random()<0.4 then
         local corner=false
@@ -70,7 +80,10 @@ local function initPlayers()
       c=s[1], r=s[2],
       x=gpx(s[1]), y=gpy(s[2]),
       alive=true,
+      stats={bombs=MAX_BOMBS,len=BLAST_LEN},
       bombs=0,
+      shield=false,
+      invul=0,
       color=COLORS[i],
       id=i,
       dir={0,1},
@@ -79,6 +92,7 @@ local function initPlayers()
       botDirTimer=0,
       botBombTimer=0,
       botEscape=0,
+      deathT=0,
     }
   end
 end
@@ -136,6 +150,17 @@ local function startMusic()
   musicOn = true
   musicStep = 0
   musicTimer = 0
+end
+
+-- zapis jednego SFX w slocie n: frames = {{nuta, oktawa, głośność}, ...}
+local function putSfx(n,frames,wave,speed)
+  local b=0x14100+66*n
+  for i,t in ipairs(frames) do
+    poke(b+(i-1)*2,   (t[2]<<4)|t[1])
+    poke(b+(i-1)*2+1, (t[3]<<4)|wave)
+  end
+  for i=#frames,29 do poke(b+i*2,0); poke(b+i*2+1,0) end
+  poke(b+60,0); poke(b+61,speed)
 end
 
 local audioReady=false
@@ -211,15 +236,28 @@ local function initAudio()
   end
   for i=#pe,29 do poke(bp+i*2,0); poke(bp+i*2+1,0) end
   poke(bp+60,0); poke(bp+61,2)  -- speed 2, szybki attack
+
+  -- SFX 5: postawienie bomby — krótki, niski blip (kwadrat)
+  putSfx(5,{{0,3,12},{0,2,10},{0,2,6},{0,2,2}},2,2)
+  -- SFX 6: podniesienie bonusu — rosnący arpeggio (trójkąt)
+  putSfx(6,{{0,4,10},{4,4,10},{7,4,10},{0,5,12}},3,2)
+  -- SFX 7: pęknięcie tarczy — szum opadający
+  putSfx(7,{{5,4,15},{2,4,12},{7,3,9},{0,3,4}},0,2)
 end
+
+function sndPickup() sfx(6,-1,24,3,12) end
+function sndShield() sfx(7,-1,24,3,12) end
 
 function init()
   math.randomseed(time())
   bombs={}
   blasts={}
+  powerups={}
   initMap()
   initPlayers()
   initAudio()
+  shrinkIdx=1
+  roundFrames=0
   frame=0
   state="game"
   winner=nil
@@ -228,36 +266,66 @@ end
 
 -- ── blast ─────────────────────────────────────────────────────────────────────
 
-local function addBlast(c,r)
-  blasts[#blasts+1]={c=c,r=r,t=BLAST_TIME}
+local function removePowerupAt(c,r)
+  for i=#powerups,1,-1 do
+    if powerups[i].c==c and powerups[i].r==r then table.remove(powerups,i) end
+  end
 end
 
+local function addBlast(c,r)
+  blasts[#blasts+1]={c=c,r=r,t=BLAST_TIME}
+  removePowerupAt(c,r)
+end
+
+local function dropPowerup(c,r)
+  if math.random()<POWERUP_CHANCE then
+    powerups[#powerups+1]={c=c,r=r,kind=POWERUP_KINDS[math.random(#POWERUP_KINDS)]}
+  end
+end
+
+-- returns set of covered cells keyed c*100+r
 local function explode(b)
   sfx(0,-1,25,0,15)
   local bc,br=b.c,b.r
+  local len=b.len or BLAST_LEN
+  local hit={}
   addBlast(bc,br)
+  hit[bc*100+br]=true
   local dirs={{0,-1},{0,1},{-1,0},{1,0}}
   for _,d in ipairs(dirs) do
-    for i=1,BLAST_LEN do
+    for i=1,len do
       local nc,nr=bc+d[1]*i,br+d[2]*i
       local t=mget(nc,nr)
       if t==T_WALL then break end
       addBlast(nc,nr)
-      if t==T_BLOCK then mset(nc,nr,T_EMPTY) break end
+      hit[nc*100+nr]=true
+      if t==T_BLOCK then mset(nc,nr,T_EMPTY) dropPowerup(nc,nr) break end
     end
   end
   if b.owner then b.owner.bombs=math.max(0,b.owner.bombs-1) end
+  return hit
 end
 
 -- ── physics ───────────────────────────────────────────────────────────────────
 
+-- bombs covered by a blast explode in the same tick, until no new ones are hit
 local function updateBombs()
-  local keep={}
+  local queue,keep={},{}
   for _,b in ipairs(bombs) do
     b.t=b.t-1
-    if b.t<=0 then explode(b) else keep[#keep+1]=b end
+    if b.t<=0 then queue[#queue+1]=b else keep[#keep+1]=b end
   end
   bombs=keep
+  local k=1
+  while k<=#queue do
+    local hit=explode(queue[k])
+    k=k+1
+    local rest={}
+    for _,b in ipairs(bombs) do
+      if hit[b.c*100+b.r] then queue[#queue+1]=b else rest[#rest+1]=b end
+    end
+    bombs=rest
+  end
 end
 
 local function updateBlasts()
@@ -285,6 +353,19 @@ end
 
 local function isDanger(c,r)
   return isBlast(c,r) or isBomb(c,r)
+end
+
+local function collectPowerup(p)
+  for i,pu in ipairs(powerups) do
+    if pu.c==p.c and pu.r==p.r then
+      if pu.kind=="B" then p.stats.bombs=math.min(BOMB_CAP,p.stats.bombs+1)
+      elseif pu.kind=="R" then p.stats.len=math.min(LEN_CAP,p.stats.len+1)
+      else p.shield=true end
+      table.remove(powerups,i)
+      sndPickup()
+      return
+    end
+  end
 end
 
 local function movePlayer(p,dc,dr)
@@ -342,22 +423,53 @@ local function movePlayer(p,dc,dr)
 
   p.c=gcell(p.x+TILE//2)
   p.r=gcell(p.y+TILE//2)
+  collectPowerup(p)
 end
 
 local function placeBomb(p)
-  if p.bombs<MAX_BOMBS then
+  if p.bombs<p.stats.bombs then
     local bc=gcell(p.x+TILE//2)
     local br=gcell(p.y+TILE//2)
     if not isBomb(bc,br) then
-      bombs[#bombs+1]={c=bc,r=br,t=BOMB_TIMER,owner=p}
+      bombs[#bombs+1]={c=bc,r=br,t=BOMB_TIMER,owner=p,len=p.stats.len}
       p.bombs=p.bombs+1
+      sfx(5,-1,20,3,12)
       return true
     end
   end
   return false
 end
 
+local function killPlayer(p)
+  p.alive=false
+  p.deathT=DEATH_TIME
+  sfx(1,-1,15,1,12)
+end
+
+local function updateDeaths()
+  for _,p in ipairs(players) do
+    if p.deathT>0 then p.deathT=p.deathT-1 end
+  end
+end
+
 -- ── human player ─────────────────────────────────────────────────────────────
+
+local function blastHit(p)
+  if not p.alive or p.invul>0 then return end
+  if p.shield then
+    p.shield=false
+    p.invul=SHIELD_INVUL
+    sndShield()
+  else
+    killPlayer(p)
+  end
+end
+
+local function updateInvul()
+  for _,p in ipairs(players) do
+    if p.invul>0 then p.invul=p.invul-1 end
+  end
+end
 
 local function updatePlayer(p)
   if not p.alive then return end
@@ -369,16 +481,86 @@ local function updatePlayer(p)
   if btn(off+B_RIGHT) then movePlayer(p, 1, 0); p.dir={ 1,0} end
   if p.x~=ox or p.y~=oy then p.walkAnim=p.walkAnim+1 end
   if btnp(off+B_BOMB) then placeBomb(p) end
-  if isBlast(p.c,p.r) then p.alive=false; sfx(1,-1,15,1,12) end
+  if isBlast(p.c,p.r) then blastHit(p) end
 end
 
 -- ── bot AI ────────────────────────────────────────────────────────────────────
 
 local BOT_DIRS={{0,-1},{0,1},{-1,0},{1,0}}
+-- bombs due within this many frames make their blast cells dangerous to the bot
+local BOT_FLEE_FRAMES=60
 
-local function botAdjacentTarget(p)
+local function botPassable(c,r)
+  return mget(c,r)==T_EMPTY and not isBomb(c,r)
+end
+
+-- BFS from (sc,sr) over cells accepted by isOpen. Returns the cells from the
+-- start (exclusive) to the nearest cell accepted by isGoal, or nil.
+function botPath(sc,sr,isOpen,isGoal)
+  local came={}
+  local seen={[sr*W+sc]=true}
+  local qc,qr={sc},{sr}
+  local head=1
+  while head<=#qc do
+    local c,r=qc[head],qr[head]
+    head=head+1
+    if (c~=sc or r~=sr) and isGoal(c,r) then
+      local path={}
+      while came[r*W+c] do
+        table.insert(path,1,{c=c,r=r})
+        c,r=came[r*W+c][1],came[r*W+c][2]
+      end
+      return path
+    end
+    for _,d in ipairs(BOT_DIRS) do
+      local nc,nr=c+d[1],r+d[2]
+      local nk=nr*W+nc
+      if not seen[nk] and isOpen(nc,nr) then
+        seen[nk]=true
+        came[nk]={c,r}
+        qc[#qc+1]=nc; qr[#qr+1]=nr
+      end
+    end
+  end
+  return nil
+end
+
+-- cells that will burn: current blasts plus blasts of bombs due within `horizon`
+-- frames, closed over chain reactions (a blast reaching a bomb sets it off)
+local function botDanger(horizon,extra)
+  local list={}
+  for _,b in ipairs(bombs) do list[#list+1]=b end
+  if extra then list[#list+1]=extra end
+  local fire={}
+  for _,bl in ipairs(blasts) do fire[bl.r*W+bl.c]=true end
+  local going={}
+  local changed=true
+  while changed do
+    changed=false
+    for i,b in ipairs(list) do
+      if not going[i] and (b.t<=horizon or fire[b.r*W+b.c]) then
+        going[i]=true
+        changed=true
+        fire[b.r*W+b.c]=true
+        for _,d in ipairs(BOT_DIRS) do
+          for k=1,b.len or BLAST_LEN do
+            local nc,nr=b.c+d[1]*k,b.r+d[2]*k
+            local t=mget(nc,nr)
+            if t==T_WALL then break end
+            fire[nr*W+nc]=true
+            if t==T_BLOCK then break end
+          end
+        end
+      end
+    end
+  end
+  return fire
+end
+
+-- a cell is a target spot when a destructible block or a living enemy is next to it
+local function botIsTargetSpot(p,c,r)
   for _,d in ipairs(BOT_DIRS) do
-    local nc,nr=p.c+d[1],p.r+d[2]
+    local nc,nr=c+d[1],r+d[2]
     if mget(nc,nr)==T_BLOCK then return true end
     for _,op in ipairs(players) do
       if op.alive and op.id~=p.id and op.c==nc and op.r==nr then return true end
@@ -396,32 +578,64 @@ local function botSafeDir(p)
   return BOT_DIRS[math.random(4)]
 end
 
+local function botSign(v) return v>0 and 1 or (v<0 and -1 or 0) end
+
+-- while moving, first line up with the current cell's grid on the perpendicular
+-- axis, so a turn at a corner is not blocked by a wall corner
+local function botSteer(p,dc,dr)
+  if dr~=0 and p.x~=gpx(p.c) then return botSign(gpx(p.c)-p.x),0 end
+  if dc~=0 and p.y~=gpy(p.r) then return 0,botSign(gpy(p.r)-p.y) end
+  return dc,dr
+end
+
+-- true when a bomb placed on (c,r) leaves a cell outside its blast reachable
+-- before it explodes; cells not yet on fire may be crossed on the way
+local function botBombSafe(p,c,r)
+  local bomb={c=c,r=r,t=BOMB_TIMER,owner=p,len=p.stats.len}
+  local danger=botDanger(math.huge,bomb)
+  local path=botPath(c,r,botPassable,
+    function(x,y) return not danger[y*W+x] end)
+  return path~=nil and #path*TILE<BOMB_TIMER
+end
+
+local function botTryBomb(p)
+  if not botIsTargetSpot(p,p.c,p.r) or not botBombSafe(p,p.c,p.r) then return false end
+  return placeBomb(p)
+end
+
 local function updateBot(p)
   if not p.alive then return end
 
   p.botDirTimer=p.botDirTimer-1
-  if p.botBombTimer>0 then p.botBombTimer=p.botBombTimer-1 end
-  if p.botEscape>0 then p.botEscape=p.botEscape-1 end
 
-  -- react to immediate danger
-  if isDanger(p.c,p.r) then
-    p.botDir=botSafeDir(p)
-    p.botDirTimer=15
-    p.botEscape=40
+  local danger=botDanger(BOT_FLEE_FRAMES)
+  local dir
+  if danger[p.r*W+p.c] then
+    -- flee: the path may cross fire, the goal is any cell outside it
+    local path=botPath(p.c,p.r,botPassable,
+      function(c,r) return not danger[r*W+c] end)
+    if path then dir={path[1].c-p.c, path[1].r-p.r} else dir=BOT_DIRS[math.random(4)] end
+  elseif botTryBomb(p) then
+    dir={0,0}
+  elseif p.bombs<p.stats.bombs then
+    -- hunt: walk to a cell from which a bomb is safe to lay
+    local path=botPath(p.c,p.r,
+      function(c,r) return botPassable(c,r) and not danger[r*W+c] end,
+      function(c,r) return botIsTargetSpot(p,c,r) and botBombSafe(p,c,r) end)
+    if path then dir={path[1].c-p.c, path[1].r-p.r} end
   end
 
-  -- pick new direction periodically
-  if p.botDirTimer<=0 then
-    if p.botEscape>0 then
+  if not dir then
+    -- nothing to hunt: wander in a safe direction, re-picked on a timer or when stuck
+    if p.botDirTimer<=0 then
       p.botDir=botSafeDir(p)
-    else
-      p.botDir=BOT_DIRS[math.random(4)]
+      p.botDirTimer=15+math.random(25)
     end
-    p.botDirTimer=15+math.random(25)
+    dir=p.botDir
   end
+  p.botDir=dir
 
-  -- attempt move; if stuck pick new dir next frame
-  local dc,dr=p.botDir[1],p.botDir[2]
+  local dc,dr=botSteer(p,dir[1],dir[2])
   local ox,oy=p.x,p.y
   if dc~=0 or dr~=0 then p.dir={dc,dr} end
   movePlayer(p,dc,dr)
@@ -431,17 +645,76 @@ local function updateBot(p)
     p.walkAnim=p.walkAnim+1
   end
 
-  -- place bomb when adjacent to block/player and not escaping
-  if p.botBombTimer==0 and p.botEscape==0 and botAdjacentTarget(p) then
-    if placeBomb(p) then
-      p.botBombTimer=BOMB_TIMER+30
-      p.botEscape=50
-      p.botDir=botSafeDir(p)
-      p.botDirTimer=45
+  if isBlast(p.c,p.r) then blastHit(p) end
+end
+
+-- ── arena shrink ──────────────────────────────────────────────────────────────
+
+SHRINK_DELAY=1800
+SHRINK_EVERY=20
+SHRINK_WARN=3
+local WARN_COL=9
+
+function buildShrinkOrder()
+  local list={}
+  local x0,y0,x1,y1=0,0,W-1,H-1
+  while x0<=x1 and y0<=y1 do
+    for c=x0,x1 do list[#list+1]={c,y0} end
+    for r=y0+1,y1 do list[#list+1]={x1,r} end
+    if y1>y0 then for c=x1-1,x0,-1 do list[#list+1]={c,y1} end end
+    if x1>x0 then for r=y1-1,y0+1,-1 do list[#list+1]={x0,r} end end
+    x0,y0,x1,y1=x0+1,y0+1,x1-1,y1-1
+  end
+  return list
+end
+
+shrinkOrder=buildShrinkOrder()
+shrinkIdx=1
+roundFrames=0
+
+local function shrinkTile(c,r)
+  mset(c,r,T_WALL)
+  for _,p in ipairs(players) do
+    if p.alive and p.c==c and p.r==r then killPlayer(p) end
+  end
+  local keep={}
+  for _,b in ipairs(bombs) do
+    if b.c==c and b.r==r then
+      b.owner.bombs=math.max(0,b.owner.bombs-1)
+    else
+      keep[#keep+1]=b
     end
   end
+  bombs=keep
+end
 
-  if isBlast(p.c,p.r) then p.alive=false; sfx(1,-1,15,1,12) end
+function updateShrink()
+  roundFrames=roundFrames+1
+  if roundFrames<SHRINK_DELAY or (roundFrames-SHRINK_DELAY)%SHRINK_EVERY~=0 then return end
+  while shrinkIdx<=#shrinkOrder do
+    local cell=shrinkOrder[shrinkIdx]
+    shrinkIdx=shrinkIdx+1
+    if mget(cell[1],cell[2])~=T_WALL then
+      shrinkTile(cell[1],cell[2])
+      return
+    end
+  end
+end
+
+-- tiles that shrink next, keyed c*100+r
+local function shrinkWarnTiles()
+  local warn={}
+  if roundFrames<SHRINK_DELAY then return warn end
+  local n=0
+  for i=shrinkIdx,#shrinkOrder do
+    local cell=shrinkOrder[i]
+    if mget(cell[1],cell[2])~=T_WALL then
+      warn[cell[1]*100+cell[2]]=true
+      n=n+1
+      if n==SHRINK_WARN then break end
+    end
+  end
+  return warn
 end
 
 -- ── draw ─────────────────────────────────────────────────────────────────────
@@ -449,16 +722,17 @@ end
 local WALL_COL=13
 local BLOCK_COL=6
 local FLOOR_COL=0
-local BLAST_COL=4
 local BOMB_COL=2
 
 local function drawMap()
+  local warn=shrinkWarnTiles()
   for r=0,H-1 do
     for c=0,W-1 do
       local t=mget(c,r)
       local col=FLOOR_COL
       if t==T_WALL  then col=WALL_COL
       elseif t==T_BLOCK then col=BLOCK_COL end
+      if warn[c*100+r] then col=WARN_COL end
       rect(gpx(c),gpy(r),TILE,TILE,col)
       if t==T_WALL then
         rectb(gpx(c),gpy(r),TILE,TILE,15)
@@ -471,7 +745,11 @@ end
 
 local function drawBlasts()
   for _,bl in ipairs(blasts) do
-    rect(gpx(bl.c)+1,gpy(bl.r)+1,TILE-2,TILE-2,BLAST_COL)
+    local age=BLAST_TIME-bl.t
+    local r=math.min(TILE//2-1,1+age//3)
+    local frac=bl.t/BLAST_TIME
+    local col=frac>0.66 and 4 or frac>0.33 and 3 or 2
+    circ(gpx(bl.c)+TILE//2,gpy(bl.r)+TILE//2,r,col)
   end
 end
 
@@ -480,7 +758,9 @@ local function drawBombs()
     local blink=(b.t<40 and frame%6<3)
     local col=blink and 7 or BOMB_COL
     circ(gpx(b.c)+TILE//2,gpy(b.r)+TILE//2,3,col)
-    line(gpx(b.c)+TILE//2,gpy(b.r)+1,gpx(b.c)+TILE//2+2,gpy(b.r)-1,7)
+    local fx,fy=gpx(b.c)+TILE//2+2,gpy(b.r)-1
+    line(gpx(b.c)+TILE//2,gpy(b.r)+1,fx,fy,7)
+    circ(fx,fy,1,(frame//2)%2==0 and 9 or 14)
   end
 end
 
@@ -571,9 +851,24 @@ local function drawPlayer(p)
   drawSp(id,p.x,p.y,p.color,flip)
 end
 
+local POWERUP_COL={B=9,R=14,S=11}
+
+local function drawPowerups()
+  for _,pu in ipairs(powerups) do
+    local x,y=gpx(pu.c),gpy(pu.r)
+    rect(x+1,y+1,TILE-2,TILE-2,POWERUP_COL[pu.kind])
+    print(pu.kind,x+2,y+1,0,false,1,true)
+  end
+end
+
 local function drawPlayers()
   for _,p in ipairs(players) do
-    if p.alive then drawPlayer(p) end
+    local blinking=p.invul>0 and frame%8<4
+    local dying=p.deathT>0 and p.deathT%4<2
+    if (p.alive and not blinking) or dying then
+      drawPlayer(p)
+      if p.alive and p.shield then rectb(p.x-1,p.y-1,TILE+2,TILE+2,7) end
+    end
   end
 end
 
@@ -621,9 +916,33 @@ local function drawTitle()
   end
 end
 
+-- ── match score ──────────────────────────────────────────────────────────────
+
+-- Zwraca nową tabelę wyników; remis (winnerId=nil) nie daje punktu.
+function addRoundWin(sc,winnerId)
+  local out={sc[1],sc[2],sc[3],sc[4]}
+  if winnerId then out[winnerId]=out[winnerId]+1 end
+  return out
+end
+
+function matchWinner(sc)
+  for i=1,4 do
+    if sc[i]>=MATCH_WINS then return i end
+  end
+  return nil
+end
+
 -- ── game HUD ──────────────────────────────────────────────────────────────────
 
+-- Pasek nad ścianą górnego rzędu (r=0): nie zasłania pola gry.
 local function drawHUD()
+  rect(0,0,W*TILE,7,0)
+  for i,p in ipairs(players) do
+    local x=(i-1)*60+2
+    rect(x,1,4,5,p.alive and p.color or 13)
+    local text=("W%d B%d R%d"):format(score[i], p.stats.bombs-p.bombs, p.stats.len)
+    print(text,x+6,1,12,false,1,true)
+  end
 end
 
 -- ── main loop ────────────────────────────────────────────────────────────────
@@ -631,6 +950,7 @@ end
 function TIC()
   frame=frame+1
   updateMusic()
+  updateDeaths()
 
   if state=="title" then
     drawTitle()
@@ -642,21 +962,24 @@ function TIC()
   if state=="game" then
     updateBombs()
     updateBlasts()
-    updatePlayer(players[1])
-    updatePlayer(players[2])
-    updateBot(players[3])
-    updateBot(players[4])
+    updateInvul()
+    updateShrink()
+    for i,p in ipairs(players) do
+      if humans[i] then updatePlayer(p) else updateBot(p) end
+    end
 
     local alive,last=countAlive()
     if alive<=1 then
       state="over"
       winner=last
+      score=addRoundWin(score, winner and winner.id)
       restartTimer=210
     end
 
     drawMap()
     drawBlasts()
     drawBombs()
+    drawPowerups()
     drawPlayers()
     drawHUD()
 
@@ -667,6 +990,7 @@ function TIC()
     drawBlasts()
     drawBombs()
     drawPlayers()
+    drawPowerups()
     drawHUD()
 
     local msg=winner and ("P"..winner.id.." WINS!") or "DRAW!"
@@ -685,7 +1009,25 @@ function TIC()
 
     restartTimer=restartTimer-1
     if restartTimer<=0 then
-      state="game"
+      if matchWinner(score) then
+        state="match"
+        restartTimer=MATCH_TIME
+      else
+        init()
+      end
+    end
+
+  elseif state=="match" then
+    drawMap()
+    drawHUD()
+    local w=matchWinner(score)
+    local msg="P"..w.." WINS THE MATCH!"
+    print(msg,120-#msg*3,50,players[w].color,false,1,true)
+    print("new match in "..math.ceil(restartTimer/60).."s",88,90,13,false,1,true)
+
+    restartTimer=restartTimer-1
+    if restartTimer<=0 then
+      score={0,0,0,0}
       init()
     end
   end

@@ -21,6 +21,9 @@ jobs:
       - name: Test game logic (TIC-80 API mocked)
         run: lua5.4 test_blastic.lua
 
+      - name: Simulate bot-only rounds
+        run: lua5.4 sim_blastic.lua 300 1
+
       # The cart holds only the code chunk, so the free TIC-80 is not needed:
       # loading/saving .lua text carts is a TIC-80 PRO feature.
       - name: Build cart
