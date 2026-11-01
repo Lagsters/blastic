@@ -220,6 +220,8 @@ function init()
   initMap()
   initPlayers()
   initAudio()
+  shrinkIdx=1
+  roundFrames=0
   frame=0
   state="game"
   winner=nil
@@ -444,6 +446,75 @@ local function updateBot(p)
   if isBlast(p.c,p.r) then p.alive=false; sfx(1,-1,15,1,12) end
 end
 
+-- ── arena shrink ──────────────────────────────────────────────────────────────
+
+SHRINK_DELAY=1800
+SHRINK_EVERY=20
+SHRINK_WARN=3
+local WARN_COL=9
+
+function buildShrinkOrder()
+  local list={}
+  local x0,y0,x1,y1=0,0,W-1,H-1
+  while x0<=x1 and y0<=y1 do
+    for c=x0,x1 do list[#list+1]={c,y0} end
+    for r=y0+1,y1 do list[#list+1]={x1,r} end
+    if y1>y0 then for c=x1-1,x0,-1 do list[#list+1]={c,y1} end end
+    if x1>x0 then for r=y1-1,y0+1,-1 do list[#list+1]={x0,r} end end
+    x0,y0,x1,y1=x0+1,y0+1,x1-1,y1-1
+  end
+  return list
+end
+
+shrinkOrder=buildShrinkOrder()
+shrinkIdx=1
+roundFrames=0
+
+local function shrinkTile(c,r)
+  mset(c,r,T_WALL)
+  for _,p in ipairs(players) do
+    if p.alive and p.c==c and p.r==r then p.alive=false; sfx(1,-1,15,1,12) end
+  end
+  local keep={}
+  for _,b in ipairs(bombs) do
+    if b.c==c and b.r==r then
+      b.owner.bombs=math.max(0,b.owner.bombs-1)
+    else
+      keep[#keep+1]=b
+    end
+  end
+  bombs=keep
+end
+
+function updateShrink()
+  roundFrames=roundFrames+1
+  if roundFrames<SHRINK_DELAY or (roundFrames-SHRINK_DELAY)%SHRINK_EVERY~=0 then return end
+  while shrinkIdx<=#shrinkOrder do
+    local cell=shrinkOrder[shrinkIdx]
+    shrinkIdx=shrinkIdx+1
+    if mget(cell[1],cell[2])~=T_WALL then
+      shrinkTile(cell[1],cell[2])
+      return
+    end
+  end
+end
+
+-- tiles that shrink next, keyed c*100+r
+local function shrinkWarnTiles()
+  local warn={}
+  if roundFrames<SHRINK_DELAY then return warn end
+  local n=0
+  for i=shrinkIdx,#shrinkOrder do
+    local cell=shrinkOrder[i]
+    if mget(cell[1],cell[2])~=T_WALL then
+      warn[cell[1]*100+cell[2]]=true
+      n=n+1
+      if n==SHRINK_WARN then break end
+    end
+  end
+  return warn
+end
+
 -- ── draw ─────────────────────────────────────────────────────────────────────
 
 local WALL_COL=13
@@ -453,12 +524,14 @@ local BLAST_COL=4
 local BOMB_COL=2
 
 local function drawMap()
+  local warn=shrinkWarnTiles()
   for r=0,H-1 do
     for c=0,W-1 do
       local t=mget(c,r)
       local col=FLOOR_COL
       if t==T_WALL  then col=WALL_COL
       elseif t==T_BLOCK then col=BLOCK_COL end
+      if warn[c*100+r] then col=WARN_COL end
       rect(gpx(c),gpy(r),TILE,TILE,col)
       if t==T_WALL then
         rectb(gpx(c),gpy(r),TILE,TILE,15)
@@ -642,6 +715,7 @@ function TIC()
   if state=="game" then
     updateBombs()
     updateBlasts()
+    updateShrink()
     updatePlayer(players[1])
     updatePlayer(players[2])
     updateBot(players[3])
