@@ -58,6 +58,7 @@ Rozstrzygają każdy spór, w tej kolejności.
 | `lua test_blastic.lua` | testy logiki |
 | `lua sim_blastic.lua [rund] [ziarno]` | symulacja botów |
 | `python make_tic.py` | build `blastic.tic` |
+| `lua tools/shot.lua <dir>` + `python tools/shot.py <dir> <out>` | screeny tytułu i rozgrywki z kodu gry (napisy dorysowuje Pillow, więc krój pisma różni się od TIC-80) |
 
 Lua 5.4, jak `lua5.4` w CI na Ubuntu 24.04. Windows: `winget install DEVCOM.Lua`.
 

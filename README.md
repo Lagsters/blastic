@@ -1,5 +1,10 @@
 # BlasTIC
 
+![BlasTIC](docs/cover.png)
+
+![title](docs/screenshot-title.png)
+![game](docs/screenshot-game.png)
+
 Four-player arena game for [TIC-80](https://tic80.com): drop blasts, break blocks and be the
 last one standing. P1 and P2 are human, P3 and P4 are bots. Graphics and music are generated
 in Lua; the cart contains only the code chunk.

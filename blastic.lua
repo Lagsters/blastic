@@ -748,7 +748,7 @@ local function drawBlasts()
     local age=BLAST_TIME-bl.t
     local r=math.min(TILE//2-1,1+age//3)
     local frac=bl.t/BLAST_TIME
-    local col=frac>0.66 and 14 or frac>0.33 and 9 or 6
+    local col=frac>0.66 and 4 or frac>0.33 and 3 or 2
     circ(gpx(bl.c)+TILE//2,gpy(bl.r)+TILE//2,r,col)
   end
 end

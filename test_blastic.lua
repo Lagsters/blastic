@@ -650,6 +650,25 @@ end
 
 env.sfx=realSfx
 
+-- ── TEST: flame colours ───────────────────────────────────────────────────────
+
+io.write("\n=== flame colours ===\n")
+
+-- Sweetie-16: 4 yellow, 3 orange, 2 red. A fresh blast must start yellow and end red.
+local function blast_colour(t)
+  new_game()
+  env.blasts={{c=3,r=1,t=t}}
+  env.bombs={}
+  local seen
+  local real_circ=env.circ
+  env.circ=function(_,_,_,col) seen=col end
+  env.TIC()
+  env.circ=real_circ
+  return seen
+end
+check("fresh blast is yellow", blast_colour(env.BLAST_TIME)==4, "colour="..tostring(blast_colour(env.BLAST_TIME)))
+check("dying blast is red", blast_colour(2)==2, "colour="..tostring(blast_colour(2)))
+
 -- ── TEST: map fairness ────────────────────────────────────────────────────────
 
 io.write("\n=== map fairness ===\n")
