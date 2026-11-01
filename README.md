@@ -1,5 +1,10 @@
 # BlasTIC
 
+![BlasTIC](docs/cover.png)
+
+![title](docs/screenshot-title.png)
+![game](docs/screenshot-game.png)
+
 Four-player arena game for [TIC-80](https://tic80.com): drop blasts, break blocks and be the
 last one standing. P1 and P2 are human, P3 and P4 are bots. Graphics and music are generated
 in Lua; the cart contains only the code chunk.
@@ -13,6 +18,7 @@ repository's releases and uses it in its instrumented tests.
 |---|---|
 | `blastic.lua` | game source (TIC-80 Lua cart) |
 | `test_blastic.lua` | logic tests, TIC-80 API mocked; run with `lua test_blastic.lua` |
+| `sim_blastic.lua` | headless bot-vs-bot simulator with invariant checks; `lua sim_blastic.lua [rounds] [seed]` |
 | `make_tic.py` | builds the binary `.tic` cart from the `.lua` source |
 
 ## Build
@@ -35,7 +41,4 @@ git tag v1.0.0 && git push origin v1.0.0
 
 ## License
 
-All rights reserved, see `LICENSE`. The only permitted use without written consent is the
-Melancholy application downloading and running the cart.
-
-The TIC-80 engine is MIT-licensed; its license does not apply to carts made for it.
+MIT, see `LICENSE`.
