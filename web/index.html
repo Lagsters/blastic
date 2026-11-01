@@ -20,15 +20,17 @@
     // The TIC-80 player (tic80.js, from the official html build) runs the cart
     // given as its argument from its in-memory file system, so preRun fetches
     // blastic.tic and writes it there before the player starts.
+    // The path has no leading slash: with one the player also requests the cart from the
+    // domain root, which does not exist when the site lives under /blastic/.
     var Module = {
       canvas: document.getElementById('canvas'),
-      arguments: ['/blastic.tic'],
+      arguments: ['blastic.tic'],
       preRun: [function () {
         addRunDependency('cart');
         fetch('blastic.tic')
           .then(function (r) { return r.arrayBuffer(); })
           .then(function (b) {
-            FS.writeFile('/blastic.tic', new Uint8Array(b));
+            FS.writeFile('blastic.tic', new Uint8Array(b));
             removeRunDependency('cart');
           });
       }]
