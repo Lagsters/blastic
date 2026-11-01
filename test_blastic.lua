@@ -335,7 +335,7 @@ local function walk_onto_right(kind, setup)
   env.map[1][2]=env.T_EMPTY
   env.powerups={{c=2,r=1,kind=kind}}
   if setup then setup(env.players[1]) end
-  for _=1,6 do _held[3]=true; env.TIC() end
+  for _=1,20 do _held[3]=true; env.TIC() end
   clear_inputs()
 end
 
@@ -503,8 +503,8 @@ env.bombs={}; env.blasts={}
 local flee_bot=env.players[3]
 flee_bot.c, flee_bot.r = 1, 15
 flee_bot.x, flee_bot.y = env.gpx(1), env.gpy(15)
-env.bombs[1]={c=1, r=15, t=30, owner=flee_bot}
-run_frames(35)  -- bomb explodes at frame 30, blast lasts BLAST_TIME
+env.bombs[1]={c=1, r=15, t=60, owner=flee_bot}
+run_frames(65)  -- bomb explodes at frame 60, blast lasts BLAST_TIME
 check("bot flees ticking bomb and survives blast", flee_bot.alive,
       ("c=%d r=%d"):format(flee_bot.c, flee_bot.r))
 
@@ -684,6 +684,170 @@ for r=0,env.H-1 do
   end
 end
 check("walls mirror left-right", asym==nil, asym and ("first mismatch at "..asym))
+
+-- ── TEST: tuning (one starting bomb, half walking speed) ──────────────────────
+
+io.write("\n=== tuning ===\n")
+
+new_game()
+local all_one=true
+for _,p in ipairs(env.players) do
+  if p.stats.bombs~=1 then all_one=false end
+end
+check("every player starts with one bomb", all_one)
+
+-- a second bomb in another cell is refused while the first one is ticking
+for r=1,env.H-2 do for c=1,env.W-2 do env.map[r][c]=env.T_EMPTY end end
+env.players[2].alive=false; env.players[3].alive=false
+env.bombs={}
+press_frame(4)
+local p1=env.players[1]
+p1.x=env.gpx(3); p1.y=env.gpy(1); p1.c=3; p1.r=1
+press_frame(4)
+check("second bomb refused with one bomb", #env.bombs==1, "bombs="..#env.bombs)
+
+-- holding right for 16 frames moves 8 px: one pixel per two frames
+new_game()
+for r=1,env.H-2 do for c=1,env.W-2 do env.map[r][c]=env.T_EMPTY end end
+env.players[2].alive=false; env.players[3].alive=false
+local start_x=env.players[1].x
+for _=1,16 do
+  _held[3]=true
+  env.TIC()
+end
+clear_inputs()
+check("walking is one pixel per two frames", env.players[1].x-start_x==8,
+      "moved "..(env.players[1].x-start_x).." px in 16 frames")
+
+-- ── TEST: power-up icons ──────────────────────────────────────────────────────
+
+io.write("\n=== power-up icons ===\n")
+
+local function icon_pixels(kind)
+  new_game()
+  env.powerups={{c=5,r=5,kind=kind}}
+  local seen={}
+  local real_pix,real_rect,real_print=env.pix,env.rect,env.print
+  env.pix=function(x,y,col) seen[#seen+1]=x..","..y..","..col end
+  env.rect=function() end
+  env.print=function() end
+  env.TIC()
+  env.pix,env.rect,env.print=real_pix,real_rect,real_print
+  table.sort(seen)
+  return seen
+end
+
+local a,b,c=icon_pixels("B"),icon_pixels("R"),icon_pixels("S")
+check("icons are drawn with pixels", #a>10 and #b>10 and #c>10)
+check("the three icons differ", table.concat(a,";")~=table.concat(b,";")
+      and table.concat(b,";")~=table.concat(c,";") and table.concat(a,";")~=table.concat(c,";"))
+
+local function uses_colour(px,col)
+  for _,s in ipairs(px) do
+    if tonumber(s:match(",(%d+)$"))==col then return true end
+  end
+  return false
+end
+check("no icon uses the lit bomb red", not uses_colour(a,env.BOMB_COL or 2)
+      and not uses_colour(b,env.BOMB_COL or 2) and not uses_colour(c,env.BOMB_COL or 2))
+
+-- ── TEST: helpers covered directly ────────────────────────────────────────────
+
+io.write("\n=== helpers ===\n")
+
+-- placeBomb: one bomb on the player's cell, owner count rises, a bomb cell refuses a second one
+new_game()
+open_arena()
+for _,id in ipairs({2,3}) do env.players[id].alive=false end
+env.bombs={}
+local hp=env.players[1]
+env.players[1].stats.bombs=3
+press_frame(4)
+check("placeBomb lays the bomb on the player's cell",
+      #env.bombs==1 and env.bombs[1].c==hp.c and env.bombs[1].r==hp.r and env.bombs[1].owner==hp)
+check("placeBomb counts the bomb for its owner", hp.bombs==1, "bombs="..hp.bombs)
+press_frame(4)
+check("placeBomb refuses a cell that already has a bomb", #env.bombs==1, "bombs="..#env.bombs)
+
+-- dropPowerup: a destroyed block leaves an item when the roll succeeds, nothing otherwise
+local real_random=math.random
+local function drop_with(roll)
+  new_game()
+  open_arena()
+  for _,id in ipairs({2,3}) do env.players[id].alive=false end
+  env.powerups={}
+  env.map[1][4]=env.T_BLOCK
+  env.bombs={{c=3,r=1,t=1,owner=env.players[1],len=2}}
+  env.players[1].bombs=1
+  math.random=function(n) if n then return 1 end return roll end
+  env.TIC()
+  math.random=real_random
+  return #env.powerups
+end
+check("destroyed block drops an item on a successful roll", drop_with(0)==1)
+check("destroyed block drops nothing on a failed roll", drop_with(0.99)==0)
+
+-- updateInvul: invulnerability after a shield break lasts SHIELD_INVUL frames
+new_game()
+open_arena()
+for _,id in ipairs({2,3}) do env.players[id].alive=false end
+local ip=env.players[1]
+ip.shield=true
+env.blasts={{c=ip.c,r=ip.r,t=env.BLAST_TIME}}
+env.TIC()
+check("shield break grants invulnerability", ip.invul>0 and ip.invul<=env.SHIELD_INVUL, "invul="..ip.invul)
+env.blasts={}
+run_frames(env.SHIELD_INVUL)
+check("invulnerability runs out", ip.invul==0, "invul="..ip.invul)
+
+-- botTryBomb / botIsTargetSpot: a bot next to a block with room to escape lays a bomb
+new_game()
+open_arena()
+for _,id in ipairs({1,4}) do env.players[id].alive=false end
+env.bombs={}
+local bb=env.players[3]
+env.map[bb.r][bb.c+1]=env.T_BLOCK
+run_frames(10)
+local bot_bombs=0
+for _,b in ipairs(env.bombs) do if b.owner==bb then bot_bombs=bot_bombs+1 end end
+check("bot lays a bomb next to a block when it can escape", bot_bombs>=1,
+      "bombs="..bot_bombs.." owned="..bb.bombs)
+
+-- shrinkWarnTiles: the next tiles to shrink are tinted once the delay has passed
+new_game()
+env.roundFrames=env.SHRINK_DELAY
+local warn_rects=0
+local real_rect=env.rect
+env.rect=function(_,_,_,_,col) if col==9 then warn_rects=warn_rects+1 end end
+env.TIC()
+env.rect=real_rect
+check("shrink warns about the next tiles", warn_rects>=1, "rects="..warn_rects)
+
+-- initAudio / updateMusic need a fresh game instance: initAudio runs once per instance
+local function fresh_game(poke_fn,sfx_fn)
+  local e={}
+  for _,n in ipairs({"cls","rect","rectb","circ","line","pix","print"}) do e[n]=function() end end
+  e.btn=function() return false end
+  e.btnp=function() return false end
+  e.time=function() return 42 end
+  e.peek=function() return 0 end
+  e.poke=poke_fn
+  e.sfx=sfx_fn
+  setmetatable(e,{__index=_G})
+  assert(load(src,"blastic","t",e))()
+  return e
+end
+
+local pokes={}
+local audio_game=fresh_game(function(addr,v) pokes[addr]=v end,function() end)
+audio_game.init()
+check("initAudio writes the bomb-placed sound slot", pokes[0x14100+66*5]~=nil)
+check("initAudio writes the shield-break sound slot", pokes[0x14100+66*7]~=nil)
+
+local played={}
+local music_game=fresh_game(function() end,function(id) played[id]=true end)
+for _=1,60 do music_game.TIC() end
+check("title music plays the bass line", played[3]==true)
 
 -- ── Summary ───────────────────────────────────────────────────────────────────
 

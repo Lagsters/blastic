@@ -1,13 +1,12 @@
 # Stan prac
 
 ## Sesja 2026-11-01
-- Zrobione: licencja MIT, statystyki gracza, flaga `humans`, symulator `sim_blastic.lua`, bramka
-  `check.py`, CLAUDE.md i skille; reakcja łańcuchowa, bonusy (bomba, zasięg, osłonka), bot z BFS,
-  HUD z wynikami meczu, zamykająca się arena, dźwięk i animacje; lustrzany układ filarów; okładka
-  i screeny w `docs/`.
-- W toku: PR z gałęzi `feat/arena-features` do `main` (czeka na recenzję i scalenie).
-- NASTĘPNY KROK: po scaleniu wydać nowy release (tag `v*`, CI buduje cart); dalsze rundy
-  symulacji i strojenie (szansa dropu, tempo rund, siła bota); sprawdzenie w prawdziwym TIC-80
-  wyglądu, sterowania i dźwięku (ocenia człowiek).
-- Poza tym repo: PR #1 (Pages, odtwarzacz w przeglądarce) należy do osobnej sesji; po jego
-  scaleniu README ma drobny konflikt z tą gałęzią.
+- Zrobione: wszystkie funkcje areny (łańcuch, bonusy, bot BFS, HUD i mecz, zamykająca się arena,
+  dźwięk i animacje), MIT, Pages (https://lagsters.github.io/blastic/), release v1.1.0; w tej
+  gałęzi: start z jedną bombą, chodzenie dwa razy wolniejsze, ikony bonusów zamiast kwadratów,
+  testy helperów, przegląd komentarzy, szeroka symulacja (4000 rund, 0 błędów).
+- NASTĘPNY KROK: zagranie w prawdziwym TIC-80 i w przeglądarce (wygląd, sterowanie, dźwięk,
+  tempo po spowolnieniu), potem strojenie: szansa dropu, siła bota, czas zamykania areny.
+- Otwarte: lewy górny róg wygrywa o ok. 5 punktów procentowych częściej niż reszta (ok. 30%
+  przy 25% oczekiwanych); przyczyny nie znaleziono, patrz `HISTORY.md`.
+- Melancholy: przypięcie sumy SHA-256 nowego releasu robi sesja `melancholy-e6` (jej repo).

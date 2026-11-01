@@ -1,5 +1,5 @@
 -- Renders frames of blastic.lua headless: lua tools/shot.lua <out-dir>
--- Writes title.ppm, game.ppm (palette indices as P2 pixmap) and *.txt with print() calls.
+-- Writes title.pgm and game.pgm (P2 graymap holding palette indices) plus *.txt with print() calls.
 local out=arg and arg[1] or "."
 local FW,FH=240,136
 local fb,texts={},{}
@@ -69,13 +69,19 @@ dump("title")
 env.init()
 env.humans={false,false,false,false}
 local picked=false
-for _=1,2400 do
+for _=1,9000 do
   env.TIC()
   local alive=0
   for _,p in ipairs(env.players) do if p.alive then alive=alive+1 end end
   local fresh=0
   for _,b in ipairs(env.blasts) do if b.t<=env.BLAST_TIME-6 and b.t>=env.BLAST_TIME-9 then fresh=fresh+1 end end
-  if alive>=3 and fresh>=7 and #env.bombs>=1 and #env.powerups>=1 then picked=true; break end
+  local free=0
+  for _,pu in ipairs(env.powerups) do
+    local covered=false
+    for _,b in ipairs(env.blasts) do if b.c==pu.c and b.r==pu.r then covered=true end end
+    if not covered then free=free+1 end
+  end
+  if alive>=3 and fresh>=7 and #env.bombs>=1 and free>=2 then picked=true; break end
   if env.state~="game" then env.init(); env.humans={false,false,false,false} end
 end
 assert(picked,"no interesting frame found")
