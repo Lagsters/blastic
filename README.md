@@ -42,3 +42,9 @@ git tag v1.0.0 && git push origin v1.0.0
 ## License
 
 MIT, see `LICENSE`.
+
+## Play in the browser
+
+`.github/workflows/pages.yml` publishes the game to GitHub Pages on every push to `main`:
+the official TIC-80 web player (`tic80.js` + `tic80.wasm` from the TIC-80 release, MIT)
+with `web/index.html`, which loads `blastic.tic` into the player.
