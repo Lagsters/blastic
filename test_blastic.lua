@@ -324,6 +324,82 @@ add_bomb(env.players[1],5,5,1)
 add_bomb(env.players[2],7,5,env.BOMB_TIMER)
 run_frames(1)
 check("bomb behind wall does not chain", bomb_at(7,5))
+-- ── TEST: power-ups ───────────────────────────────────────────────────────────
+
+io.write("\n=== power-ups ===\n")
+
+-- P1 walks one cell right onto a power-up at (2,1); bots are removed
+local function walk_onto_right(kind, setup)
+  new_game()
+  env.players[3].alive=false; env.players[4].alive=false
+  env.map[1][2]=env.T_EMPTY
+  env.powerups={{c=2,r=1,kind=kind}}
+  if setup then setup(env.players[1]) end
+  for _=1,6 do _held[3]=true; env.TIC() end
+  clear_inputs()
+end
+
+walk_onto_right("B")
+check("P1 reached power-up cell", env.players[1].c==2, "c="..env.players[1].c)
+check("bomb power-up adds one bomb", env.players[1].stats.bombs==env.MAX_BOMBS+1,
+      "bombs="..env.players[1].stats.bombs)
+check("collected power-up removed from map", #env.powerups==0, "left="..#env.powerups)
+
+walk_onto_right("R")
+check("range power-up adds one range", env.players[1].stats.len==env.BLAST_LEN+1,
+      "len="..env.players[1].stats.len)
+
+walk_onto_right("S")
+check("shield power-up grants shield", env.players[1].shield==true)
+check("shield power-up removed from map", #env.powerups==0)
+
+walk_onto_right("B", function(p) p.stats.bombs=env.BOMB_CAP end)
+check("bomb cap holds", env.players[1].stats.bombs==env.BOMB_CAP,
+      "bombs="..env.players[1].stats.bombs)
+
+walk_onto_right("R", function(p) p.stats.len=env.LEN_CAP end)
+check("range cap holds", env.players[1].stats.len==env.LEN_CAP,
+      "len="..env.players[1].stats.len)
+
+-- shield absorbs exactly one hit and protects for the rest of that blast
+new_game()
+env.players[3].alive=false; env.players[4].alive=false
+local sp=env.players[1]
+sp.shield=true
+local function blast_on_p1() env.blasts={{c=1,r=1,t=env.BLAST_TIME}} end
+blast_on_p1(); env.TIC()
+check("shield absorbs first hit", sp.alive and not sp.shield,
+      ("alive=%s shield=%s"):format(tostring(sp.alive), tostring(sp.shield)))
+for _=1,env.BLAST_TIME-1 do blast_on_p1(); env.TIC() end
+check("invulnerable for the rest of the blast", sp.alive)
+for _=1,env.SHIELD_INVUL do blast_on_p1(); env.TIC() end
+check("no second shield: hit after invulnerability kills", not sp.alive)
+
+-- a blast destroys power-ups on its tiles
+new_game()
+env.players[3].alive=false; env.players[4].alive=false
+env.powerups={{c=3,r=3,kind="B"},{c=4,r=3,kind="R"}}
+env.map[3][4]=env.T_EMPTY
+env.bombs={{c=3,r=3,t=1,len=2}}
+env.TIC()
+local left={}
+for _,pu in ipairs(env.powerups) do left[#left+1]=pu.c..","..pu.r end
+check("blast destroys power-ups on its tiles", #env.powerups==0,
+      "left="..table.concat(left, " "))
+
+-- bomb range follows the owner's stats.len at placement
+new_game()
+env.players[3].alive=false; env.players[4].alive=false
+env.players[1].stats.len=4
+for c=1,env.W-2 do env.map[1][c]=env.T_EMPTY end
+press_frame(4)
+run_frames(env.BOMB_TIMER)
+local function blast_at(c,r)
+  for _,bl in ipairs(env.blasts) do if bl.c==c and bl.r==r then return true end end
+  return false
+end
+check("range 4 bomb reaches 4 tiles", blast_at(5,1))
+check("range 4 bomb stops at 4 tiles", not blast_at(6,1))
 
 -- ── Summary ───────────────────────────────────────────────────────────────────
 
