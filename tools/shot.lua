@@ -1,5 +1,5 @@
 -- Renders frames of blastic.lua headless: lua tools/shot.lua <out-dir>
--- Writes title.ppm, game.ppm (palette indices as P2 pixmap) and *.txt with print() calls.
+-- Writes title.pgm and game.pgm (P2 graymap holding palette indices) plus *.txt with print() calls.
 local out=arg and arg[1] or "."
 local FW,FH=240,136
 local fb,texts={},{}
