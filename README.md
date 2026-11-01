@@ -39,3 +39,9 @@ All rights reserved, see `LICENSE`. The only permitted use without written conse
 Melancholy application downloading and running the cart.
 
 The TIC-80 engine is MIT-licensed; its license does not apply to carts made for it.
+
+## Play in the browser
+
+`.github/workflows/pages.yml` publishes the game to GitHub Pages on every push to `main`:
+the official TIC-80 web player (`tic80.js` + `tic80.wasm` from the TIC-80 release, MIT)
+with `web/index.html`, which loads `blastic.tic` into the player.

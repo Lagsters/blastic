@@ -1,0 +1,52 @@
+name: pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+env:
+  # Official TIC-80 web player (MIT); free build, no TIC-80 PRO needed.
+  TIC80_VERSION: v1.4.1
+  TIC80_ASSET: tic80-v1.4-html.zip
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build cart
+        run: python3 make_tic.py blastic.lua blastic.tic
+
+      - name: Assemble site
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download "$TIC80_VERSION" -R nesbox/TIC-80 -p "$TIC80_ASSET"
+          mkdir site
+          unzip -j "$TIC80_ASSET" tic80.js tic80.wasm -d site
+          cp web/index.html blastic.tic site/
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-24.04
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
