@@ -7,10 +7,15 @@
 W,H=30,17
 TILE=8
 MAX_BOMBS=2
+BOMB_CAP=5
 BOMB_TIMER=120
 BLAST_LEN=2
+LEN_CAP=6
 BLAST_TIME=30
 SPEED=1
+POWERUP_CHANCE=0.25
+POWERUP_KINDS={"B","R","S"}
+SHIELD_INVUL=60
 
 T_EMPTY,T_WALL,T_BLOCK=0,1,2
 
@@ -19,7 +24,7 @@ local COLORS={12,11,9,14}
 
 local B_UP,B_DOWN,B_LEFT,B_RIGHT,B_BOMB=0,1,2,3,4
 
-map,bombs,blasts,players={},{},{},{}
+map,bombs,blasts,players,powerups={},{},{},{},{}
 frame=0
 state="title"
 winner=nil
@@ -71,6 +76,9 @@ local function initPlayers()
       x=gpx(s[1]), y=gpy(s[2]),
       alive=true,
       bombs=0,
+      stats={bombs=MAX_BOMBS,len=BLAST_LEN},
+      shield=false,
+      invul=0,
       color=COLORS[i],
       id=i,
       dir={0,1},
@@ -217,6 +225,7 @@ function init()
   math.randomseed(time())
   bombs={}
   blasts={}
+  powerups={}
   initMap()
   initPlayers()
   initAudio()
@@ -228,8 +237,21 @@ end
 
 -- ── blast ─────────────────────────────────────────────────────────────────────
 
+local function removePowerupAt(c,r)
+  for i=#powerups,1,-1 do
+    if powerups[i].c==c and powerups[i].r==r then table.remove(powerups,i) end
+  end
+end
+
 local function addBlast(c,r)
   blasts[#blasts+1]={c=c,r=r,t=BLAST_TIME}
+  removePowerupAt(c,r)
+end
+
+local function dropPowerup(c,r)
+  if math.random()<POWERUP_CHANCE then
+    powerups[#powerups+1]={c=c,r=r,kind=POWERUP_KINDS[math.random(#POWERUP_KINDS)]}
+  end
 end
 
 local function explode(b)
@@ -238,12 +260,12 @@ local function explode(b)
   addBlast(bc,br)
   local dirs={{0,-1},{0,1},{-1,0},{1,0}}
   for _,d in ipairs(dirs) do
-    for i=1,BLAST_LEN do
+    for i=1,b.len do
       local nc,nr=bc+d[1]*i,br+d[2]*i
       local t=mget(nc,nr)
       if t==T_WALL then break end
       addBlast(nc,nr)
-      if t==T_BLOCK then mset(nc,nr,T_EMPTY) break end
+      if t==T_BLOCK then mset(nc,nr,T_EMPTY) dropPowerup(nc,nr) break end
     end
   end
   if b.owner then b.owner.bombs=math.max(0,b.owner.bombs-1) end
@@ -285,6 +307,18 @@ end
 
 local function isDanger(c,r)
   return isBlast(c,r) or isBomb(c,r)
+end
+
+local function collectPowerup(p)
+  for i,pu in ipairs(powerups) do
+    if pu.c==p.c and pu.r==p.r then
+      if pu.kind=="B" then p.stats.bombs=math.min(BOMB_CAP,p.stats.bombs+1)
+      elseif pu.kind=="R" then p.stats.len=math.min(LEN_CAP,p.stats.len+1)
+      else p.shield=true end
+      table.remove(powerups,i)
+      return
+    end
+  end
 end
 
 local function movePlayer(p,dc,dr)
@@ -342,14 +376,15 @@ local function movePlayer(p,dc,dr)
 
   p.c=gcell(p.x+TILE//2)
   p.r=gcell(p.y+TILE//2)
+  collectPowerup(p)
 end
 
 local function placeBomb(p)
-  if p.bombs<MAX_BOMBS then
+  if p.bombs<p.stats.bombs then
     local bc=gcell(p.x+TILE//2)
     local br=gcell(p.y+TILE//2)
     if not isBomb(bc,br) then
-      bombs[#bombs+1]={c=bc,r=br,t=BOMB_TIMER,owner=p}
+      bombs[#bombs+1]={c=bc,r=br,t=BOMB_TIMER,owner=p,len=p.stats.len}
       p.bombs=p.bombs+1
       return true
     end
@@ -358,6 +393,23 @@ local function placeBomb(p)
 end
 
 -- ── human player ─────────────────────────────────────────────────────────────
+
+local function blastHit(p)
+  if not p.alive or p.invul>0 then return end
+  if p.shield then
+    p.shield=false
+    p.invul=SHIELD_INVUL
+  else
+    p.alive=false
+    sfx(1,-1,15,1,12)
+  end
+end
+
+local function updateInvul()
+  for _,p in ipairs(players) do
+    if p.invul>0 then p.invul=p.invul-1 end
+  end
+end
 
 local function updatePlayer(p)
   if not p.alive then return end
@@ -369,7 +421,7 @@ local function updatePlayer(p)
   if btn(off+B_RIGHT) then movePlayer(p, 1, 0); p.dir={ 1,0} end
   if p.x~=ox or p.y~=oy then p.walkAnim=p.walkAnim+1 end
   if btnp(off+B_BOMB) then placeBomb(p) end
-  if isBlast(p.c,p.r) then p.alive=false; sfx(1,-1,15,1,12) end
+  if isBlast(p.c,p.r) then blastHit(p) end
 end
 
 -- ── bot AI ────────────────────────────────────────────────────────────────────
@@ -441,7 +493,7 @@ local function updateBot(p)
     end
   end
 
-  if isBlast(p.c,p.r) then p.alive=false; sfx(1,-1,15,1,12) end
+  if isBlast(p.c,p.r) then blastHit(p) end
 end
 
 -- ── draw ─────────────────────────────────────────────────────────────────────
@@ -571,9 +623,23 @@ local function drawPlayer(p)
   drawSp(id,p.x,p.y,p.color,flip)
 end
 
+local POWERUP_COL={B=9,R=14,S=11}
+
+local function drawPowerups()
+  for _,pu in ipairs(powerups) do
+    local x,y=gpx(pu.c),gpy(pu.r)
+    rect(x+1,y+1,TILE-2,TILE-2,POWERUP_COL[pu.kind])
+    print(pu.kind,x+2,y+1,0,false,1,true)
+  end
+end
+
 local function drawPlayers()
   for _,p in ipairs(players) do
-    if p.alive then drawPlayer(p) end
+    local blinking=p.invul>0 and frame%8<4
+    if p.alive and not blinking then
+      drawPlayer(p)
+      if p.shield then rectb(p.x-1,p.y-1,TILE+2,TILE+2,7) end
+    end
   end
 end
 
@@ -642,6 +708,7 @@ function TIC()
   if state=="game" then
     updateBombs()
     updateBlasts()
+    updateInvul()
     updatePlayer(players[1])
     updatePlayer(players[2])
     updateBot(players[3])
@@ -657,6 +724,7 @@ function TIC()
     drawMap()
     drawBlasts()
     drawBombs()
+    drawPowerups()
     drawPlayers()
     drawHUD()
 
@@ -667,6 +735,7 @@ function TIC()
     drawBlasts()
     drawBombs()
     drawPlayers()
+    drawPowerups()
     drawHUD()
 
     local msg=winner and ("P"..winner.id.." WINS!") or "DRAW!"
