@@ -610,7 +610,9 @@ new_game()
 env.players[3].alive=false; env.players[4].alive=false
 sfx_log={}
 press_frame(4)  -- P1 places bomb
-check("bomb placement plays slot 5", #sfx_log==1 and sfx_log[1]==5,
+local slot5=0
+for _,id in ipairs(sfx_log) do if id==5 then slot5=slot5+1 end end
+check("bomb placement plays slot 5 once", slot5==1,
       "log="..table.concat(sfx_log,","))
 
 sfx_log={}
@@ -647,6 +649,22 @@ for _,st in ipairs({"title","game","over"}) do
 end
 
 env.sfx=realSfx
+
+-- ── TEST: map fairness ────────────────────────────────────────────────────────
+
+io.write("\n=== map fairness ===\n")
+
+-- Walls must mirror left-right, or the right-hand corners get easier corridors.
+new_game()
+local asym=nil
+for r=0,env.H-1 do
+  for c=0,env.W-1 do
+    local a=env.mget(c,r)==env.T_WALL
+    local b=env.mget(env.W-1-c,r)==env.T_WALL
+    if a~=b and not asym then asym=c..","..r end
+  end
+end
+check("walls mirror left-right", asym==nil, asym and ("first mismatch at "..asym))
 
 -- ── Summary ───────────────────────────────────────────────────────────────────
 

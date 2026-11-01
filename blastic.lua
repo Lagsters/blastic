@@ -53,7 +53,7 @@ local function initMap()
     for c=0,W-1 do
       if r==0 or r==H-1 or c==0 or c==W-1 then
         map[r][c]=T_WALL
-      elseif r%2==0 and c%2==0 then
+      elseif r%2==0 and (c<W//2 and c%2==0 or c>=W//2 and (W-1-c)%2==0) then
         map[r][c]=T_WALL
       elseif math.random()<0.4 then
         local corner=false
@@ -82,7 +82,6 @@ local function initPlayers()
       alive=true,
       stats={bombs=MAX_BOMBS,len=BLAST_LEN},
       bombs=0,
-      stats={bombs=MAX_BOMBS,len=BLAST_LEN},
       shield=false,
       invul=0,
       color=COLORS[i],
@@ -544,7 +543,7 @@ local function botDanger(horizon,extra)
         changed=true
         fire[b.r*W+b.c]=true
         for _,d in ipairs(BOT_DIRS) do
-          for k=1,BLAST_LEN do
+          for k=1,b.len or BLAST_LEN do
             local nc,nr=b.c+d[1]*k,b.r+d[2]*k
             local t=mget(nc,nr)
             if t==T_WALL then break end
@@ -592,7 +591,7 @@ end
 -- true when a bomb placed on (c,r) leaves a cell outside its blast reachable
 -- before it explodes; cells not yet on fire may be crossed on the way
 local function botBombSafe(p,c,r)
-  local bomb={c=c,r=r,t=BOMB_TIMER,owner=p}
+  local bomb={c=c,r=r,t=BOMB_TIMER,owner=p,len=p.stats.len}
   local danger=botDanger(math.huge,bomb)
   local path=botPath(c,r,botPassable,
     function(x,y) return not danger[y*W+x] end)
@@ -618,7 +617,7 @@ local function updateBot(p)
     if path then dir={path[1].c-p.c, path[1].r-p.r} else dir=BOT_DIRS[math.random(4)] end
   elseif botTryBomb(p) then
     dir={0,0}
-  elseif p.bombs<MAX_BOMBS then
+  elseif p.bombs<p.stats.bombs then
     -- hunt: walk to a cell from which a bomb is safe to lay
     local path=botPath(p.c,p.r,
       function(c,r) return botPassable(c,r) and not danger[r*W+c] end,
