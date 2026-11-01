@@ -13,6 +13,7 @@ repository's releases and uses it in its instrumented tests.
 |---|---|
 | `blastic.lua` | game source (TIC-80 Lua cart) |
 | `test_blastic.lua` | logic tests, TIC-80 API mocked; run with `lua test_blastic.lua` |
+| `sim_blastic.lua` | headless bot-vs-bot simulator with invariant checks; `lua sim_blastic.lua [rounds] [seed]` |
 | `make_tic.py` | builds the binary `.tic` cart from the `.lua` source |
 
 ## Build

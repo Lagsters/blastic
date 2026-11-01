@@ -19,6 +19,7 @@ local COLORS={12,11,9,14}
 
 local B_UP,B_DOWN,B_LEFT,B_RIGHT,B_BOMB=0,1,2,3,4
 
+humans={true,true,false,false}
 map,bombs,blasts,players={},{},{},{}
 frame=0
 state="title"
@@ -70,6 +71,7 @@ local function initPlayers()
       c=s[1], r=s[2],
       x=gpx(s[1]), y=gpy(s[2]),
       alive=true,
+      stats={bombs=MAX_BOMBS,len=BLAST_LEN},
       bombs=0,
       color=COLORS[i],
       id=i,
@@ -238,7 +240,7 @@ local function explode(b)
   addBlast(bc,br)
   local dirs={{0,-1},{0,1},{-1,0},{1,0}}
   for _,d in ipairs(dirs) do
-    for i=1,BLAST_LEN do
+    for i=1,b.len do
       local nc,nr=bc+d[1]*i,br+d[2]*i
       local t=mget(nc,nr)
       if t==T_WALL then break end
@@ -345,11 +347,11 @@ local function movePlayer(p,dc,dr)
 end
 
 local function placeBomb(p)
-  if p.bombs<MAX_BOMBS then
+  if p.bombs<p.stats.bombs then
     local bc=gcell(p.x+TILE//2)
     local br=gcell(p.y+TILE//2)
     if not isBomb(bc,br) then
-      bombs[#bombs+1]={c=bc,r=br,t=BOMB_TIMER,owner=p}
+      bombs[#bombs+1]={c=bc,r=br,t=BOMB_TIMER,owner=p,len=p.stats.len}
       p.bombs=p.bombs+1
       return true
     end
@@ -642,10 +644,9 @@ function TIC()
   if state=="game" then
     updateBombs()
     updateBlasts()
-    updatePlayer(players[1])
-    updatePlayer(players[2])
-    updateBot(players[3])
-    updateBot(players[4])
+    for i,p in ipairs(players) do
+      if humans[i] then updatePlayer(p) else updateBot(p) end
+    end
 
     local alive,last=countAlive()
     if alive<=1 then
