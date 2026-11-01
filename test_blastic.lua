@@ -400,6 +400,83 @@ local function blast_at(c,r)
 end
 check("range 4 bomb reaches 4 tiles", blast_at(5,1))
 check("range 4 bomb stops at 4 tiles", not blast_at(6,1))
+-- ── TEST: arena shrink ────────────────────────────────────────────────────────
+
+io.write("\n=== arena shrink ===\n")
+
+local function open_count()
+  local n=0
+  for r=0,env.H-1 do
+    for c=0,env.W-1 do
+      if env.mget(c,r)~=env.T_WALL then n=n+1 end
+    end
+  end
+  return n
+end
+
+local function first_open()
+  for _,cell in ipairs(env.shrinkOrder) do
+    if env.mget(cell[1],cell[2])~=env.T_WALL then return cell end
+  end
+end
+
+new_game()
+env.players[3].alive=false; env.players[4].alive=false
+local open_before=open_count()
+run_frames(env.SHRINK_DELAY-1)
+check("no shrink before delay", open_count()==open_before,
+      ("open %d->%d"):format(open_before, open_count()))
+run_frames(1)
+check("one tile shrinks at delay", open_count()==open_before-1,
+      ("open %d->%d"):format(open_before, open_count()))
+
+local order_a=env.buildShrinkOrder()
+local order_b=env.buildShrinkOrder()
+local same_order=#order_a==#order_b
+for i=1,#order_a do
+  if not same_order then break end
+  same_order=order_a[i][1]==order_b[i][1] and order_a[i][2]==order_b[i][2]
+end
+check("spiral order is deterministic", same_order)
+local seen,unique=({}),0
+for _,cell in ipairs(order_a) do
+  local key=cell[2]*env.W+cell[1]
+  if not seen[key] then seen[key]=true; unique=unique+1 end
+end
+check("spiral visits every tile once", #order_a==env.W*env.H and unique==env.W*env.H,
+      ("len=%d unique=%d"):format(#order_a, unique))
+
+new_game()
+for _=1,env.SHRINK_DELAY+env.SHRINK_EVERY*(#env.shrinkOrder+1) do env.updateShrink() end
+check("shrink eventually walls every tile", open_count()==0, "open="..open_count())
+
+new_game()
+env.roundFrames=env.SHRINK_DELAY-1
+local cell=first_open()
+local victim=env.players[1]
+victim.c,victim.r=cell[1],cell[2]
+victim.x,victim.y=env.gpx(cell[1]),env.gpy(cell[2])
+env.updateShrink()
+check("player on next tile dies", not victim.alive)
+check("shrunk tile becomes wall", env.mget(cell[1],cell[2])==env.T_WALL)
+
+new_game()
+env.roundFrames=env.SHRINK_DELAY-1
+cell=first_open()
+local owner=env.players[2]
+owner.bombs=1
+env.bombs={{c=cell[1],r=cell[2],t=env.BOMB_TIMER,owner=owner}}
+env.updateShrink()
+check("bomb on next tile removed", #env.bombs==0, "bombs="..#env.bombs)
+check("bomb owner slot freed", owner.bombs==0, "bombs="..owner.bombs)
+
+new_game()
+local frames=0
+while env.state=="game" and frames<6000 do
+  run_frames(1)
+  frames=frames+1
+end
+check("round ends within 6000 frames", env.state=="over", "frames="..frames)
 
 -- ── Summary ───────────────────────────────────────────────────────────────────
 
