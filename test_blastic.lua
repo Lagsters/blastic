@@ -261,6 +261,55 @@ for _,s in ipairs(env.STARTS) do
 end
 check("spawn corners clear", spawns_ok)
 
+-- ── TEST: sound and animation ─────────────────────────────────────────────────
+
+io.write("\n=== sound and animation ===\n")
+local realSfx=env.sfx
+local sfx_log={}
+env.sfx=function(id) sfx_log[#sfx_log+1]=id end
+
+new_game()
+env.players[3].alive=false; env.players[4].alive=false
+sfx_log={}
+press_frame(4)  -- P1 places bomb
+check("bomb placement plays slot 5", #sfx_log==1 and sfx_log[1]==5,
+      "log="..table.concat(sfx_log,","))
+
+sfx_log={}
+local ok_pick=pcall(env.sndPickup)
+check("sndPickup plays slot 6", ok_pick and #sfx_log==1 and sfx_log[1]==6,
+      "log="..table.concat(sfx_log,","))
+
+sfx_log={}
+local ok_shield=pcall(env.sndShield)
+check("sndShield plays slot 7", ok_shield and #sfx_log==1 and sfx_log[1]==7,
+      "log="..table.concat(sfx_log,","))
+
+new_game()
+env.players[3].alive=false; env.players[4].alive=false
+env.blasts[#env.blasts+1]={c=env.players[1].c, r=env.players[1].r, t=env.BLAST_TIME}
+run_frames(1)
+check("P1 dies on blast", not env.players[1].alive)
+check("death animation starts", env.players[1].deathT==env.DEATH_TIME,
+      "deathT="..tostring(env.players[1].deathT))
+run_frames(env.DEATH_TIME)
+check("death animation timer decays to 0", env.players[1].deathT==0,
+      "deathT="..tostring(env.players[1].deathT))
+check("death keeps alive=false", not env.players[1].alive)
+
+for _,st in ipairs({"title","game","over"}) do
+  new_game()
+  env.titleTimer=0; env.restartTimer=100
+  env.bombs[#env.bombs+1]={c=3,r=3,t=10}
+  env.blasts[#env.blasts+1]={c=5,r=5,t=env.BLAST_TIME}
+  env.players[2].alive=false; env.players[2].deathT=env.DEATH_TIME
+  env.state=st
+  local ok,err=pcall(env.TIC)
+  check("drawing does not crash in state "..st, ok, tostring(err))
+end
+
+env.sfx=realSfx
+
 -- ── Summary ───────────────────────────────────────────────────────────────────
 
 io.write(string.format("\n══════════════════════════════\n"))

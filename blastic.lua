@@ -10,6 +10,7 @@ MAX_BOMBS=2
 BOMB_TIMER=120
 BLAST_LEN=2
 BLAST_TIME=30
+DEATH_TIME=20
 SPEED=1
 
 T_EMPTY,T_WALL,T_BLOCK=0,1,2
@@ -79,6 +80,7 @@ local function initPlayers()
       botDirTimer=0,
       botBombTimer=0,
       botEscape=0,
+      deathT=0,
     }
   end
 end
@@ -136,6 +138,17 @@ local function startMusic()
   musicOn = true
   musicStep = 0
   musicTimer = 0
+end
+
+-- zapis jednego SFX w slocie n: frames = {{nuta, oktawa, głośność}, ...}
+local function putSfx(n,frames,wave,speed)
+  local b=0x14100+66*n
+  for i,t in ipairs(frames) do
+    poke(b+(i-1)*2,   (t[2]<<4)|t[1])
+    poke(b+(i-1)*2+1, (t[3]<<4)|wave)
+  end
+  for i=#frames,29 do poke(b+i*2,0); poke(b+i*2+1,0) end
+  poke(b+60,0); poke(b+61,speed)
 end
 
 local audioReady=false
@@ -211,7 +224,17 @@ local function initAudio()
   end
   for i=#pe,29 do poke(bp+i*2,0); poke(bp+i*2+1,0) end
   poke(bp+60,0); poke(bp+61,2)  -- speed 2, szybki attack
+
+  -- SFX 5: postawienie bomby — krótki, niski blip (kwadrat)
+  putSfx(5,{{0,3,12},{0,2,10},{0,2,6},{0,2,2}},2,2)
+  -- SFX 6: podniesienie bonusu — rosnący arpeggio (trójkąt)
+  putSfx(6,{{0,4,10},{4,4,10},{7,4,10},{0,5,12}},3,2)
+  -- SFX 7: pęknięcie tarczy — szum opadający
+  putSfx(7,{{5,4,15},{2,4,12},{7,3,9},{0,3,4}},0,2)
 end
+
+function sndPickup() sfx(6,-1,24,3,12) end
+function sndShield() sfx(7,-1,24,3,12) end
 
 function init()
   math.randomseed(time())
@@ -351,10 +374,23 @@ local function placeBomb(p)
     if not isBomb(bc,br) then
       bombs[#bombs+1]={c=bc,r=br,t=BOMB_TIMER,owner=p}
       p.bombs=p.bombs+1
+      sfx(5,-1,20,3,12)
       return true
     end
   end
   return false
+end
+
+local function killPlayer(p)
+  p.alive=false
+  p.deathT=DEATH_TIME
+  sfx(1,-1,15,1,12)
+end
+
+local function updateDeaths()
+  for _,p in ipairs(players) do
+    if p.deathT>0 then p.deathT=p.deathT-1 end
+  end
 end
 
 -- ── human player ─────────────────────────────────────────────────────────────
@@ -369,7 +405,7 @@ local function updatePlayer(p)
   if btn(off+B_RIGHT) then movePlayer(p, 1, 0); p.dir={ 1,0} end
   if p.x~=ox or p.y~=oy then p.walkAnim=p.walkAnim+1 end
   if btnp(off+B_BOMB) then placeBomb(p) end
-  if isBlast(p.c,p.r) then p.alive=false; sfx(1,-1,15,1,12) end
+  if isBlast(p.c,p.r) then killPlayer(p) end
 end
 
 -- ── bot AI ────────────────────────────────────────────────────────────────────
@@ -441,7 +477,7 @@ local function updateBot(p)
     end
   end
 
-  if isBlast(p.c,p.r) then p.alive=false; sfx(1,-1,15,1,12) end
+  if isBlast(p.c,p.r) then killPlayer(p) end
 end
 
 -- ── draw ─────────────────────────────────────────────────────────────────────
@@ -449,7 +485,6 @@ end
 local WALL_COL=13
 local BLOCK_COL=6
 local FLOOR_COL=0
-local BLAST_COL=4
 local BOMB_COL=2
 
 local function drawMap()
@@ -471,7 +506,11 @@ end
 
 local function drawBlasts()
   for _,bl in ipairs(blasts) do
-    rect(gpx(bl.c)+1,gpy(bl.r)+1,TILE-2,TILE-2,BLAST_COL)
+    local age=BLAST_TIME-bl.t
+    local r=math.min(TILE//2-1,1+age//3)
+    local frac=bl.t/BLAST_TIME
+    local col=frac>0.66 and 14 or frac>0.33 and 9 or 6
+    circ(gpx(bl.c)+TILE//2,gpy(bl.r)+TILE//2,r,col)
   end
 end
 
@@ -480,7 +519,9 @@ local function drawBombs()
     local blink=(b.t<40 and frame%6<3)
     local col=blink and 7 or BOMB_COL
     circ(gpx(b.c)+TILE//2,gpy(b.r)+TILE//2,3,col)
-    line(gpx(b.c)+TILE//2,gpy(b.r)+1,gpx(b.c)+TILE//2+2,gpy(b.r)-1,7)
+    local fx,fy=gpx(b.c)+TILE//2+2,gpy(b.r)-1
+    line(gpx(b.c)+TILE//2,gpy(b.r)+1,fx,fy,7)
+    circ(fx,fy,1,(frame//2)%2==0 and 9 or 14)
   end
 end
 
@@ -573,7 +614,7 @@ end
 
 local function drawPlayers()
   for _,p in ipairs(players) do
-    if p.alive then drawPlayer(p) end
+    if p.alive or (p.deathT>0 and p.deathT%4<2) then drawPlayer(p) end
   end
 end
 
@@ -631,6 +672,7 @@ end
 function TIC()
   frame=frame+1
   updateMusic()
+  updateDeaths()
 
   if state=="title" then
     drawTitle()
