@@ -261,6 +261,48 @@ for _,s in ipairs(env.STARTS) do
 end
 check("spawn corners clear", spawns_ok)
 
+-- ── TEST: match score ─────────────────────────────────────────────────────────
+
+io.write("\n=== match score ===\n")
+env.score={0,0,0,0}
+local won=env.addRoundWin({0,0,0,0},2)
+check("addRoundWin adds one win to the winner", won[2]==1 and won[1]==0)
+local src_score={0,0,0,0}
+env.addRoundWin(src_score,3)
+check("addRoundWin does not mutate its input", src_score[3]==0)
+local drawn=env.addRoundWin({1,1,0,0},nil)
+check("draw adds no point", drawn[1]==1 and drawn[2]==1 and drawn[3]==0 and drawn[4]==0)
+check("no match winner below MATCH_WINS", env.matchWinner({2,2,2,0})==nil)
+check("matchWinner returns player at MATCH_WINS", env.matchWinner({0,3,0,0})==2)
+
+new_game()
+env.score={0,0,0,0}
+env.players[2].alive=false; env.players[3].alive=false; env.players[4].alive=false
+run_frames(2)
+check("round win scored for P1", env.score[1]==1, "score1="..env.score[1])
+env.restartTimer=1
+run_frames(1)
+check("next round starts after one win", env.state=="game", "state="..tostring(env.state))
+
+new_game()
+env.score={1,0,0,0}
+for _,p in ipairs(env.players) do p.alive=false end
+run_frames(2)
+check("draw gives no point", env.score[1]==1 and env.score[2]==0 and env.score[3]==0 and env.score[4]==0)
+
+new_game()
+env.score={2,0,0,0}
+env.players[2].alive=false; env.players[3].alive=false; env.players[4].alive=false
+run_frames(2)
+check("third round win gives P1 the match", env.matchWinner(env.score)==1)
+env.restartTimer=1
+run_frames(1)
+check("match-over screen after third win", env.state=="match", "state="..tostring(env.state))
+
+run_frames(env.MATCH_TIME+1)
+check("scores reset after match", env.score[1]==0 and env.score[2]==0 and env.score[3]==0 and env.score[4]==0)
+check("new match starts after match-over", env.state=="game", "state="..tostring(env.state))
+
 -- ── Summary ───────────────────────────────────────────────────────────────────
 
 io.write(string.format("\n══════════════════════════════\n"))

@@ -11,6 +11,8 @@ BOMB_TIMER=120
 BLAST_LEN=2
 BLAST_TIME=30
 SPEED=1
+MATCH_WINS=3
+MATCH_TIME=210
 
 T_EMPTY,T_WALL,T_BLOCK=0,1,2
 
@@ -23,6 +25,7 @@ map,bombs,blasts,players={},{},{},{}
 frame=0
 state="title"
 winner=nil
+score={0,0,0,0}
 restartTimer=0
 titleTimer=0
 
@@ -71,6 +74,7 @@ local function initPlayers()
       x=gpx(s[1]), y=gpy(s[2]),
       alive=true,
       bombs=0,
+      stats={bombs=MAX_BOMBS,len=BLAST_LEN},
       color=COLORS[i],
       id=i,
       dir={0,1},
@@ -621,9 +625,33 @@ local function drawTitle()
   end
 end
 
+-- ── match score ──────────────────────────────────────────────────────────────
+
+-- Zwraca nową tabelę wyników; remis (winnerId=nil) nie daje punktu.
+function addRoundWin(sc,winnerId)
+  local out={sc[1],sc[2],sc[3],sc[4]}
+  if winnerId then out[winnerId]=out[winnerId]+1 end
+  return out
+end
+
+function matchWinner(sc)
+  for i=1,4 do
+    if sc[i]>=MATCH_WINS then return i end
+  end
+  return nil
+end
+
 -- ── game HUD ──────────────────────────────────────────────────────────────────
 
+-- Pasek nad ścianą górnego rzędu (r=0): nie zasłania pola gry.
 local function drawHUD()
+  rect(0,0,W*TILE,7,0)
+  for i,p in ipairs(players) do
+    local x=(i-1)*60+2
+    rect(x,1,4,5,p.alive and p.color or 13)
+    local text=("W%d B%d R%d"):format(score[i], p.stats.bombs-p.bombs, p.stats.len)
+    print(text,x+6,1,12,false,1,true)
+  end
 end
 
 -- ── main loop ────────────────────────────────────────────────────────────────
@@ -651,6 +679,7 @@ function TIC()
     if alive<=1 then
       state="over"
       winner=last
+      score=addRoundWin(score, winner and winner.id)
       restartTimer=210
     end
 
@@ -685,7 +714,25 @@ function TIC()
 
     restartTimer=restartTimer-1
     if restartTimer<=0 then
-      state="game"
+      if matchWinner(score) then
+        state="match"
+        restartTimer=MATCH_TIME
+      else
+        init()
+      end
+    end
+
+  elseif state=="match" then
+    drawMap()
+    drawHUD()
+    local w=matchWinner(score)
+    local msg="P"..w.." WINS THE MATCH!"
+    print(msg,120-#msg*3,50,players[w].color,false,1,true)
+    print("new match in "..math.ceil(restartTimer/60).."s",88,90,13,false,1,true)
+
+    restartTimer=restartTimer-1
+    if restartTimer<=0 then
+      score={0,0,0,0}
       init()
     end
   end
