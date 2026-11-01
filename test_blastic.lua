@@ -751,6 +751,104 @@ end
 check("no icon uses the lit bomb red", not uses_colour(a,env.BOMB_COL or 2)
       and not uses_colour(b,env.BOMB_COL or 2) and not uses_colour(c,env.BOMB_COL or 2))
 
+-- ── TEST: helpers covered directly ────────────────────────────────────────────
+
+io.write("\n=== helpers ===\n")
+
+-- placeBomb: one bomb on the player's cell, owner count rises, a bomb cell refuses a second one
+new_game()
+open_arena()
+for _,id in ipairs({2,3}) do env.players[id].alive=false end
+env.bombs={}
+local hp=env.players[1]
+env.players[1].stats.bombs=3
+press_frame(4)
+check("placeBomb lays the bomb on the player's cell",
+      #env.bombs==1 and env.bombs[1].c==hp.c and env.bombs[1].r==hp.r and env.bombs[1].owner==hp)
+check("placeBomb counts the bomb for its owner", hp.bombs==1, "bombs="..hp.bombs)
+press_frame(4)
+check("placeBomb refuses a cell that already has a bomb", #env.bombs==1, "bombs="..#env.bombs)
+
+-- dropPowerup: a destroyed block leaves an item when the roll succeeds, nothing otherwise
+local real_random=math.random
+local function drop_with(roll)
+  new_game()
+  open_arena()
+  for _,id in ipairs({2,3}) do env.players[id].alive=false end
+  env.powerups={}
+  env.map[1][4]=env.T_BLOCK
+  env.bombs={{c=3,r=1,t=1,owner=env.players[1],len=2}}
+  env.players[1].bombs=1
+  math.random=function(n) if n then return 1 end return roll end
+  env.TIC()
+  math.random=real_random
+  return #env.powerups
+end
+check("destroyed block drops an item on a successful roll", drop_with(0)==1)
+check("destroyed block drops nothing on a failed roll", drop_with(0.99)==0)
+
+-- updateInvul: invulnerability after a shield break lasts SHIELD_INVUL frames
+new_game()
+open_arena()
+for _,id in ipairs({2,3}) do env.players[id].alive=false end
+local ip=env.players[1]
+ip.shield=true
+env.blasts={{c=ip.c,r=ip.r,t=env.BLAST_TIME}}
+env.TIC()
+check("shield break grants invulnerability", ip.invul>0 and ip.invul<=env.SHIELD_INVUL, "invul="..ip.invul)
+env.blasts={}
+run_frames(env.SHIELD_INVUL)
+check("invulnerability runs out", ip.invul==0, "invul="..ip.invul)
+
+-- botTryBomb / botIsTargetSpot: a bot next to a block with room to escape lays a bomb
+new_game()
+open_arena()
+for _,id in ipairs({1,4}) do env.players[id].alive=false end
+env.bombs={}
+local bb=env.players[3]
+env.map[bb.r][bb.c+1]=env.T_BLOCK
+run_frames(10)
+local bot_bombs=0
+for _,b in ipairs(env.bombs) do if b.owner==bb then bot_bombs=bot_bombs+1 end end
+check("bot lays a bomb next to a block when it can escape", bot_bombs>=1,
+      "bombs="..bot_bombs.." owned="..bb.bombs)
+
+-- shrinkWarnTiles: the next tiles to shrink are tinted once the delay has passed
+new_game()
+env.roundFrames=env.SHRINK_DELAY
+local warn_rects=0
+local real_rect=env.rect
+env.rect=function(_,_,_,_,col) if col==9 then warn_rects=warn_rects+1 end end
+env.TIC()
+env.rect=real_rect
+check("shrink warns about the next tiles", warn_rects>=1, "rects="..warn_rects)
+
+-- initAudio / updateMusic need a fresh game instance: initAudio runs once per instance
+local function fresh_game(poke_fn,sfx_fn)
+  local e={}
+  for _,n in ipairs({"cls","rect","rectb","circ","line","pix","print"}) do e[n]=function() end end
+  e.btn=function() return false end
+  e.btnp=function() return false end
+  e.time=function() return 42 end
+  e.peek=function() return 0 end
+  e.poke=poke_fn
+  e.sfx=sfx_fn
+  setmetatable(e,{__index=_G})
+  assert(load(src,"blastic","t",e))()
+  return e
+end
+
+local pokes={}
+local audio_game=fresh_game(function(addr,v) pokes[addr]=v end,function() end)
+audio_game.init()
+check("initAudio writes the bomb-placed sound slot", pokes[0x14100+66*5]~=nil)
+check("initAudio writes the shield-break sound slot", pokes[0x14100+66*7]~=nil)
+
+local played={}
+local music_game=fresh_game(function() end,function(id) played[id]=true end)
+for _=1,60 do music_game.TIC() end
+check("title music plays the bass line", played[3]==true)
+
 -- ── Summary ───────────────────────────────────────────────────────────────────
 
 io.write(string.format("\n══════════════════════════════\n"))
