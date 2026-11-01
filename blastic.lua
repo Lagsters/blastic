@@ -6,7 +6,7 @@
 
 W,H=30,17
 TILE=8
-MAX_BOMBS=2
+MAX_BOMBS=1
 BOMB_CAP=5
 BOMB_TIMER=120
 BLAST_LEN=2
@@ -14,6 +14,7 @@ LEN_CAP=6
 BLAST_TIME=30
 DEATH_TIME=20
 SPEED=1
+MOVE_PERIOD=2
 POWERUP_CHANCE=0.25
 POWERUP_KINDS={"B","R","S"}
 SHIELD_INVUL=60
@@ -475,10 +476,12 @@ local function updatePlayer(p)
   if not p.alive then return end
   local off=(p.id-1)*8
   local ox,oy=p.x,p.y
-  if btn(off+B_UP)    then movePlayer(p, 0,-1); p.dir={0,-1} end
-  if btn(off+B_DOWN)  then movePlayer(p, 0, 1); p.dir={0, 1} end
-  if btn(off+B_LEFT)  then movePlayer(p,-1, 0); p.dir={-1,0} end
-  if btn(off+B_RIGHT) then movePlayer(p, 1, 0); p.dir={ 1,0} end
+  if frame%MOVE_PERIOD==0 then
+    if btn(off+B_UP)    then movePlayer(p, 0,-1); p.dir={0,-1} end
+    if btn(off+B_DOWN)  then movePlayer(p, 0, 1); p.dir={0, 1} end
+    if btn(off+B_LEFT)  then movePlayer(p,-1, 0); p.dir={-1,0} end
+    if btn(off+B_RIGHT) then movePlayer(p, 1, 0); p.dir={ 1,0} end
+  end
   if p.x~=ox or p.y~=oy then p.walkAnim=p.walkAnim+1 end
   if btnp(off+B_BOMB) then placeBomb(p) end
   if isBlast(p.c,p.r) then blastHit(p) end
@@ -488,7 +491,7 @@ end
 
 local BOT_DIRS={{0,-1},{0,1},{-1,0},{1,0}}
 -- bombs due within this many frames make their blast cells dangerous to the bot
-local BOT_FLEE_FRAMES=60
+local BOT_FLEE_FRAMES=100
 
 local function botPassable(c,r)
   return mget(c,r)==T_EMPTY and not isBomb(c,r)
@@ -595,7 +598,7 @@ local function botBombSafe(p,c,r)
   local danger=botDanger(math.huge,bomb)
   local path=botPath(c,r,botPassable,
     function(x,y) return not danger[y*W+x] end)
-  return path~=nil and #path*TILE<BOMB_TIMER
+  return path~=nil and #path*TILE*MOVE_PERIOD<BOMB_TIMER
 end
 
 local function botTryBomb(p)
@@ -635,14 +638,16 @@ local function updateBot(p)
   end
   p.botDir=dir
 
-  local dc,dr=botSteer(p,dir[1],dir[2])
-  local ox,oy=p.x,p.y
-  if dc~=0 or dr~=0 then p.dir={dc,dr} end
-  movePlayer(p,dc,dr)
-  if p.x==ox and p.y==oy then
-    p.botDirTimer=0
-  else
-    p.walkAnim=p.walkAnim+1
+  if frame%MOVE_PERIOD==0 then
+    local dc,dr=botSteer(p,dir[1],dir[2])
+    local ox,oy=p.x,p.y
+    if dc~=0 or dr~=0 then p.dir={dc,dr} end
+    movePlayer(p,dc,dr)
+    if p.x==ox and p.y==oy then
+      p.botDirTimer=0
+    else
+      p.walkAnim=p.walkAnim+1
+    end
   end
 
   if isBlast(p.c,p.r) then blastHit(p) end
@@ -851,13 +856,50 @@ local function drawPlayer(p)
   drawSp(id,p.x,p.y,p.color,flip)
 end
 
-local POWERUP_COL={B=9,R=14,S=11}
+-- Icons are 8x8 character maps, '.' transparent. None uses the red (2) of a lit bomb, so a
+-- bomb on the floor is never mistaken for an extra-bomb pickup.
+local ICON_COL={g=5,w=12,y=4,o=3,l=13,c=11,b=9}
+local ICONS={
+  B={"......g.",
+     ".y...ggg",
+     "..l...g.",
+     ".llll...",
+     "lwllll..",
+     "llllll..",
+     "llllll..",
+     ".llll..."},
+  R={"...oo...",
+     "...yy...",
+     "o..yy..o",
+     ".oywwyo.",
+     ".oywwyo.",
+     "o..yy..o",
+     "...yy...",
+     "...oo..."},
+  S={"cccccccc",
+     "cwcccccb",
+     "cwccccbb",
+     "ccccccbb",
+     ".cccccb.",
+     ".cccccb.",
+     "..cccb..",
+     "...cb..."},
+}
+
+local function drawIcon(rows,x,y)
+  for j=1,8 do
+    local row=rows[j]
+    for i=1,8 do
+      local col=ICON_COL[row:sub(i,i)]
+      if col then pix(x+i-1,y+j-1,col) end
+    end
+  end
+end
 
 local function drawPowerups()
+  local bob=(frame//10)%2
   for _,pu in ipairs(powerups) do
-    local x,y=gpx(pu.c),gpy(pu.r)
-    rect(x+1,y+1,TILE-2,TILE-2,POWERUP_COL[pu.kind])
-    print(pu.kind,x+2,y+1,0,false,1,true)
+    drawIcon(ICONS[pu.kind],gpx(pu.c),gpy(pu.r)-bob)
   end
 end
 

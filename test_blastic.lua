@@ -335,7 +335,7 @@ local function walk_onto_right(kind, setup)
   env.map[1][2]=env.T_EMPTY
   env.powerups={{c=2,r=1,kind=kind}}
   if setup then setup(env.players[1]) end
-  for _=1,6 do _held[3]=true; env.TIC() end
+  for _=1,20 do _held[3]=true; env.TIC() end
   clear_inputs()
 end
 
@@ -503,8 +503,8 @@ env.bombs={}; env.blasts={}
 local flee_bot=env.players[3]
 flee_bot.c, flee_bot.r = 1, 15
 flee_bot.x, flee_bot.y = env.gpx(1), env.gpy(15)
-env.bombs[1]={c=1, r=15, t=30, owner=flee_bot}
-run_frames(35)  -- bomb explodes at frame 30, blast lasts BLAST_TIME
+env.bombs[1]={c=1, r=15, t=60, owner=flee_bot}
+run_frames(65)  -- bomb explodes at frame 60, blast lasts BLAST_TIME
 check("bot flees ticking bomb and survives blast", flee_bot.alive,
       ("c=%d r=%d"):format(flee_bot.c, flee_bot.r))
 
@@ -684,6 +684,72 @@ for r=0,env.H-1 do
   end
 end
 check("walls mirror left-right", asym==nil, asym and ("first mismatch at "..asym))
+
+-- ── TEST: tuning (one starting bomb, half walking speed) ──────────────────────
+
+io.write("\n=== tuning ===\n")
+
+new_game()
+local all_one=true
+for _,p in ipairs(env.players) do
+  if p.stats.bombs~=1 then all_one=false end
+end
+check("every player starts with one bomb", all_one)
+
+-- a second bomb in another cell is refused while the first one is ticking
+for r=1,env.H-2 do for c=1,env.W-2 do env.map[r][c]=env.T_EMPTY end end
+env.players[2].alive=false; env.players[3].alive=false
+env.bombs={}
+press_frame(4)
+local p1=env.players[1]
+p1.x=env.gpx(3); p1.y=env.gpy(1); p1.c=3; p1.r=1
+press_frame(4)
+check("second bomb refused with one bomb", #env.bombs==1, "bombs="..#env.bombs)
+
+-- holding right for 16 frames moves 8 px: one pixel per two frames
+new_game()
+for r=1,env.H-2 do for c=1,env.W-2 do env.map[r][c]=env.T_EMPTY end end
+env.players[2].alive=false; env.players[3].alive=false
+local start_x=env.players[1].x
+for _=1,16 do
+  _held[3]=true
+  env.TIC()
+end
+clear_inputs()
+check("walking is one pixel per two frames", env.players[1].x-start_x==8,
+      "moved "..(env.players[1].x-start_x).." px in 16 frames")
+
+-- ── TEST: power-up icons ──────────────────────────────────────────────────────
+
+io.write("\n=== power-up icons ===\n")
+
+local function icon_pixels(kind)
+  new_game()
+  env.powerups={{c=5,r=5,kind=kind}}
+  local seen={}
+  local real_pix,real_rect,real_print=env.pix,env.rect,env.print
+  env.pix=function(x,y,col) seen[#seen+1]=x..","..y..","..col end
+  env.rect=function() end
+  env.print=function() end
+  env.TIC()
+  env.pix,env.rect,env.print=real_pix,real_rect,real_print
+  table.sort(seen)
+  return seen
+end
+
+local a,b,c=icon_pixels("B"),icon_pixels("R"),icon_pixels("S")
+check("icons are drawn with pixels", #a>10 and #b>10 and #c>10)
+check("the three icons differ", table.concat(a,";")~=table.concat(b,";")
+      and table.concat(b,";")~=table.concat(c,";") and table.concat(a,";")~=table.concat(c,";"))
+
+local function uses_colour(px,col)
+  for _,s in ipairs(px) do
+    if tonumber(s:match(",(%d+)$"))==col then return true end
+  end
+  return false
+end
+check("no icon uses the lit bomb red", not uses_colour(a,env.BOMB_COL or 2)
+      and not uses_colour(b,env.BOMB_COL or 2) and not uses_colour(c,env.BOMB_COL or 2))
 
 -- ── Summary ───────────────────────────────────────────────────────────────────
 
