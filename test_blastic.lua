@@ -477,6 +477,87 @@ while env.state=="game" and frames<6000 do
   frames=frames+1
 end
 check("round ends within 6000 frames", env.state=="over", "frames="..frames)
+-- ── TEST: bot AI (flee, escape, BFS) ──────────────────────────────────────────
+
+local function open_arena()
+  for r=1,env.H-2 do
+    for c=1,env.W-2 do env.map[r][c]=env.T_EMPTY end
+  end
+end
+
+local function only_bot_alive(keep)
+  for _,p in ipairs(env.players) do
+    if p.id~=keep then p.alive=false end
+  end
+end
+
+io.write("\n=== bot flees ticking bomb ===\n")
+new_game()
+for r=1,env.H-2 do
+  for c=1,env.W-2 do env.map[r][c]=env.T_WALL end
+end
+for c=1,5 do env.map[15][c]=env.T_EMPTY end   -- 1-wide corridor, bot at its end
+only_bot_alive(3)
+env.players[2].alive=true   -- far human, keeps the game running
+env.bombs={}; env.blasts={}
+local flee_bot=env.players[3]
+flee_bot.c, flee_bot.r = 1, 15
+flee_bot.x, flee_bot.y = env.gpx(1), env.gpy(15)
+env.bombs[1]={c=1, r=15, t=30, owner=flee_bot}
+run_frames(35)  -- bomb explodes at frame 30, blast lasts BLAST_TIME
+check("bot flees ticking bomb and survives blast", flee_bot.alive,
+      ("c=%d r=%d"):format(flee_bot.c, flee_bot.r))
+
+io.write("\n=== bot does not suicide in dead-end ===\n")
+new_game()
+for r=1,env.H-2 do
+  for c=1,env.W-2 do env.map[r][c]=env.T_WALL end
+end
+env.map[15][1]=env.T_EMPTY   -- P3 cell
+env.map[15][2]=env.T_BLOCK   -- only target, bomb would blast the bot itself
+only_bot_alive(3)
+env.players[2].alive=true
+env.bombs={}; env.blasts={}
+local dead_bot=env.players[3]
+dead_bot.c, dead_bot.r = 1, 15
+dead_bot.x, dead_bot.y = env.gpx(1), env.gpy(15)
+run_frames(3)
+local own_bombs=0
+for _,b in ipairs(env.bombs) do if b.owner==dead_bot then own_bombs=own_bombs+1 end end
+check("bot does not place bomb without escape", own_bombs==0, "own="..own_bombs)
+
+io.write("\n=== bot BFS path helper ===\n")
+local function build_map(rows)
+  env.map={}
+  for r,row in ipairs(rows) do
+    env.map[r-1]={}
+    for c=1,#row do
+      env.map[r-1][c-1]= row:sub(c,c)=="#" and env.T_WALL or env.T_EMPTY
+    end
+  end
+end
+build_map({
+  "#####",
+  "#...#",
+  "#.#.#",
+  "#...#",
+  "#####",
+})
+local function open_cell(c,r) return env.mget(c,r)==env.T_EMPTY end
+local path = env.botPath and env.botPath(1,1,open_cell,function(c,r) return c==3 and r==3 end)
+check("BFS finds path around wall", path~=nil)
+check("BFS path is shortest (4 steps)", path and #path==4, "len="..(path and #path or -1))
+check("BFS path ends at goal", path and path[#path] and path[#path].c==3 and path[#path].r==3)
+local adjacent_ok=true
+local last_c, last_r = 1, 1
+for _,cell in ipairs(path or {}) do
+  if math.abs(cell.c-last_c)+math.abs(cell.r-last_r)~=1 then adjacent_ok=false end
+  last_c, last_r = cell.c, cell.r
+end
+check("BFS path steps are adjacent", path~=nil and adjacent_ok)
+local unreachable = env.botPath and env.botPath(1,1,open_cell,function(c,r) return c==2 and r==2 end)
+check("BFS returns nil for unreachable goal", unreachable==nil)
+new_game()
 
 -- ── Summary ───────────────────────────────────────────────────────────────────
 

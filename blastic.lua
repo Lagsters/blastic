@@ -448,10 +448,80 @@ end
 -- ── bot AI ────────────────────────────────────────────────────────────────────
 
 local BOT_DIRS={{0,-1},{0,1},{-1,0},{1,0}}
+-- bombs due within this many frames make their blast cells dangerous to the bot
+local BOT_FLEE_FRAMES=60
 
-local function botAdjacentTarget(p)
+local function botPassable(c,r)
+  return mget(c,r)==T_EMPTY and not isBomb(c,r)
+end
+
+-- BFS from (sc,sr) over cells accepted by isOpen. Returns the cells from the
+-- start (exclusive) to the nearest cell accepted by isGoal, or nil.
+function botPath(sc,sr,isOpen,isGoal)
+  local came={}
+  local seen={[sr*W+sc]=true}
+  local qc,qr={sc},{sr}
+  local head=1
+  while head<=#qc do
+    local c,r=qc[head],qr[head]
+    head=head+1
+    if (c~=sc or r~=sr) and isGoal(c,r) then
+      local path={}
+      while came[r*W+c] do
+        table.insert(path,1,{c=c,r=r})
+        c,r=came[r*W+c][1],came[r*W+c][2]
+      end
+      return path
+    end
+    for _,d in ipairs(BOT_DIRS) do
+      local nc,nr=c+d[1],r+d[2]
+      local nk=nr*W+nc
+      if not seen[nk] and isOpen(nc,nr) then
+        seen[nk]=true
+        came[nk]={c,r}
+        qc[#qc+1]=nc; qr[#qr+1]=nr
+      end
+    end
+  end
+  return nil
+end
+
+-- cells that will burn: current blasts plus blasts of bombs due within `horizon`
+-- frames, closed over chain reactions (a blast reaching a bomb sets it off)
+local function botDanger(horizon,extra)
+  local list={}
+  for _,b in ipairs(bombs) do list[#list+1]=b end
+  if extra then list[#list+1]=extra end
+  local fire={}
+  for _,bl in ipairs(blasts) do fire[bl.r*W+bl.c]=true end
+  local going={}
+  local changed=true
+  while changed do
+    changed=false
+    for i,b in ipairs(list) do
+      if not going[i] and (b.t<=horizon or fire[b.r*W+b.c]) then
+        going[i]=true
+        changed=true
+        fire[b.r*W+b.c]=true
+        for _,d in ipairs(BOT_DIRS) do
+          for k=1,BLAST_LEN do
+            local nc,nr=b.c+d[1]*k,b.r+d[2]*k
+            local t=mget(nc,nr)
+            if t==T_WALL then break end
+            fire[nr*W+nc]=true
+            if t==T_BLOCK then break end
+          end
+        end
+      end
+    end
+  end
+  return fire
+end
+
+-- a cell is a target spot when a destructible block or a living enemy is next to it
+local function botIsTargetSpot(p,c,r)
   for _,d in ipairs(BOT_DIRS) do
-    local nc,nr=p.c+d[1],p.r+d[2]
+    local nc,nr=c+d[1],r+d[2]
     if mget(nc,nr)==T_BLOCK then return true end
     for _,op in ipairs(players) do
       if op.alive and op.id~=p.id and op.c==nc and op.r==nr then return true end
@@ -469,32 +539,64 @@ local function botSafeDir(p)
   return BOT_DIRS[math.random(4)]
 end
 
+local function botSign(v) return v>0 and 1 or (v<0 and -1 or 0) end
+
+-- while moving, first line up with the current cell's grid on the perpendicular
+-- axis, so a turn at a corner is not blocked by a wall corner
+local function botSteer(p,dc,dr)
+  if dr~=0 and p.x~=gpx(p.c) then return botSign(gpx(p.c)-p.x),0 end
+  if dc~=0 and p.y~=gpy(p.r) then return 0,botSign(gpy(p.r)-p.y) end
+  return dc,dr
+end
+
+-- true when a bomb placed on (c,r) leaves a cell outside its blast reachable
+-- before it explodes; cells not yet on fire may be crossed on the way
+local function botBombSafe(p,c,r)
+  local bomb={c=c,r=r,t=BOMB_TIMER,owner=p}
+  local danger=botDanger(math.huge,bomb)
+  local path=botPath(c,r,botPassable,
+    function(x,y) return not danger[y*W+x] end)
+  return path~=nil and #path*TILE<BOMB_TIMER
+end
+
+local function botTryBomb(p)
+  if not botIsTargetSpot(p,p.c,p.r) or not botBombSafe(p,p.c,p.r) then return false end
+  return placeBomb(p)
+end
+
 local function updateBot(p)
   if not p.alive then return end
 
   p.botDirTimer=p.botDirTimer-1
-  if p.botBombTimer>0 then p.botBombTimer=p.botBombTimer-1 end
-  if p.botEscape>0 then p.botEscape=p.botEscape-1 end
 
-  -- react to immediate danger
-  if isDanger(p.c,p.r) then
-    p.botDir=botSafeDir(p)
-    p.botDirTimer=15
-    p.botEscape=40
+  local danger=botDanger(BOT_FLEE_FRAMES)
+  local dir
+  if danger[p.r*W+p.c] then
+    -- flee: the path may cross fire, the goal is any cell outside it
+    local path=botPath(p.c,p.r,botPassable,
+      function(c,r) return not danger[r*W+c] end)
+    if path then dir={path[1].c-p.c, path[1].r-p.r} else dir=BOT_DIRS[math.random(4)] end
+  elseif botTryBomb(p) then
+    dir={0,0}
+  elseif p.bombs<MAX_BOMBS then
+    -- hunt: walk to a cell from which a bomb is safe to lay
+    local path=botPath(p.c,p.r,
+      function(c,r) return botPassable(c,r) and not danger[r*W+c] end,
+      function(c,r) return botIsTargetSpot(p,c,r) and botBombSafe(p,c,r) end)
+    if path then dir={path[1].c-p.c, path[1].r-p.r} end
   end
 
-  -- pick new direction periodically
-  if p.botDirTimer<=0 then
-    if p.botEscape>0 then
+  if not dir then
+    -- nothing to hunt: wander in a safe direction, re-picked on a timer or when stuck
+    if p.botDirTimer<=0 then
       p.botDir=botSafeDir(p)
-    else
-      p.botDir=BOT_DIRS[math.random(4)]
+      p.botDirTimer=15+math.random(25)
     end
-    p.botDirTimer=15+math.random(25)
+    dir=p.botDir
   end
+  p.botDir=dir
 
-  -- attempt move; if stuck pick new dir next frame
-  local dc,dr=p.botDir[1],p.botDir[2]
+  local dc,dr=botSteer(p,dir[1],dir[2])
   local ox,oy=p.x,p.y
   if dc~=0 or dr~=0 then p.dir={dc,dr} end
   movePlayer(p,dc,dr)
@@ -502,16 +604,6 @@ local function updateBot(p)
     p.botDirTimer=0
   else
     p.walkAnim=p.walkAnim+1
-  end
-
-  -- place bomb when adjacent to block/player and not escaping
-  if p.botBombTimer==0 and p.botEscape==0 and botAdjacentTarget(p) then
-    if placeBomb(p) then
-      p.botBombTimer=BOMB_TIMER+30
-      p.botEscape=50
-      p.botDir=botSafeDir(p)
-      p.botDirTimer=45
-    end
   end
 
   if isBlast(p.c,p.r) then blastHit(p) end
