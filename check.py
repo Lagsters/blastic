@@ -3,7 +3,8 @@
 import shutil, subprocess, sys, os
 
 LIMIT = 65535
-lua = shutil.which("lua5.4") or shutil.which("lua")
+winget_bin = os.path.join(os.environ.get("LOCALAPPDATA", ""), "Programs", "Lua", "bin")
+lua = shutil.which("lua5.4") or shutil.which("lua") or shutil.which("lua", path=winget_bin)
 if not lua:
     sys.exit("brak lua5.4/lua w PATH")
 
