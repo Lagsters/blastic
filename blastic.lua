@@ -234,32 +234,49 @@ local function addBlast(c,r)
   blasts[#blasts+1]={c=c,r=r,t=BLAST_TIME}
 end
 
+-- returns set of covered cells keyed c*100+r
 local function explode(b)
   sfx(0,-1,25,0,15)
   local bc,br=b.c,b.r
+  local len=b.len or BLAST_LEN
+  local hit={}
   addBlast(bc,br)
+  hit[bc*100+br]=true
   local dirs={{0,-1},{0,1},{-1,0},{1,0}}
   for _,d in ipairs(dirs) do
-    for i=1,b.len do
+    for i=1,len do
       local nc,nr=bc+d[1]*i,br+d[2]*i
       local t=mget(nc,nr)
       if t==T_WALL then break end
       addBlast(nc,nr)
+      hit[nc*100+nr]=true
       if t==T_BLOCK then mset(nc,nr,T_EMPTY) break end
     end
   end
   if b.owner then b.owner.bombs=math.max(0,b.owner.bombs-1) end
+  return hit
 end
 
 -- ── physics ───────────────────────────────────────────────────────────────────
 
+-- bombs covered by a blast explode in the same tick, until no new ones are hit
 local function updateBombs()
-  local keep={}
+  local queue,keep={},{}
   for _,b in ipairs(bombs) do
     b.t=b.t-1
-    if b.t<=0 then explode(b) else keep[#keep+1]=b end
+    if b.t<=0 then queue[#queue+1]=b else keep[#keep+1]=b end
   end
   bombs=keep
+  local k=1
+  while k<=#queue do
+    local hit=explode(queue[k])
+    k=k+1
+    local rest={}
+    for _,b in ipairs(bombs) do
+      if hit[b.c*100+b.r] then queue[#queue+1]=b else rest[#rest+1]=b end
+    end
+    bombs=rest
+  end
 end
 
 local function updateBlasts()

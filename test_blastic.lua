@@ -261,6 +261,70 @@ for _,s in ipairs(env.STARTS) do
 end
 check("spawn corners clear", spawns_ok)
 
+-- ── TEST: chain reaction ──────────────────────────────────────────────────────
+
+io.write("\n=== chain reaction ===\n")
+
+-- open arena, no bots, no bombs; bombs are placed directly with a chosen timer
+local function open_arena(owner_ids)
+  new_game()
+  for r=1,env.H-2 do
+    for c=1,env.W-2 do env.map[r][c]=env.T_EMPTY end
+  end
+  for _,id in ipairs(owner_ids or {}) do
+    env.players[id].alive=false
+  end
+  env.bombs={}
+end
+
+local function add_bomb(owner,c,r,t)
+  local b={c=c,r=r,t=t,owner=owner}
+  env.bombs[#env.bombs+1]=b
+  owner.bombs=owner.bombs+1
+  return b
+end
+
+local function bomb_at(c,r)
+  for _,b in ipairs(env.bombs) do
+    if b.c==c and b.r==r then return true end
+  end
+  return false
+end
+
+-- adjacent bomb chains in the same tick
+open_arena({3,4})
+add_bomb(env.players[1],5,5,1)        -- explodes this tick
+add_bomb(env.players[2],6,5,env.BOMB_TIMER)
+run_frames(1)
+check("adjacent bomb chains in the same tick", not bomb_at(6,5),
+      "bomb at (6,5) still pending")
+
+-- three-bomb chain A->B->C resolves in one tick, each bomb explodes once
+open_arena({3,4})
+local explosions=0
+local real_sfx=env.sfx
+env.sfx=function(id) if id==0 then explosions=explosions+1 end end
+local ca=add_bomb(env.players[1],5,5,1)
+add_bomb(env.players[2],6,5,env.BOMB_TIMER)   -- covered by A (BLAST_LEN reach)
+add_bomb(env.players[1],8,5,env.BOMB_TIMER)   -- covered by B only
+run_frames(1)
+env.sfx=real_sfx
+check("three-bomb chain resolves in one tick", #env.bombs==0,
+      "pending="..#env.bombs)
+check("each chained bomb explodes exactly once", explosions==3,
+      "explosions="..explosions)
+check("owner bomb counts back to 0",
+      env.players[1].bombs==0 and env.players[2].bombs==0,
+      ("P1=%d P2=%d"):format(env.players[1].bombs, env.players[2].bombs))
+
+-- wall between bombs shields the second one
+open_arena({3,4})
+env.map[5][6]=env.T_WALL
+add_bomb(env.players[1],5,5,1)
+add_bomb(env.players[2],7,5,env.BOMB_TIMER)
+run_frames(1)
+check("bomb behind wall does not chain", bomb_at(7,5))
+
 -- ── Summary ───────────────────────────────────────────────────────────────────
 
 io.write(string.format("\n══════════════════════════════\n"))
