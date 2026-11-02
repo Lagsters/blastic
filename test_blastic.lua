@@ -611,6 +611,30 @@ local hunt_bombs=0
 for _,b in ipairs(env.bombs) do if b.owner==hunt_bot then hunt_bombs=hunt_bombs+1 end end
 check("bot lays a bomb when an enemy stands in its blast line", hunt_bombs==1, "bombs="..hunt_bombs)
 
+io.write("\n=== bot route tie-break order ===\n")
+new_game()
+local orders_ok,distinct={}
+orders_ok=true
+local seen_orders={}
+local real_time=env.time
+local tick=0
+env.time=function() tick=tick+1; return tick end
+for _=1,20 do
+  env.init()
+  local p=env.players[3]
+  local keys={}
+  for _,d in ipairs(p.botOrder) do keys[#keys+1]=d[1]..","..d[2] end
+  local sorted={table.unpack(keys)}
+  table.sort(sorted)
+  if #p.botOrder~=4 or table.concat(sorted,";")~="-1,0;0,-1;0,1;1,0" then orders_ok=false end
+  seen_orders[table.concat(keys,";")]=true
+end
+env.time=real_time
+local n_orders=0
+for _ in pairs(seen_orders) do n_orders=n_orders+1 end
+check("each bot gets all four directions in some order", orders_ok)
+check("the order differs between rounds", n_orders>1, "distinct="..n_orders)
+
 io.write("\n=== bot heads for the nearest enemy ===\n")
 local chase_bot=bot_arena()
 env.map[9][5]=env.T_BLOCK

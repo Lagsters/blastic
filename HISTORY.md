@@ -46,8 +46,9 @@ Format wpisu: **FAKT** / **DECYZJA** / **ŚLEPA ULICZKA**, data, jedno–dwa zda
   klatek (`SHRINK_WARN`), coraz szybciej, i zamyka się całością. Bez pojedynczych kafelków, bo
   o wygranej decydowałby los (wcześniejszy wariant z kafelkami na końcu to **ŚLEPA ULICZKA**).
   Boty traktują migający krok jako ogień i uciekają w głąb.
-- **FAKT** 2026-11-02: po tej zmianie symulacja czterech botów daje silny skos narożników: P4
-  (prawy dolny) ok. 43% wygranych, P1 (lewy górny) ok. 6% (2 ziarna po 50 rund). Przyczyna
-  nieznana; podejrzenie: rozstrzygają ostatnie kroki zamykania, a kolejność kierunków w BFS
-  ucieczki faworyzuje pewne pozycje w małym pudełku.
-
+- **FAKT** 2026-11-02: przyczyną skosu narożników była stała kolejność kierunków w BFS botów
+  (góra, dół, lewo, prawo): przy równie krótkich trasach bot zawsze wybierał ten sam kierunek.
+  Przed poprawką P4 (prawy dolny) wygrywał ok. 40%, P1 (lewy górny) ok. 13%; odwrócenie kolejności
+  przesunęło skos. Teraz każdy bot dostaje stałą na rundę losową kolejność (`botOrder`): udział
+  wygranych 17/21/30/26% (150 rund, χ² p≈0,11, w granicach szumu). Losowanie w każdej klatce
+  dawałoby drżenie trasy (**ŚLEPA ULICZKA**).

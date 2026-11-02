@@ -74,6 +74,15 @@ local function initMap()
   end
 end
 
+local function shuffledDirs()
+  local dirs={{0,-1},{0,1},{-1,0},{1,0}}
+  for i=#dirs,2,-1 do
+    local j=math.random(i)
+    dirs[i],dirs[j]=dirs[j],dirs[i]
+  end
+  return dirs
+end
+
 local function initPlayers()
   players={}
   for i,s in ipairs(STARTS) do
@@ -90,6 +99,7 @@ local function initPlayers()
       dir={0,1},
       walkAnim=0,
       botDir={0,0},
+      botOrder=shuffledDirs(),
       botDirTimer=0,
       botBombTimer=0,
       botEscape=0,
@@ -489,6 +499,9 @@ end
 -- ── bot AI ────────────────────────────────────────────────────────────────────
 
 local BOT_DIRS={{0,-1},{0,1},{-1,0},{1,0}}
+-- tie-break order of the bot being updated; a fixed order per bot and round keeps its
+-- route stable between frames while no corner of the map is favoured
+local botOrder=BOT_DIRS
 -- bombs due within this many frames make their blast cells dangerous to the bot
 local BOT_FLEE_FRAMES=BOMB_TIMER
 local BOT_PICKUP_RANGE=10
@@ -515,7 +528,7 @@ function botPath(sc,sr,isOpen,isGoal)
       end
       return path
     end
-    for _,d in ipairs(BOT_DIRS) do
+    for _,d in ipairs(botOrder) do
       local nc,nr=c+d[1],r+d[2]
       local nk=nr*W+nc
       if not seen[nk] and isOpen(nc,nr) then
@@ -639,7 +652,7 @@ local function botEscapePath(sc,sr,from,to,blocked)
       end
       return path
     end
-    for _,dir in ipairs(BOT_DIRS) do
+    for _,dir in ipairs(botOrder) do
       local nc,nr=c+dir[1],r+dir[2]
       local nk=nr*W+nc
       if not seen[nk] and nk~=blocked and botPassable(nc,nr) and not burning(nk,(d+1)*BOT_STEP) then
@@ -740,6 +753,7 @@ end
 
 local function updateBot(p)
   if not p.alive then return end
+  botOrder=p.botOrder
 
   p.botDirTimer=p.botDirTimer-1
 

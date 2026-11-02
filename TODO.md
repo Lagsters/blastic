@@ -4,7 +4,7 @@
 - Zrobione: poprawa botów (spacer omija pola zagrożone, ucieczka przed każdą bombą, planista
   ucieczki z czasem, zbieranie bonusów, bomba na wroga w linii, polowanie na pułapki).
 - Zamykanie areny: boki do kwadratu, potem obrys równo (miganie coraz szybsze); boty uciekają w głąb.
-- Otwarte: skos narożników w symulacji botów (P4 ok. 43%, P1 ok. 6%), patrz `HISTORY.md`.
+- Skos narożników w symulacji botów usunięty (losowa kolejność kierunków BFS), patrz `HISTORY.md`.
 - NASTĘPNY KROK: decyzja o długości rund (ok. 3700 klatek; krótszy `SHRINK_DELAY` albo mniej rund
   w bramce, bo `check.py` trwa kilka minut), potem zagranie z żywym człowiekiem.
 
