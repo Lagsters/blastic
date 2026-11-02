@@ -1,5 +1,11 @@
 # Stan prac
 
+## Sesja 2026-11-02
+- Zrobione: poprawa botów (spacer omija pola zagrożone, ucieczka przed każdą bombą, planista
+  ucieczki z czasem, zbieranie bonusów, bomba na wroga w linii, polowanie na pułapki).
+- NASTĘPNY KROK: decyzja o długości rund (ok. 3700 klatek; krótszy `SHRINK_DELAY` albo mniej rund
+  w bramce, bo `check.py` trwa kilka minut), potem zagranie z żywym człowiekiem.
+
 ## Sesja 2026-11-01
 - Zrobione: wszystkie funkcje areny (łańcuch, bonusy, bot BFS, HUD i mecz, zamykająca się arena,
   dźwięk i animacje), MIT, Pages (https://lagsters.github.io/blastic/), release v1.1.0; w tej

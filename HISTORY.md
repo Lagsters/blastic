@@ -30,3 +30,14 @@ Format wpisu: **FAKT** / **DECYZJA** / **ŚLEPA ULICZKA**, data, jedno–dwa zda
 - **FAKT** 2026-11-01: `/blastic.tic` w korzeniu domeny dawał 404 na Pages, bo odtwarzacz
   TIC-80 traktuje argument ze znakiem `/` na początku jako ścieżkę od korzenia; cart musi być
   podany ścieżką względną.
+- **FAKT** 2026-11-02: w symulacji ok. 98% zgonów botów to śmierć od własnej bomby. Przyczyną był
+  losowy spacer, który wchodził w linię wybuchu tykającej bomby (nie patrzył na mapę zagrożeń)
+  oraz ucieczka zaczynana dopiero 100 klatek przed wybuchem. Po poprawce (spacer omija pola
+  zagrożone, ucieczka przed każdą bombą, planista ucieczki z czasem i reakcją łańcuchową)
+  samobójstw jest ok. 12× mniej.
+- **FAKT** 2026-11-02: ostrożne boty rzadko się zabijają, więc rundy trwają ok. 3700 klatek zamiast
+  ok. 650 i kończy je zamykająca się arena; symulacja 300 rund trwa kilka minut.
+- **FAKT** 2026-11-02: bomba-pułapka (wróg bez drogi ucieczki, bot z drogą) to ok. 3% stawianych
+  bomb; polowanie na pułapki nie zmieniło liczby zabójstw (24 na 25 rund w obu wariantach).
+  Test pułapki w ślepym zaułku przechodzi także bez polowania na pułapki, więc nie dowodzi ich
+  działania. Dalsza agresja wymaga innego mechanizmu niż pojedyncza pułapka.

@@ -508,6 +508,75 @@ run_frames(65)  -- bomb explodes at frame 60, blast lasts BLAST_TIME
 check("bot flees ticking bomb and survives blast", flee_bot.alive,
       ("c=%d r=%d"):format(flee_bot.c, flee_bot.r))
 
+io.write("\n=== bot wanders clear of a ticking bomb's blast line ===\n")
+new_game()
+for r=1,env.H-2 do
+  for c=1,env.W-2 do env.map[r][c]=env.T_WALL end
+end
+for c=1,10 do env.map[15][c]=env.T_EMPTY end
+only_bot_alive(3)
+env.players[2].alive=true
+env.bombs={}; env.blasts={}
+local wander_bot=env.players[3]
+wander_bot.c, wander_bot.r = 9, 15
+wander_bot.x, wander_bot.y = env.gpx(9), env.gpy(15)
+wander_bot.botDir={-1,0}
+wander_bot.botDirTimer=60
+env.bombs[1]={c=6, r=15, t=100, owner=env.players[2], len=2}
+local entered_blast_line=false
+for _=1,95 do
+  env.TIC()
+  if wander_bot.c>=4 and wander_bot.c<=8 then entered_blast_line=true end
+end
+check("wandering bot stays out of the blast line", not entered_blast_line and wander_bot.alive,
+      "c="..wander_bot.c)
+
+io.write("\n=== bot picks up items and bombs enemies in line ===\n")
+local function bot_arena()
+  new_game()
+  open_arena()
+  only_bot_alive(3)
+  env.players[2].alive=true
+  env.bombs={}; env.blasts={}; env.powerups={}
+  local b=env.players[3]
+  b.c, b.r = 10, 5
+  b.x, b.y = env.gpx(10), env.gpy(5)
+  return b
+end
+
+local pick_bot=bot_arena()
+env.players[2].c, env.players[2].r = 25, 12
+env.players[2].x, env.players[2].y = env.gpx(25), env.gpy(12)
+env.powerups={{c=14,r=5,kind="S"}}
+run_frames(120)
+check("bot walks to a nearby item and takes it", pick_bot.shield==true and #env.powerups==0,
+      "shield="..tostring(pick_bot.shield))
+
+local hunt_bot=bot_arena()
+env.players[2].c, env.players[2].r = 12, 5
+env.players[2].x, env.players[2].y = env.gpx(12), env.gpy(5)
+run_frames(5)
+local hunt_bombs=0
+for _,b in ipairs(env.bombs) do if b.owner==hunt_bot then hunt_bombs=hunt_bombs+1 end end
+check("bot lays a bomb when an enemy stands in its blast line", hunt_bombs==1, "bombs="..hunt_bombs)
+
+io.write("\n=== bot traps an enemy in a dead end ===\n")
+new_game()
+for r=1,env.H-2 do
+  for c=1,env.W-2 do env.map[r][c]=env.T_WALL end
+end
+for c=1,8 do env.map[15][c]=env.T_EMPTY end
+env.players[1].alive=false; env.players[2].alive=false
+env.bombs={}; env.blasts={}; env.powerups={}
+local hunter,prey=env.players[3],env.players[4]
+hunter.c, hunter.r = 5, 15
+hunter.x, hunter.y = env.gpx(5), env.gpy(15)
+prey.c, prey.r = 1, 15
+prey.x, prey.y = env.gpx(1), env.gpy(15)
+run_frames(400)
+check("bot kills an enemy it has trapped and survives", not prey.alive and hunter.alive,
+      "prey="..tostring(prey.alive).." hunter="..tostring(hunter.alive))
+
 io.write("\n=== bot does not suicide in dead-end ===\n")
 new_game()
 for r=1,env.H-2 do
