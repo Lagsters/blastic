@@ -22,11 +22,10 @@ Format wpisu: **FAKT** / **DECYZJA** / **ŚLEPA ULICZKA**, data, jedno–dwa zda
   z tą prędkością.
 - **DECYZJA** 2026-11-01: bonusy mają ikony 8×8 w kolorach bez czerwieni (2), żeby leżąca bomba
   nigdy nie wyglądała jak bonus dodatkowej bomby.
-- **FAKT** 2026-11-01: po wyrównaniu mapy lewy górny róg nadal wygrywa ok. 5 punktów
-  procentowych częściej (4000 rund). Skos idzie za rogiem, nie za numerem gracza (sprawdzone
-  obrotem `STARTS`). Losowa kolejność kierunków w BFS go nie usunęła (**ŚLEPA ULICZKA**,
-  wycofane). Nieprzebadane: półpikselowa asymetria środka postaci (`p.c` zmienia się przy 4 px w
-  prawo, a przy 5 px w lewo), kolejność generowania bloków.
+- **FAKT** 2026-11-01: po wyrównaniu mapy lewy górny róg nadal wygrywał ok. 5 punktów
+  procentowych częściej (4000 rund); skos szedł za rogiem, nie za numerem gracza. Losowa kolejność
+  kierunków w BFS **wywoływana w każdej klatce** go nie usunęła (**ŚLEPA ULICZKA**, wycofane;
+  trasa drżała). Przyczynę ustalono 2026-11-02, patrz niżej (stała losowa kolejność na bota).
 - **FAKT** 2026-11-01: `/blastic.tic` w korzeniu domeny dawał 404 na Pages, bo odtwarzacz
   TIC-80 traktuje argument ze znakiem `/` na początku jako ścieżkę od korzenia; cart musi być
   podany ścieżką względną.
