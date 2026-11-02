@@ -414,61 +414,112 @@ local function open_count()
   return n
 end
 
-local function first_open()
-  for _,cell in ipairs(env.shrinkOrder) do
-    if env.mget(cell[1],cell[2])~=env.T_WALL then return cell end
+local function line_open(is_member)
+  local n=0
+  for r=0,env.H-1 do
+    for c=0,env.W-1 do
+      if is_member(c,r) and env.mget(c,r)~=env.T_WALL then n=n+1 end
+    end
   end
+  return n
+end
+local function col_open(x) return line_open(function(c) return c==x end) end
+local function row_open(y) return line_open(function(_,r) return r==y end) end
+
+local function close_steps(n)
+  new_game()
+  env.players[3].alive=false; env.players[4].alive=false
+  env.players[1].alive=false; env.players[2].alive=false
+  for _=1,n do
+    env.roundFrames=env.shrinkAt-1
+    env.updateShrink()
+  end
+end
+
+local function tinted_tiles()
+  local n=0
+  local real_rect=env.rect
+  env.rect=function(_,_,_,_,col) if col==9 then n=n+1 end end
+  env.TIC()
+  env.rect=real_rect
+  return n
 end
 
 new_game()
 env.players[3].alive=false; env.players[4].alive=false
 local open_before=open_count()
-run_frames(env.SHRINK_DELAY-1)
-check("no shrink before delay", open_count()==open_before,
+run_frames(env.SHRINK_DELAY+env.SHRINK_CYCLE-2)
+check("no tile shrinks before the cycle ends", open_count()==open_before,
       ("open %d->%d"):format(open_before, open_count()))
 run_frames(1)
-check("one tile shrinks at delay", open_count()==open_before-1,
-      ("open %d->%d"):format(open_before, open_count()))
+check("both side columns close at once", col_open(1)==0 and col_open(env.W-2)==0 and col_open(2)>0,
+      ("col1=%d col2=%d"):format(col_open(1), col_open(2)))
+check("top and bottom rows stay while the arena is wider than tall",
+      row_open(1)>0 and row_open(env.H-2)>0)
 
-local order_a=env.buildShrinkOrder()
-local order_b=env.buildShrinkOrder()
-local same_order=#order_a==#order_b
-for i=1,#order_a do
-  if not same_order then break end
-  same_order=order_a[i][1]==order_b[i][1] and order_a[i][2]==order_b[i][2]
+close_steps(6)
+check("sides keep closing until the arena is nearly square",
+      col_open(6)==0 and col_open(7)>0 and row_open(1)>0)
+close_steps(7)
+check("then the whole outline closes evenly", row_open(1)==0 and row_open(env.H-2)==0
+      and col_open(7)==0 and col_open(8)>0 and row_open(2)>0)
+
+-- the ring blinks faster as it nears closing
+new_game()
+env.players[3].alive=false; env.players[4].alive=false
+local function toggles(from_frame,n)
+  env.roundFrames=from_frame
+  local count,last=0,nil
+  for _=1,n do
+    local on=tinted_tiles()>0
+    if last~=nil and on~=last then count=count+1 end
+    last=on
+  end
+  return count
 end
-check("spiral order is deterministic", same_order)
-local seen,unique=({}),0
-for _,cell in ipairs(order_a) do
-  local key=cell[2]*env.W+cell[1]
-  if not seen[key] then seen[key]=true; unique=unique+1 end
-end
-check("spiral visits every tile once", #order_a==env.W*env.H and unique==env.W*env.H,
-      ("len=%d unique=%d"):format(#order_a, unique))
+local warn_start=env.shrinkAt-env.SHRINK_WARN
+local early=toggles(warn_start,40)
+local late=toggles(warn_start+env.SHRINK_WARN-41,40)
+check("ring blinks faster near closing", late>early, ("early=%d late=%d"):format(early, late))
+env.roundFrames=env.shrinkAt-env.SHRINK_WARN-10
+check("nothing blinks during the pause", tinted_tiles()==0)
 
 new_game()
-for _=1,env.SHRINK_DELAY+env.SHRINK_EVERY*(#env.shrinkOrder+1) do env.updateShrink() end
+for _=1,env.SHRINK_DELAY+env.SHRINK_CYCLE*(env.W//2+2) do env.updateShrink() end
 check("shrink eventually walls every tile", open_count()==0, "open="..open_count())
 
 new_game()
-env.roundFrames=env.SHRINK_DELAY-1
-local cell=first_open()
+env.roundFrames=env.shrinkAt-1
 local victim=env.players[1]
-victim.c,victim.r=cell[1],cell[2]
-victim.x,victim.y=env.gpx(cell[1]),env.gpy(cell[2])
+victim.c,victim.r=1,1
+victim.x,victim.y=env.gpx(1),env.gpy(1)
 env.updateShrink()
-check("player on next tile dies", not victim.alive)
-check("shrunk tile becomes wall", env.mget(cell[1],cell[2])==env.T_WALL)
+check("player in the closing step dies", not victim.alive)
+check("closed tile becomes wall", env.mget(1,1)==env.T_WALL)
 
 new_game()
-env.roundFrames=env.SHRINK_DELAY-1
-cell=first_open()
+env.roundFrames=env.shrinkAt-1
 local owner=env.players[2]
 owner.bombs=1
-env.bombs={{c=cell[1],r=cell[2],t=env.BOMB_TIMER,owner=owner}}
+env.bombs={{c=1,r=1,t=env.BOMB_TIMER,owner=owner}}
 env.updateShrink()
-check("bomb on next tile removed", #env.bombs==0, "bombs="..#env.bombs)
+check("bomb in the closing step removed", #env.bombs==0, "bombs="..#env.bombs)
 check("bomb owner slot freed", owner.bombs==0, "bombs="..owner.bombs)
+
+-- a bot standing in the blinking side column walks inward and survives the closing
+new_game()
+for _,id in ipairs({1,4}) do env.players[id].alive=false end
+env.bombs={}; env.powerups={}
+for r=1,env.H-2 do for c=1,env.W-2 do env.map[r][c]=env.T_WALL end end
+for r=1,7 do env.map[r][1]=env.T_EMPTY end
+for c=1,4 do env.map[7][c]=env.T_EMPTY end
+local shrink_bot=env.players[3]
+shrink_bot.c,shrink_bot.r=1,1
+shrink_bot.x,shrink_bot.y=env.gpx(1),env.gpy(1)
+env.roundFrames=env.shrinkAt-env.SHRINK_WARN
+for _=1,env.SHRINK_WARN do env.TIC() end
+check("bot leaves the closing step and survives", shrink_bot.alive and shrink_bot.c>1,
+      ("alive=%s c=%d"):format(tostring(shrink_bot.alive), shrink_bot.c))
 
 new_game()
 local frames=0
@@ -507,6 +558,108 @@ env.bombs[1]={c=1, r=15, t=60, owner=flee_bot}
 run_frames(65)  -- bomb explodes at frame 60, blast lasts BLAST_TIME
 check("bot flees ticking bomb and survives blast", flee_bot.alive,
       ("c=%d r=%d"):format(flee_bot.c, flee_bot.r))
+
+io.write("\n=== bot wanders clear of a ticking bomb's blast line ===\n")
+new_game()
+for r=1,env.H-2 do
+  for c=1,env.W-2 do env.map[r][c]=env.T_WALL end
+end
+for c=1,10 do env.map[15][c]=env.T_EMPTY end
+only_bot_alive(3)
+env.players[2].alive=true
+env.bombs={}; env.blasts={}
+local wander_bot=env.players[3]
+wander_bot.c, wander_bot.r = 9, 15
+wander_bot.x, wander_bot.y = env.gpx(9), env.gpy(15)
+wander_bot.botDir={-1,0}
+wander_bot.botDirTimer=60
+env.bombs[1]={c=6, r=15, t=100, owner=env.players[2], len=2}
+local entered_blast_line=false
+for _=1,95 do
+  env.TIC()
+  if wander_bot.c>=4 and wander_bot.c<=8 then entered_blast_line=true end
+end
+check("wandering bot stays out of the blast line", not entered_blast_line and wander_bot.alive,
+      "c="..wander_bot.c)
+
+io.write("\n=== bot picks up items and bombs enemies in line ===\n")
+local function bot_arena()
+  new_game()
+  open_arena()
+  only_bot_alive(3)
+  env.players[2].alive=true
+  env.bombs={}; env.blasts={}; env.powerups={}
+  local b=env.players[3]
+  b.c, b.r = 10, 5
+  b.x, b.y = env.gpx(10), env.gpy(5)
+  return b
+end
+
+local pick_bot=bot_arena()
+env.players[2].c, env.players[2].r = 25, 12
+env.players[2].x, env.players[2].y = env.gpx(25), env.gpy(12)
+env.powerups={{c=14,r=5,kind="S"}}
+run_frames(120)
+check("bot walks to a nearby item and takes it", pick_bot.shield==true and #env.powerups==0,
+      "shield="..tostring(pick_bot.shield))
+
+local hunt_bot=bot_arena()
+env.players[2].c, env.players[2].r = 12, 5
+env.players[2].x, env.players[2].y = env.gpx(12), env.gpy(5)
+run_frames(5)
+local hunt_bombs=0
+for _,b in ipairs(env.bombs) do if b.owner==hunt_bot then hunt_bombs=hunt_bombs+1 end end
+check("bot lays a bomb when an enemy stands in its blast line", hunt_bombs==1, "bombs="..hunt_bombs)
+
+io.write("\n=== bot route tie-break order ===\n")
+new_game()
+local orders_ok,distinct={}
+orders_ok=true
+local seen_orders={}
+local real_time=env.time
+local tick=0
+env.time=function() tick=tick+1; return tick end
+for _=1,20 do
+  env.init()
+  local p=env.players[3]
+  local keys={}
+  for _,d in ipairs(p.botOrder) do keys[#keys+1]=d[1]..","..d[2] end
+  local sorted={table.unpack(keys)}
+  table.sort(sorted)
+  if #p.botOrder~=4 or table.concat(sorted,";")~="-1,0;0,-1;0,1;1,0" then orders_ok=false end
+  seen_orders[table.concat(keys,";")]=true
+end
+env.time=real_time
+local n_orders=0
+for _ in pairs(seen_orders) do n_orders=n_orders+1 end
+check("each bot gets all four directions in some order", orders_ok)
+check("the order differs between rounds", n_orders>1, "distinct="..n_orders)
+
+io.write("\n=== bot heads for the nearest enemy ===\n")
+local chase_bot=bot_arena()
+env.map[9][5]=env.T_BLOCK
+env.players[2].c, env.players[2].r = 20, 5
+env.players[2].x, env.players[2].y = env.gpx(20), env.gpy(5)
+run_frames(80)
+check("bot walks towards the enemy instead of the block", chase_bot.c>=8 and chase_bot.r==5,
+      ("c=%d r=%d"):format(chase_bot.c, chase_bot.r))
+
+io.write("\n=== bot traps an enemy in a dead end ===\n")
+new_game()
+for r=1,env.H-2 do
+  for c=1,env.W-2 do env.map[r][c]=env.T_WALL end
+end
+for c=1,8 do env.map[15][c]=env.T_EMPTY end
+env.players[1].alive=false; env.players[2].alive=false
+env.bombs={}; env.blasts={}; env.powerups={}
+local hunter,prey=env.players[3],env.players[4]
+hunter.c, hunter.r = 5, 15
+hunter.x, hunter.y = env.gpx(5), env.gpy(15)
+prey.c, prey.r = 1, 15
+prey.x, prey.y = env.gpx(1), env.gpy(15)
+run_frames(400)
+check("bot kills an enemy it has trapped and survives", not prey.alive and hunter.alive,
+      "prey="..tostring(prey.alive).." hunter="..tostring(hunter.alive))
 
 io.write("\n=== bot does not suicide in dead-end ===\n")
 new_game()
@@ -815,7 +968,7 @@ check("bot lays a bomb next to a block when it can escape", bot_bombs>=1,
 
 -- shrinkWarnTiles: the next tiles to shrink are tinted once the delay has passed
 new_game()
-env.roundFrames=env.SHRINK_DELAY
+env.roundFrames=env.shrinkAt-env.SHRINK_WARN
 local warn_rects=0
 local real_rect=env.rect
 env.rect=function(_,_,_,_,col) if col==9 then warn_rects=warn_rects+1 end end
