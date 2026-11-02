@@ -41,3 +41,13 @@ Format wpisu: **FAKT** / **DECYZJA** / **ŚLEPA ULICZKA**, data, jedno–dwa zda
   bomb; polowanie na pułapki nie zmieniło liczby zabójstw (24 na 25 rund w obu wariantach).
   Test pułapki w ślepym zaułku przechodzi także bez polowania na pułapki, więc nie dowodzi ich
   działania. Dalsza agresja wymaga innego mechanizmu niż pojedyncza pułapka.
+- **DECYZJA** 2026-11-02: arena zamyka się krokami co 300 klatek (`SHRINK_CYCLE`): najpierw dwie
+  boczne kolumny naraz, aż pole jest prawie kwadratowe, potem cały obrys równo; krok miga 180
+  klatek (`SHRINK_WARN`), coraz szybciej, i zamyka się całością. Bez pojedynczych kafelków, bo
+  o wygranej decydowałby los (wcześniejszy wariant z kafelkami na końcu to **ŚLEPA ULICZKA**).
+  Boty traktują migający krok jako ogień i uciekają w głąb.
+- **FAKT** 2026-11-02: po tej zmianie symulacja czterech botów daje silny skos narożników: P4
+  (prawy dolny) ok. 43% wygranych, P1 (lewy górny) ok. 6% (2 ziarna po 50 rund). Przyczyna
+  nieznana; podejrzenie: rozstrzygają ostatnie kroki zamykania, a kolejność kierunków w BFS
+  ucieczki faworyzuje pewne pozycje w małym pudełku.
+

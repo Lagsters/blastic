@@ -257,8 +257,7 @@ function init()
   initMap()
   initPlayers()
   initAudio()
-  shrinkIdx=1
-  roundFrames=0
+  resetShrink()
   frame=0
   state="game"
   winner=nil
@@ -537,6 +536,8 @@ local function botDanger(horizon,extra)
   if extra then list[#list+1]=extra end
   local fire={}
   for _,bl in ipairs(blasts) do fire[bl.r*W+bl.c]=true end
+  local closing=shrinkClosing()
+  for _,cell in ipairs(closing or {}) do fire[cell[2]*W+cell[1]]=true end
   local going={}
   local changed=true
   while changed do
@@ -578,6 +579,12 @@ local function botFireTimes(extra)
     local k=bl.r*W+bl.c
     from[k]=0
     to[k]=math.max(to[k] or 0,bl.t)
+  end
+  local closing,left=shrinkClosing()
+  for _,cell in ipairs(closing or {}) do
+    local k=cell[2]*W+cell[1]
+    from[k]=math.min(from[k] or left,left)
+    to[k]=math.huge
   end
   for _,b in ipairs(list) do
     local s=from[b.r*W+b.c]
@@ -788,26 +795,19 @@ end
 -- ── arena shrink ──────────────────────────────────────────────────────────────
 
 SHRINK_DELAY=1800
-SHRINK_EVERY=20
-SHRINK_WARN=3
+SHRINK_PAUSE=120
+SHRINK_WARN=180
+SHRINK_CYCLE=SHRINK_PAUSE+SHRINK_WARN
 local WARN_COL=9
+local WARN_SLOWEST,WARN_FASTEST=24,4
 
-function buildShrinkOrder()
-  local list={}
-  local x0,y0,x1,y1=0,0,W-1,H-1
-  while x0<=x1 and y0<=y1 do
-    for c=x0,x1 do list[#list+1]={c,y0} end
-    for r=y0+1,y1 do list[#list+1]={x1,r} end
-    if y1>y0 then for c=x1-1,x0,-1 do list[#list+1]={c,y1} end end
-    if x1>x0 then for r=y1-1,y0+1,-1 do list[#list+1]={x0,r} end end
-    x0,y0,x1,y1=x0+1,y0+1,x1-1,y1-1
-  end
-  return list
+-- open interior still in play; shrinkAt is the frame at which the next step closes
+function resetShrink()
+  shrinkBox={x0=1,y0=1,x1=W-2,y1=H-2}
+  shrinkAt=SHRINK_DELAY+SHRINK_CYCLE-1
+  roundFrames=0
 end
-
-shrinkOrder=buildShrinkOrder()
-shrinkIdx=1
-roundFrames=0
+resetShrink()
 
 local function shrinkTile(c,r)
   mset(c,r,T_WALL)
@@ -825,32 +825,77 @@ local function shrinkTile(c,r)
   bombs=keep
 end
 
-function updateShrink()
-  roundFrames=roundFrames+1
-  if roundFrames<SHRINK_DELAY or (roundFrames-SHRINK_DELAY)%SHRINK_EVERY~=0 then return end
-  while shrinkIdx<=#shrinkOrder do
-    local cell=shrinkOrder[shrinkIdx]
-    shrinkIdx=shrinkIdx+1
-    if mget(cell[1],cell[2])~=T_WALL then
-      shrinkTile(cell[1],cell[2])
-      return
-    end
-  end
+-- a wider arena first loses its two side columns, a square one its whole outline
+local function sidesOnly(box)
+  return box.x1-box.x0>=box.y1-box.y0+2
 end
 
--- tiles that shrink next, keyed c*100+r
-local function shrinkWarnTiles()
-  local warn={}
-  if roundFrames<SHRINK_DELAY then return warn end
-  local n=0
-  for i=shrinkIdx,#shrinkOrder do
-    local cell=shrinkOrder[i]
-    if mget(cell[1],cell[2])~=T_WALL then
-      warn[cell[1]*100+cell[2]]=true
-      n=n+1
-      if n==SHRINK_WARN then break end
+-- open tiles the next step closes: both side columns, or the whole outline of the box
+local function stepCells(box)
+  local cells={}
+  local function add(c,r)
+    if mget(c,r)~=T_WALL then cells[#cells+1]={c,r} end
+  end
+  for r=box.y0,box.y1 do
+    add(box.x0,r)
+    if box.x1>box.x0 then add(box.x1,r) end
+  end
+  if not sidesOnly(box) then
+    for c=box.x0+1,box.x1-1 do
+      add(c,box.y0)
+      if box.y1>box.y0 then add(c,box.y1) end
     end
   end
+  return cells
+end
+
+local function advanceBox(box)
+  local sides=sidesOnly(box)
+  box.x0,box.x1=box.x0+1,box.x1-1
+  if not sides then box.y0,box.y1=box.y0+1,box.y1-1 end
+end
+
+-- the next step with open tiles, skipping steps that have none; nil when the box is gone
+local function nextStepCells()
+  local box=shrinkBox
+  while box.x0<=box.x1 and box.y0<=box.y1 do
+    local cells=stepCells(box)
+    if #cells>0 then return cells end
+    advanceBox(box)
+  end
+  return nil
+end
+
+-- every SHRINK_CYCLE frames after SHRINK_DELAY one step blinks for SHRINK_WARN frames
+-- and then turns to wall all at once
+function updateShrink()
+  roundFrames=roundFrames+1
+  if roundFrames<shrinkAt then return end
+  local cells=nextStepCells()
+  if not cells then return end
+  for _,cell in ipairs(cells) do shrinkTile(cell[1],cell[2]) end
+  advanceBox(shrinkBox)
+  shrinkAt=roundFrames+SHRINK_CYCLE
+end
+
+-- while a step blinks: its open tiles and the frames left before it closes
+function shrinkClosing()
+  local left=shrinkAt-roundFrames
+  if left>SHRINK_WARN then return nil end
+  local cells=nextStepCells()
+  if not cells then return nil end
+  return cells,left
+end
+
+-- tiles tinted right now: the closing step, blinking faster as it nears closing
+local function shrinkWarnTiles()
+  local warn={}
+  local cells,left=shrinkClosing()
+  if not cells then return warn end
+  local progress=1-left/SHRINK_WARN
+  local period=math.floor(WARN_SLOWEST-(WARN_SLOWEST-WARN_FASTEST)*progress)
+  if roundFrames%period>=period//2 then return warn end
+  for _,cell in ipairs(cells) do warn[cell[1]*100+cell[2]]=true end
   return warn
 end
 
