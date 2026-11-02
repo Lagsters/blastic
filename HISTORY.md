@@ -41,8 +41,8 @@ Format wpisu: **FAKT** / **DECYZJA** / **ŚLEPA ULICZKA**, data, jedno–dwa zda
   bomb; polowanie na pułapki nie zmieniło liczby zabójstw (24 na 25 rund w obu wariantach).
   Test pułapki w ślepym zaułku przechodzi także bez polowania na pułapki, więc nie dowodzi ich
   działania. Dalsza agresja wymaga innego mechanizmu niż pojedyncza pułapka.
-- **DECYZJA** 2026-11-02: arena zamyka się krokami co 300 klatek (`SHRINK_CYCLE`): najpierw dwie
-  boczne kolumny naraz, aż pole jest prawie kwadratowe, potem cały obrys równo; krok miga 180
+- **DECYZJA** 2026-11-02: arena zamyka się krokami co 180 klatek (`SHRINK_CYCLE`), pierwszy po 1200 (`SHRINK_DELAY`): najpierw dwie
+  boczne kolumny naraz, aż pole jest prawie kwadratowe, potem cały obrys równo; krok miga 120
   klatek (`SHRINK_WARN`), coraz szybciej, i zamyka się całością. Bez pojedynczych kafelków, bo
   o wygranej decydowałby los (wcześniejszy wariant z kafelkami na końcu to **ŚLEPA ULICZKA**).
   Boty traktują migający krok jako ogień i uciekają w głąb.
@@ -52,3 +52,8 @@ Format wpisu: **FAKT** / **DECYZJA** / **ŚLEPA ULICZKA**, data, jedno–dwa zda
   przesunęło skos. Teraz każdy bot dostaje stałą na rundę losową kolejność (`botOrder`): udział
   wygranych 17/21/30/26% (150 rund, χ² p≈0,11, w granicach szumu). Losowanie w każdej klatce
   dawałoby drżenie trasy (**ŚLEPA ULICZKA**).
+- **DECYZJA** 2026-11-02: czasy zamykania skrócone z 1800/300/180 do 1200/180/120 klatek (start,
+  cykl, miganie): rundy z botami trwają ok. 3100 klatek zamiast ok. 4900; kosztem są remisy
+  (14% zamiast 7%, bo ocaleni giną w ostatnim kroku razem). Okno migania 120 klatek wystarcza
+  na ucieczkę z korytarza długiego na 7 pól; dłuższa ślepa uliczka na skraju areny kończy się
+  śmiercią.

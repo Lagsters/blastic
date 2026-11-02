@@ -808,9 +808,9 @@ end
 
 -- ── arena shrink ──────────────────────────────────────────────────────────────
 
-SHRINK_DELAY=1800
-SHRINK_PAUSE=120
-SHRINK_WARN=180
+SHRINK_DELAY=1200
+SHRINK_PAUSE=60
+SHRINK_WARN=120
 SHRINK_CYCLE=SHRINK_PAUSE+SHRINK_WARN
 local WARN_COL=9
 local WARN_SLOWEST,WARN_FASTEST=24,4

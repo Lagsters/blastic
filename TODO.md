@@ -5,8 +5,8 @@
   ucieczki z czasem, zbieranie bonusów, bomba na wroga w linii, polowanie na pułapki).
 - Zamykanie areny: boki do kwadratu, potem obrys równo (miganie coraz szybsze); boty uciekają w głąb.
 - Skos narożników w symulacji botów usunięty (losowa kolejność kierunków BFS), patrz `HISTORY.md`.
-- NASTĘPNY KROK: decyzja o długości rund (ok. 3700 klatek; krótszy `SHRINK_DELAY` albo mniej rund
-  w bramce, bo `check.py` trwa kilka minut), potem zagranie z żywym człowiekiem.
+- NASTĘPNY KROK: zagranie z żywym człowiekiem (tempo rund ok. 3100 klatek, remisy 14%, czas
+  zamykania do strojenia), potem PR po `audit`.
 
 ## Sesja 2026-11-01
 - Zrobione: wszystkie funkcje areny (łańcuch, bonusy, bot BFS, HUD i mecz, zamykająca się arena,

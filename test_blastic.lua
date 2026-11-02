@@ -511,8 +511,8 @@ new_game()
 for _,id in ipairs({1,4}) do env.players[id].alive=false end
 env.bombs={}; env.powerups={}
 for r=1,env.H-2 do for c=1,env.W-2 do env.map[r][c]=env.T_WALL end end
-for r=1,9 do env.map[r][1]=env.T_EMPTY end
-for c=1,6 do env.map[9][c]=env.T_EMPTY end
+for r=1,7 do env.map[r][1]=env.T_EMPTY end
+for c=1,4 do env.map[7][c]=env.T_EMPTY end
 local shrink_bot=env.players[3]
 shrink_bot.c,shrink_bot.r=1,1
 shrink_bot.x,shrink_bot.y=env.gpx(1),env.gpy(1)
