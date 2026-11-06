@@ -70,3 +70,12 @@ Format wpisu: **FAKT** / **DECYZJA** / **ŚLEPA ULICZKA**, data, jedno–dwa zda
   Błąd nienaprawiony (osobne zadanie).
 - **FAKT** 2026-11-06: w TIC-80 1.4.1 na Windows przechwytywanie okna przez gdigrab po tytule daje
   stałą klatkę; zrzut pulpitu (`-i desktop`) pokazuje stan faktyczny.
+- **ŚLEPA ULICZKA** 2026-11-06: muzyka z MusicGen-small (dwie serie po kilka prób, także z opisem
+  „gitary z przodu”): właściciel odrzucił, brak przekonujących gitar; ACE-Step 1.5 nie zmieścił się
+  na dysku. Synteza basu (Karplus-Strong) brzmiała sztucznie. Zostały próbki gitary basowej z
+  GeneralUser GS (Finger/Slap Bass) i synteza reszty w `compose.py`.
+- **FAKT** 2026-11-06: wzorzec brzmienia to Jaguar XJ220 (Amiga). Jego bas ma słabą podstawę i
+  harmoniczne 2–4 o 12–20 dB mocniejsze, energię w 60–250 Hz i wybrzmienie ok. 300 ms; bas w E1
+  (41 Hz) na głośnikach laptopa jest niesłyszalny, dlatego riff gra od E2.
+- **FAKT** 2026-11-06: utwór z kodu ma 32 takty z 8 typów; podmiana taktów w `wav2tic.py`
+  przypisuje je bezbłędnie i daje SNR 26 dB przy 60 s w 57,7 KB (ciągła pętla zmieściłaby 15,9 s).

@@ -1,10 +1,11 @@
 # Stan prac
 
 ## Sesja 2026-11-06 (gałąź `amiga-music`)
-- Zrobione: muzyka w klimacie Amigi z MusicGen (lokalnie, GPU), konwerter WAV → IMA ADPCM
+- Zrobione: 60-sekundowa piosenka w klimacie Jaguar XJ220 (bas z próbek, synth, perkusja) z
+  `tools/music/compose.py`, konwerter WAV → IMA ADPCM z listą kolejności taktów
   (`tools/music/wav2tic.py`), odtwarzanie przez kanał PCM TIC-80 1.4, `music.bin` w carcie.
-  Sprawdzone w TIC-80 1.4.1: nagranie wyjścia audio koreluje z pętlą i zawija się na końcu.
-- Do oceny przez człowieka: brzmienie, głośność muzyki względem efektów (`--gain`, teraz 0.8).
+  Brzmienie zaakceptowane przez właściciela (odsłuch).
+- Do oceny przez człowieka: głośność muzyki względem efektów (`--gain` 1.0, mało zapasu dla SFX).
 - Do sprawdzenia: czy rdzeń libretro TIC-80 w Melancholy to wersja 1.4+ (starsza nie ma PCM: cisza).
 - NASTĘPNY KROK: issue dla tej zmiany i dla błędnych adresów SFX w `initAudio`, potem PR po `audit`.
 

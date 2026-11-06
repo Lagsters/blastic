@@ -45,7 +45,7 @@ Rozstrzygają każdy spór, w tej kolejności.
 | `sim_blastic.lua` | symulator czterech botów bez grafiki, z niezmiennikami |
 | `make_tic.py` | buduje `.tic`: chunk kodu i `music.bin` (wolny TIC-80 nie zapisuje `.lua`) |
 | `music.bin` | muzyka: IMA ADPCM, 7680 Hz, w RAM od `0x04000` (kafle, sprite'y, mapa) i od `0x11164` (wzorce, ścieżki) |
-| `tools/music/` | `gen_music.py` (MusicGen), `wav2tic.py` (WAV → `music.bin`), `source.flac` (źródło) |
+| `tools/music/` | `compose.py` (utwór w kodzie, bas z próbek GeneralUser GS), `wav2tic.py` (WAV → `music.bin`) |
 | `check.py` | bramka „gotowe” |
 
 - Statystyki gracza (`stats.bombs`, `stats.len`) są w `players[i].stats`; `humans[i]` mówi, czy
@@ -61,7 +61,7 @@ Rozstrzygają każdy spór, w tej kolejności.
 | `lua test_blastic.lua` | testy logiki |
 | `lua sim_blastic.lua [rund] [ziarno]` | symulacja botów |
 | `python make_tic.py` | build `blastic.tic` |
-| `python tools/music/wav2tic.py tools/music/source.flac music.bin --bars 8 --slice 4` | konwersja muzyki (torch niepotrzebny; numpy, scipy, librosa, soundfile) |
+| `python tools/music/compose.py song.wav GeneralUser-GS.sf2` + `python tools/music/wav2tic.py song.wav music.bin --loop-bars 32 --slice 4 --gain 1.0` | muzyka (numpy, scipy, soundfile, tinysoundfont, librosa; SoundFont spoza repo) |
 | `lua tools/shot.lua <dir>` + `python tools/shot.py <dir> <out>` | screeny tytułu i rozgrywki z kodu gry (napisy dorysowuje Pillow, więc krój pisma różni się od TIC-80) |
 
 Lua 5.4, jak `lua5.4` w CI na Ubuntu 24.04. Windows: `winget install DEVCOM.Lua`.

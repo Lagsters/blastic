@@ -2,3 +2,4 @@
 .local/
 *.binary
 .claude/worktrees/
+__pycache__/

@@ -118,29 +118,38 @@ def main():
     ap.add_argument("--start-bar", type=int, default=1)
     ap.add_argument("--slice", type=int, default=1, help="slice length in beats")
     ap.add_argument("--gain", type=float, default=0.8, help="peak level, leaves headroom for SFX")
+    ap.add_argument("--loop-bars", type=int, default=0,
+                    help="the whole input is an exact loop of N 4-beat bars (no beat tracking, no fade)")
     ap.add_argument("--preview")
     a = ap.parse_args()
 
     y, sr = librosa.load(a.inp, sr=None, mono=True)
-    tempo, beats = librosa.beat.beat_track(y=y, sr=sr, units="time")
-    tempo = float(np.atleast_1d(tempo)[0])
-    # A fixed grid from the median beat interval: equal slices need a constant tempo.
-    period = float(np.median(np.diff(beats)))
-    phase = float(np.median((beats - beats[0]) % period)) + beats[0]
     x = resample_poly(y, RATE, sr)
     x = x / np.max(np.abs(x)) * a.gain * 32767
-    slice_len = int(round(period * a.slice * RATE)) & ~1
-    first = int(round((phase + (a.start_bar * 4 * period)) * RATE))
-    avail = (len(x) - first) // slice_len
-    per_bar = 4 // a.slice if a.slice <= 4 else 1
-    n = avail - avail % per_bar
-    if a.bars: n = min(n, a.bars * per_bar)
-    end = first + n * slice_len
-    # The loop end fades into the audio just before the loop start, so the jump back is seamless.
-    fade = min(SEAM, first)
-    ramp = np.linspace(0, 1, fade)
-    x[end - fade:end] = x[end - fade:end] * (1 - ramp) + x[first - fade:first] * ramp
-    slices = [x[first + i * slice_len: first + (i + 1) * slice_len] for i in range(n)]
+    if a.loop_bars:
+        tempo = 60 * a.loop_bars * 4 * RATE / len(x)
+        period = len(x) / RATE / (a.loop_bars * 4)
+        slice_len = len(x) // (a.loop_bars * 4 // a.slice) & ~1
+        n = a.loop_bars * 4 // a.slice
+        slices = [x[i * slice_len:(i + 1) * slice_len] for i in range(n)]
+    else:
+        tempo, beats = librosa.beat.beat_track(y=y, sr=sr, units="time")
+        tempo = float(np.atleast_1d(tempo)[0])
+        # A fixed grid from the median beat interval: equal slices need a constant tempo.
+        period = float(np.median(np.diff(beats)))
+        phase = float(np.median((beats - beats[0]) % period)) + beats[0]
+        slice_len = int(round(period * a.slice * RATE)) & ~1
+        first = int(round((phase + (a.start_bar * 4 * period)) * RATE))
+        avail = (len(x) - first) // slice_len
+        per_bar = 4 // a.slice if a.slice <= 4 else 1
+        n = avail - avail % per_bar
+        if a.bars: n = min(n, a.bars * per_bar)
+        end = first + n * slice_len
+        # The loop end fades into the audio just before the loop start, so the jump back is seamless.
+        fade = min(SEAM, first)
+        ramp = np.linspace(0, 1, fade)
+        x[end - fade:end] = x[end - fade:end] * (1 - ramp) + x[first - fade:first] * ramp
+        slices = [x[first + i * slice_len: first + (i + 1) * slice_len] for i in range(n)]
 
     header = 4 + n
     cost = slice_len // 2 + 3
