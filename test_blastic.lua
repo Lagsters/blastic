@@ -1261,75 +1261,89 @@ local flat=true
 for i=0,15 do if pokes[0x0FFE4+i]~=0 then flat=false end end
 check("wave 0 is TIC-80 noise (a flat zero wave)", flat)
 
--- Muzyka: blob z wav2tic.py w pamięci, jak go układa make_tic.py; zbieramy bajty kanału PCM.
+-- Muzyka: próbki z tools/music/instruments.py w pamięci od 0x04000; zbieramy bajty kanału PCM.
 local PCM=0x14E24
-local function music_stream(blob,frames)
+local function music_game(blob)
   local mem={}
-  for i=1,#blob do
-    local off=i-1
-    local addr=off<0xBF80 and 0x04000+off or 0x11164+off-0xBF80
-    mem[addr]=blob:byte(i)
-  end
+  for i=1,#blob do mem[0x04000+i-1]=blob:byte(i) end
   local stream={}
   local e=fresh_game(function(addr,v)
     if addr>=PCM and addr<PCM+128 then stream[#stream+1]=v end
   end,function() end)
   e.peek=function(addr) return mem[addr] or 0 end
-  e.sndExplosion=function() end  -- bots' bombs would mix into the stream
-  for _=1,frames do e.TIC() end
-  return stream
+  return e,stream
 end
 
--- len 4, 2 plastry, kolejność {1,0,1}, bez wybuchu; plaster 0: pred 0, indeks 88, kody 7,15,0,8;
--- plaster 1: pred 2560, indeks 0, kody 0 (krok 7>>3=0, stoi na 2560 -> 138).
-local tiny=string.char(4,0, 2,3, 0,0,0,0, 1,0,1, 0,0,88, 0,10,0, 0xF7,0x80, 0,0)
-local s=music_stream(tiny,2)
-local cycle={138,138,138,138, 255,16,32,17, 138,138,138,138}
-local same=#s==128
-for i=1,#s do same=same and s[i]==cycle[(i-1)%12+1] end
-check("music decodes IMA ADPCM slices in order and loops", same,
-      "got "..table.concat(s,",",1,math.min(#s,16)))
+-- 8 próbek po 4 kody 7,15,0,8 z pred 0 i indeksem 88: 32767, -28669, -24574, -28298 (krok
+-- spada do 87 po kodzie 0), czyli po //256: 127, -112, -96, -111
+local tiny={8}
+for k=1,8 do local o=33+(k-1)*5 tiny[#tiny+1]=o&255 tiny[#tiny+1]=o>>8 tiny[#tiny+1]=4 tiny[#tiny+1]=0 end
+for _=1,8 do for _,v in ipairs({0,0,88,0xF7,0x80}) do tiny[#tiny+1]=v end end
+local te=music_game(string.char(table.unpack(tiny)))
+te.startMusic()
+check("samples decode from IMA ADPCM", te.SMP.kick and table.concat(te.SMP.kick,",")=="127,-112,-96,-111",
+      te.SMP.kick and table.concat(te.SMP.kick,","))
 
 local f=io.open("music.bin","rb")
 local blob=f:read("a"); f:close()
-local len=blob:byte(1)|blob:byte(2)<<8
-local loop=len*blob:byte(4)
-check("music.bin carries the explosion", (blob:byte(5)|blob:byte(6)<<8)>0 and (blob:byte(7)|blob:byte(8)<<8)>0)
-local frames=(loop*2)//128+2
-local st=music_stream(blob,frames)
-local repeats,varies=#st>=loop*2,false
-for i=1,loop do
-  if st[i]~=st[i+loop] then repeats=false break end
-  if st[i]~=st[1] then varies=true end
+local me,stream=music_game(blob)
+me.sndExplosion=function() end  -- bots' bombs would mix into the stream
+me.startMusic()
+local all=true
+for _,name in ipairs({"bass","slap","ghost","kick","snare","hat","ohat","boom"}) do
+  if not me.SMP[name] or #me.SMP[name]<100 then all=false end
 end
--- Ten sam blob z wybuchem na końcu: 2 próbki, pred 2560 (bajt 10), kody 0; muzyka ściszona
--- o połowę na czas wybuchu: 128 + (138-128)//2 + 10 = 143.
-local with_boom=string.char(4,0, 2,3, 21,0,2,0, 1,0,1, 0,0,88, 0,10,0, 0xF7,0x80, 0,0, 0,10,0, 0)
-local mixed
-do
-  local mem={}
-  for i=1,#with_boom do mem[0x04000+i-1]=with_boom:byte(i) end
-  local frames={}
-  local e=fresh_game(function(addr,v)
-    if addr>=PCM and addr<PCM+128 then frames[#frames+1]=v end
-  end,function() end)
-  e.peek=function(addr) return mem[addr] or 0 end
-  e.TIC(); e.TIC()
-  frames={}
-  e.sndExplosion()
-  e.TIC()
-  mixed=frames
-end
-check("explosion mixes over the halved music for its length",
-      mixed[1]==143 and mixed[2]==143 and mixed[3]==cycle[11],
-      "got "..table.concat(mixed,",",1,4))
+check("music.bin holds every instrument sample", all)
+for _=1,60 do me.TIC() end
+local varies=false
+for i=2,#stream do if stream[i]~=stream[1] then varies=true break end end
+check("the tracker plays", #stream==60*128 and varies)
 
-check("music.bin uses the patterns region", #blob>0xBF80, "size "..#blob)
-check("music.bin loop repeats byte for byte", repeats and varies)
+-- short songs: the next one starts two bars before the end and they cross-fade
+me.SONG_BARS=4
+me.musicSeqs={}
+me.startSong(1,false)
+for _=1,300 do me.TIC() end
+local s1,s2=me.musicSeqs[1],me.musicSeqs[2]
+check("the next song cross-fades in", #me.musicSeqs==2 and s1.n==1 and s2.n==2
+      and s1.gain<1 and s2.gain>0 and math.abs(s1.gain+s2.gain-1)<0.05,
+      ("seqs=%d"):format(#me.musicSeqs))
+for _=1,900 do me.TIC() end
+local old=false
+for _,s in ipairs(me.musicSeqs) do if s.n==1 then old=true end end
+check("songs follow one another instead of looping", not old and me.musicSeqs[1].n>=3)
+me.musicSeqs={}
+me.startSong(#me.SONGS,false)
+for _=1,600 do me.TIC() end
+local wrapped=false
+for _,s in ipairs(me.musicSeqs) do if s.n==1 then wrapped=true end end
+check("after the last song the first comes back", wrapped)
+
+-- the music ducks to half under an explosion
+local function frame_after(boom_it)
+  local e,st=music_game(blob)
+  e.startMusic()
+  for _=1,30 do e.TIC() end
+  local from=#st
+  if boom_it then e.sndExplosion() end
+  e.TIC()
+  local out={}
+  for i=from+1,#st do out[#out+1]=st[i]-128 end
+  return out,e.SMP.boom
+end
+local plain=frame_after(false)
+local mixed,bs=frame_after(true)
+local ducked=#plain==128
+for i=1,128 do
+  local want=math.max(-128,math.min(127,(plain[i]/2+bs[i])//1))
+  if math.abs(mixed[i]-want)>1 then ducked=false end
+end
+check("the music ducks to half under an explosion", ducked)
 
 -- ── TEST: campaign ────────────────────────────────────────────────────────────
 
 io.write("\n=== campaign ===\n")
+;(function()  -- own function: the main chunk is near Lua's 200-local limit
 
 -- press Z every frame until the state is `want` (scenes and the world map wait for it)
 local function skip_to(want,max)
@@ -1338,6 +1352,11 @@ local function skip_to(want,max)
     press_frame(4)
   end
   return env.state==want
+end
+
+-- the first stage matching pred(stage definition)
+local function find_stage(pred)
+  for n,st in ipairs(env.STAGES) do if pred(st,n) then return n end end
 end
 
 local function has_hidden(kind)
@@ -1360,17 +1379,17 @@ check("story opens with the intro scene", env.state=="scene" and env.mode=="camp
 check("story start saves the chapter", env.pmem(env.SAVE_SLOT)==1)
 check("the intro ends on the world map", skip_to("map"))
 check("the world map leads into stage 1", skip_to("game") and env.camp.stage==1)
-check("stage 1 scrolls sideways on a wider map", env.W==62 and env.H==18, ("W=%d H=%d"):format(env.W,env.H))
+check("stage 1 scrolls vertically on a taller map", env.W==32 and env.H==34, ("W=%d H=%d"):format(env.W,env.H))
 check("chapter 1 has only Aldric", #env.players==1 and env.players[1].team==1)
-check("stage 1 has its goblins", #env.monsters==3, "monsters="..#env.monsters)
+check("stage 1 has its goblins", #env.monsters==env.STAGES[1][4], "monsters="..#env.monsters)
 check("stage 1 hides an exit", has_hidden("X"))
 
--- the camera follows Aldric along x only, within the map
+-- the camera follows Aldric along the stage's one axis, within the map
 local hero=env.players[1]
-hero.x=env.gpx(40); hero.c=40
+hero.y=env.gpy(25); hero.r=25
 env.TIC()
-check("the camera follows the hero sideways",
-      env.camX>0 and env.camX<=(env.W-2)*env.TILE-240 and env.camY==0,
+check("the camera follows the hero along one axis",
+      env.camY>0 and env.camY<=(env.H-2)*env.TILE-128 and env.camX==0,
       ("camX=%d camY=%d"):format(env.camX,env.camY))
 
 -- a crate hiding the exit drops it, and a later blast does not destroy it
@@ -1428,35 +1447,39 @@ local bat=env.monsters[1]
 check("a bat chases the hero", bat and math.abs(bat.c-hero.c)+math.abs(bat.r-hero.r)<d0)
 
 -- goals: keys, all enemies, surviving the walls
-env.startStage(3)
+env.startStage(find_stage(function(st) return st[2]=="keys" end))
 for _=1,3 do
   local h=env.players[1]
   env.powerups={{c=h.c,r=h.r,kind="K"}}
   env.TIC()
 end
 check("three keys clear a keys stage", env.state=="clear", "keys="..env.camp.keys)
-env.startStage(2)
+env.startStage(find_stage(function(st) return st[2]=="enemies" end))
 env.monsters={}
 env.TIC()
 check("no monsters left clears an enemies stage", env.state=="clear")
-env.startStage(7)
+env.startStage(find_stage(function(st) return st[2]=="survive" end))
 env.monsters={}
-env.shrinkDone=true
+env.zoneSteps=env.SURVIVE_STEPS-1
 env.TIC()
-check("a stopped zone clears a survive stage", env.state=="clear")
+check("a survive stage goes on until the zone has stepped in enough", env.state=="game")
+env.zoneSteps=env.SURVIVE_STEPS
+env.TIC()
+check("surviving the zone's steps clears a survive stage", env.state=="clear")
 
 -- chapter 2+: Elena fights along, a bot ally unless Story 2P
+local ch2=find_stage(function(st) return st[1]==2 and not st[7] end)
 env.camp.coop=false
-env.startStage(5)
+env.startStage(ch2)
 local elena=env.players[2]
 check("Elena joins from chapter 2 as a bot ally", elena and elena.team==1 and not elena.human)
 env.camp.coop=true
-env.startStage(5)
+env.startStage(ch2)
 check("in Story 2P Elena is player 2", env.players[2].human==true and env.players[2].id==2)
 env.camp.coop=false
 
 -- teams: the ally hunts monsters and skeletons, never Aldric; skeletons hunt the heroes
-env.startStage(9)
+env.startStage(find_stage(function(st) return st[6]>0 end))
 local al,el,sk=env.players[1],env.players[2],env.players[3]
 env.monsters={{kind="g",c=al.c+3,r=al.r,x=0,y=0,d={0,0}}}
 check("Elena does not target Aldric", not env.foeAt(el,al.c,al.r))
@@ -1469,9 +1492,9 @@ env.TIC()
 check("skeletons leave quest items", env.camp.keys==0 and #env.powerups>=1)
 
 -- bosses: blasts hurt them with a pause between hits; the dragon's egg wins too
-env.startStage(4)
+env.startStage(5)
 local b=env.boss
-check("the troll waits in the middle", b and b.kind=="troll" and b.hp==env.BOSS_HP.troll)
+check("stage 5 is the first troll fight", b and b.kind=="troll" and b.hp==env.BOSS_HP.troll)
 env.blasts={{c=b.c,r=b.r,t=30}}
 env.TIC()
 check("a blast hurts the boss once", b.hp==env.BOSS_HP.troll-1 and b.inv>0)
@@ -1481,7 +1504,7 @@ b.hp,b.inv=1,0
 env.blasts={{c=b.c,r=b.r,t=30}}
 env.TIC()
 check("defeating the boss clears the stage", env.state=="clear")
-env.startStage(12)
+env.startStage(find_stage(function(st) return st[7]=="dragon" end))
 check("the dragon's egg is hidden", has_hidden("E"))
 local h=env.players[1]
 env.powerups={{c=h.c,r=h.r,kind="E"}}
@@ -1490,15 +1513,61 @@ check("returning the egg befriends the dragon", env.camp.friend and env.state=="
 env.camp.friend=false
 
 -- running out of lives ends the story; it continues from the saved chapter
-env.startStage(6)
+env.startStage(ch2)
 env.camp.lives=1
 for _,p in ipairs(env.players) do p.alive=false end
 env.TIC()
 check("losing the last life is game over", env.state=="gameover")
 check("game over returns to the title", skip_to("title"))
-_pmem[env.SAVE_SLOT]=5
+_pmem[env.SAVE_SLOT]=30
 env.startCampaign(false)
-check("the story continues from the saved chapter", env.camp.stage==5 and env.state=="scene")
+check("the story continues from the saved stage", env.camp.stage==30 and env.state=="map")
+_pmem[env.SAVE_SLOT]=26
+env.startCampaign(false)
+check("a saved chapter start replays its scene", env.camp.stage==26 and env.state=="scene")
+
+-- 100 stages in 4 chapters; every 5th a boss, the chapter's own at its end, Morgath last
+local bosses,last_ok=0,true
+for n,st in ipairs(env.STAGES) do
+  if (n%5==0)~=(st[2]=="boss") then last_ok=false end
+  if st[7] then bosses=bosses+1 end
+end
+check("100 stages, a boss on every 5th", #env.STAGES==100 and bosses==20 and last_ok)
+check("chapter bosses end their chapters", env.STAGES[25][7]=="troll" and env.STAGES[50][7]=="witch"
+      and env.STAGES[75][7]=="dragon" and env.STAGES[100][7]=="morgath")
+local m1,m99=env.STAGES[1][4]+env.STAGES[1][5]+env.STAGES[1][6],env.STAGES[99][4]+env.STAGES[99][5]+env.STAGES[99][6]
+check("later stages have more monsters", m99>m1, ("%d -> %d"):format(m1,m99))
+
+-- a hero bot digs towards the sparkling crate that hides a quest item
+env.startStage(1)
+local digger=env.players[1]
+for r=1,env.H-2 do for c=1,env.W-2 do env.map[r][c]=env.T_EMPTY end end
+for r=1,env.H-2 do env.map[r][8]=env.T_BLOCK end
+env.hidden={[8*100+20]="X"}
+env.monsters,env.bombs,env.powerups={},{},{}
+local qd=env.botQuestDir(digger,{})
+check("a hero bot heads for the sparkling crate", qd and qd[2]==1,
+      qd and ("dir %d,%d"):format(qd[1],qd[2]) or "nil")
+
+-- the closing zone crushes monsters too
+env.startStage(1)
+env.monsters={{kind="g",c=1,r=1,x=env.gpx(1),y=env.gpy(1),d={0,0}},{kind="b",c=5,r=5,x=0,y=0,d={0,0}}}
+env.roundFrames=env.shrinkAt-1
+env.shrinkAt=env.roundFrames+1
+env.updateShrink()
+check("the closing zone crushes monsters on it", #env.monsters==1 and env.monsters[1].c==5)
+
+-- a hero bot keeps away from monsters
+env.camp.coop=false
+env.startStage(ch2)
+local ally=env.players[2]
+for r=1,env.H-2 do for c=1,env.W-2 do if env.map[r][c]~=env.T_WALL then env.map[r][c]=env.T_EMPTY end end end
+env.monsters={{kind="g",c=ally.c+1,r=ally.r,x=0,y=0,d={0,0}}}
+env.bombs,env.powerups={},{}
+for _=1,16 do env.TIC() end
+local mon=env.monsters[1]
+check("a hero bot steps away from a monster",
+      ally.alive and math.abs(ally.c-mon.c)+math.abs(ally.r-mon.r)>=2, ("ally %d,%d"):format(ally.c,ally.r))
 
 -- the last boss leads into the ending, which clears the save
 env.startStage(#env.STAGES)
@@ -1521,6 +1590,8 @@ end
 check("scene dialogue types out", #shown==4 and #shown[1]>0 and #shown[4]>#shown[1])
 skip_to("title")
 env.mode="pvp"
+
+end)()
 
 -- ── Summary ───────────────────────────────────────────────────────────────────
 

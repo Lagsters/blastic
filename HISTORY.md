@@ -90,3 +90,11 @@ Format wpisu: **FAKT** / **DECYZJA** / **ŚLEPA ULICZKA**, data, jedno–dwa zda
 - **DECYZJA** 2026-11-07: kampania „Not Your Princess” (nowoczesna baśń w starym stylu): 4
   rozdziały po 3 etapy i bossie, Elena dołącza od rozdziału 2; etapy to wiersze parametrów w
   `STAGES`, mapy z generatora; plansze przewijają się w jednej osi.
+- **DECYZJA** 2026-11-07: muzyka to tracker w Lua: 12 utworów z parametrów (tempo, tonacja,
+  progresja, riff, perkusja, melodia) grane po kolei z przenikaniem 2 taktów; próbki 9 KB zamiast
+  57 KB nagrania jednej piosenki. Zastąpił pętlę PCM (zbyt monotonna według właściciela).
+- **FAKT** 2026-11-07: kampania ma 100 etapów z generatora `stageDef`. Symulacja (`sim_campaign.lua`)
+  pokazała: wyjście ukryte o 1/3 mapy od startu wymagało ponad 2 minut kopania; etapy „przetrwaj”
+  do zatrzymania strefy nie przechodziły (0 przejść); bot oscylował między dwoma równie dobrymi
+  celami. Poprawki: przedmioty o 1/4 mapy, iskierka na skrzyni z przedmiotem, „przetrwaj” = 5
+  kroków strefy, remis celów rozstrzyga bliższa droga.

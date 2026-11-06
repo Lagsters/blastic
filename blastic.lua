@@ -123,13 +123,12 @@ local function initPlayers()
 end
 
 -- ── muzyka ───────────────────────────────────────────────────────────────────
--- Blob z tools/music/wav2tic.py: muzyka w IMA ADPCM, plastry po takcie i lista kolejności, jak w
--- module, oraz próbka wybuchu. Mikser sumuje oba głosy w kanale PCM TIC-80 1.4, który gra co
--- klatkę 128 bajtów z 0x14E24 (7680 Hz) i sam je zeruje.
--- Dane zajmują TILES+SPRITES+MAP i MUSIC PATTERNS+TRACKS: tych obszarów nie wolno używać na grafikę ani music().
-local PCM=0x14E24
-local MUSIC_LOW,MUSIC_LOW_SIZE,MUSIC_HIGH=0x04000,0xBF80,0x11164
-local HEADER=8
+-- Tracker jak moduł z Amigi: próbki z tools/music/instruments.py (bas z GeneralUser GS,
+-- perkusja, wybuch) i oscylatory padu i melodii, miksowane w kanale PCM TIC-80 1.4, który gra
+-- co klatkę 128 bajtów z 0x14E24 (7680 Hz) i sam je zeruje. 12 utworów gra po kolei; ostatnie
+-- dwa takty utworu przenikają się z początkiem następnego.
+-- Próbki leżą w TILES+SPRITES: tych obszarów nie wolno używać na grafikę.
+local PCM,RATE,MUSIC_RAM=0x14E24,7680,0x04000
 local ADPCM_STEPS={7,8,9,10,11,12,13,14,16,17,19,21,23,25,28,31,34,37,41,45,50,55,
   60,66,73,80,88,97,107,118,130,143,157,173,190,209,230,253,279,307,337,
   371,408,449,494,544,598,658,724,796,876,963,1060,1166,1282,1411,1552,
@@ -137,80 +136,198 @@ local ADPCM_STEPS={7,8,9,10,11,12,13,14,16,17,19,21,23,25,28,31,34,37,41,45,50,5
   6484,7132,7845,8630,9493,10442,11487,12635,13899,15289,16818,18500,20350,
   22385,24623,27086,29794,32767}
 local ADPCM_INDEX={-1,-1,-1,-1,2,4,6,8}
-local music,boom=nil,nil
+local SAMPLE_NAMES={"bass","slap","ghost","kick","snare","hat","ohat","boom"}
+local BASS_NOTE=40  -- the bass samples are E2
+SMP={}
 
-local function musicByte(off)
-  if off<MUSIC_LOW_SIZE then return peek(MUSIC_LOW+off) end
-  return peek(MUSIC_HIGH+off-MUSIC_LOW_SIZE)
+local function ramWord(off)
+  return peek(MUSIC_RAM+off)|peek(MUSIC_RAM+off+1)<<8
 end
 
-local function musicWord(off)
-  return musicByte(off)|musicByte(off+1)<<8
+-- one IMA ADPCM sample from a 3-byte header (s16 predictor, u8 step index) and its nibbles
+local function decodeSample(off,len)
+  local pred,idx,out=ramWord(off),peek(MUSIC_RAM+off+2),{}
+  if pred>32767 then pred=pred-65536 end
+  for i=0,len-1 do
+    local code=peek(MUSIC_RAM+off+3+(i>>1))
+    if i&1==1 then code=code>>4 else code=code&15 end
+    local step=ADPCM_STEPS[idx+1]
+    local d=step>>3
+    if code&4~=0 then d=d+step end
+    if code&2~=0 then d=d+(step>>1) end
+    if code&1~=0 then d=d+(step>>2) end
+    if code&8~=0 then d=-d end
+    pred=math.max(-32768,math.min(32767,pred+d))
+    idx=math.max(0,math.min(88,idx+ADPCM_INDEX[(code&7)+1]))
+    out[i+1]=pred//256
+  end
+  return out
 end
 
--- voice state from a 3-byte header (s16 predictor, u8 step index) followed by nibbles
-local function startVoice(v,h)
-  v.pred=musicWord(h)
-  if v.pred>32767 then v.pred=v.pred-65536 end
-  v.idx=musicByte(h+2)
-  v.i=0
+local function loadSamples()
+  if peek(MUSIC_RAM)~=#SAMPLE_NAMES then return end
+  for k,name in ipairs(SAMPLE_NAMES) do
+    SMP[name]=decodeSample(ramWord(1+(k-1)*4),ramWord(3+(k-1)*4))
+  end
 end
 
-local function nextSample(v)
-  local n=v.nibble+v.i
-  local code=musicByte(n>>1)
-  if n&1==1 then code=code>>4 else code=code&15 end
-  local step=ADPCM_STEPS[v.idx+1]
-  local d=step>>3
-  if code&4~=0 then d=d+step end
-  if code&2~=0 then d=d+(step>>1) end
-  if code&1~=0 then d=d+(step>>2) end
-  if code&8~=0 then d=-d end
-  v.pred=math.max(-32768,math.min(32767,v.pred+d))
-  v.idx=math.max(0,math.min(88,v.idx+ADPCM_INDEX[(code&7)+1]))
-  v.i=v.i+1
-  return v.pred//256
+-- songs: bpm, bass key (MIDI), progression, bass riff, drums, melody seed
+SONGS={
+  {128,40,1,1,1,1},{124,43,2,2,1,2},{132,45,3,1,2,3},{120,38,1,3,3,4},
+  {136,40,4,2,2,5},{126,41,2,1,1,6},{130,43,3,3,1,7},{122,45,4,1,3,8},
+  {134,38,1,2,2,9},{128,36,2,3,1,10},{124,40,3,1,2,11},{132,43,4,2,1,12},
+}
+SONG_BARS=32
+local CHORD={m={0,3,7},M={0,4,7},s={0,4,10}}
+-- 8 bars each: bass root offset from the key and chord type
+local PROGS={
+  {{0,"m"},{0,"m"},{-4,"M"},{-2,"M"},{0,"m"},{0,"m"},{5,"m"},{-5,"s"}},
+  {{0,"m"},{-2,"M"},{-4,"M"},{-5,"s"},{0,"m"},{-2,"M"},{-4,"M"},{-5,"s"}},
+  {{0,"m"},{5,"m"},{-2,"M"},{3,"M"},{0,"m"},{5,"m"},{-5,"s"},{-5,"s"}},
+  {{0,"m"},{-4,"M"},{5,"m"},{-2,"M"},{0,"m"},{-4,"M"},{-2,"M"},{-5,"s"}},
+}
+-- bass riffs, one character per 16th: n note, g ghost, p slap, b -2, f -5, d -4, u +3, w +2,
+-- o slap an octave up, B/F slap -2/-1; the last bar of every 8 plays the fill
+local RIFF_NOTE={n={0,"bass"},g={0,"ghost"},p={0,"slap"},b={-2,"bass"},f={-5,"bass"},d={-4,"bass"},
+  u={3,"bass"},w={2,"bass"},o={12,"slap"},B={-2,"slap"},F={-1,"slap"}}
+local RIFFS={"n.gp.ngb.npgf.bp","n.n.gpn.b.npg.fp","n..gn.pgn..gb.op"}
+local FILL="ngpgbdfpbfpuwnBF"
+-- drums: kick/snare line (K kick, S snare, X both) and hat line (H loud, h soft, O open)
+local DRUMS={{"K...S.K...K.S...","HhHhHhOhHhHhHhOh"},{"K...X...K...X...","..H...H...H...H."},
+  {"K.....K.S.....K.","HhHhHhHhHhHhHhHh"}}
+local RHYTHMS={{{0,3},{3,3},{6,2},{8,6}},{{0,2},{2,2},{4,4},{8,8}},{{0,3},{4,2},{6,2},{8,4},{12,4}}}
+
+local voices,duck={},0
+musicSeqs={}
+
+local function midiStep(m) return 440*2^((m-69)/12)/RATE end
+
+local function playSample(name,rate,gain,seq)
+  local s=SMP[name]
+  if not s then return nil end
+  local v={s=s,pos=1,rate=rate,g=gain,seq=seq}
+  voices[#voices+1]=v
+  return v
 end
 
-local function startSlice(m)
-  local s=musicByte(HEADER+m.pos)
-  startVoice(m,HEADER+m.orders+3*s)
-  m.nibble=(m.data+s*m.len//2)*2
+-- oscillator voice: saw (pad) or 30% pulse (melody) through a one-pole low-pass
+local function playOsc(saw,midi,len,gain,seq,alpha)
+  voices[#voices+1]={saw=saw,ph=0,inc=midiStep(midi),len=len,t=0,g=gain,seq=seq,lp=0,a=alpha}
 end
 
-local function startMusic()
-  local len=musicWord(0)
-  if len==0 then music=nil return end
-  local slices,orders=musicByte(2),musicByte(3)
-  music={len=len,orders=orders,data=HEADER+orders+3*slices,pos=0}
-  startSlice(music)
+-- the melody of one song: per bar of the progression, notes on its chord tones
+local function melody(song)
+  local seed,mel=song[6]*7919,{}
+  local rhythm=RHYTHMS[song[6]%3+1]
+  for bar=1,8 do
+    local p=PROGS[song[3]][bar]
+    local tones=CHORD[p[2]]
+    mel[bar]={}
+    for _,r in ipairs(rhythm) do
+      seed=(seed*1103+12345)%65536
+      local k=seed%4
+      mel[bar][r[1]]={r[2],song[2]+24+p[1]+(k==3 and 12 or tones[k+1])}
+    end
+  end
+  return mel
+end
+
+function startSong(n,fadeIn)
+  local song=SONGS[n]
+  local spb=RATE*60/song[1]/4
+  local seq={n=n,song=song,bar=1,step=0,cnt=0,spb=spb,mel=melody(song),
+    gain=fadeIn and 0 or 1,fade=fadeIn and 1/(32*spb) or 0}
+  musicSeqs[#musicSeqs+1]=seq
+  return seq
+end
+
+local function trigger(seq)
+  local song,bar,step=seq.song,seq.bar,seq.step
+  local p=PROGS[song[3]][(bar-1)%8+1]
+  local root=song[2]+p[1]
+  if step==0 then
+    for _,i in ipairs(CHORD[p[2]]) do playOsc(true,root+12+i,16*seq.spb,0.09,seq,0.08) end
+  end
+  local riff=bar%8==0 and FILL or RIFFS[song[4]]
+  local note=RIFF_NOTE[riff:sub(step+1,step+1)]
+  if note then
+    if seq.bass then seq.bass.rel=64 end
+    seq.bass=playSample(note[2],2^((root+note[1]-BASS_NOTE)/12),note[2]=="ghost" and 0.4 or 0.6,seq)
+  end
+  local d=DRUMS[song[5]]
+  local ks,hh=d[1]:sub(step+1,step+1),d[2]:sub(step+1,step+1)
+  if ks=="K" or ks=="X" then playSample("kick",1,0.55,seq) end
+  if ks=="S" or ks=="X" then playSample("snare",1,0.4,seq) end
+  if hh~="." then playSample(hh=="O" and "ohat" or "hat",1,hh=="h" and 0.12 or 0.2,seq) end
+  local pass=(bar-1)//8
+  local m=pass%2==1 and seq.mel[(bar-1)%8+1][step]
+  if m then playOsc(false,m[2],m[1]*seq.spb,0.14,seq,0.3) end
+end
+
+-- one sequencer sample: steps, the next song two bars before the end, the fades
+local function tickSeq(seq)
+  seq.cnt=seq.cnt-1
+  if seq.cnt<=0 then
+    seq.cnt=seq.cnt+seq.spb
+    if seq.bar<=SONG_BARS then trigger(seq) end
+    seq.step=seq.step+1
+    if seq.step==16 then
+      seq.step=0
+      seq.bar=seq.bar+1
+      if seq.bar==SONG_BARS-1 and not seq.next then
+        seq.next=startSong(seq.n%#SONGS+1,true)
+        seq.fade=-1/(32*seq.spb)
+      end
+    end
+  end
+  seq.gain=math.max(0,math.min(1,seq.gain+seq.fade))
+end
+
+function startMusic()
+  loadSamples()
+  voices,musicSeqs,duck={},{},0
+  if SMP.bass then startSong(1,false) end
 end
 
 function sndExplosion()
-  local off=musicWord(4)
-  if off==0 then return end
-  boom={len=musicWord(6),nibble=(off+3)*2}
-  startVoice(boom,off)
+  if SMP.boom then
+    playSample("boom",1,1,nil)
+    duck=#SMP.boom
+  end
 end
 
 local function updateMusic()
-  local m=music
-  if not m and not boom then return end
+  if #voices==0 and #musicSeqs==0 then return end
   for k=0,127 do
-    local v=0
-    if m then
-      if m.i==m.len then
-        m.pos=(m.pos+1)%m.orders
-        startSlice(m)
+    for _,s in ipairs(musicSeqs) do tickSeq(s) end
+    local mus,fx=0,0
+    for _,v in ipairs(voices) do
+      local x=0
+      if v.s then
+        x=v.s[v.pos//1] or 0
+        v.pos=v.pos+v.rate
+        if v.rel then v.rel=v.rel-1 x=x*v.rel/64 end
+        if v.pos>#v.s+1 or (v.rel and v.rel<=0) then v.dead=true end
+      else
+        v.t=v.t+1
+        v.ph=(v.ph+v.inc)%1
+        local raw=v.saw and v.ph*2-1 or (v.ph<0.3 and 1 or -1)
+        v.lp=v.lp+v.a*(raw-v.lp)
+        x=v.lp*127*math.min(1,v.t/200,(v.len-v.t)/300)
+        if v.t>=v.len then v.dead=true end
       end
-      v=nextSample(m)
+      if v.seq then mus=mus+x*v.g*v.seq.gain else fx=fx+x*v.g end
     end
-    if boom then
-      v=v//2+nextSample(boom)  -- the music ducks under an explosion so the blast stands out
-      if boom.i==boom.len then boom=nil end
-    end
-    poke(PCM+k,math.max(-128,math.min(127,v))+128)
+    -- the music ducks under an explosion so the blast stands out
+    if duck>0 then duck=duck-1 mus=mus/2 end
+    poke(PCM+k,math.max(-128,math.min(127,(mus+fx)//1))+128)
   end
+  local live={}
+  for _,v in ipairs(voices) do if not v.dead then live[#live+1]=v end end
+  voices=live
+  local playing={}
+  for _,s in ipairs(musicSeqs) do if s.bar<=SONG_BARS or s.gain>0 then playing[#playing+1]=s end end
+  musicSeqs=playing
 end
 
 local WAVES,SFX_RAM=0x0FFE4,0x100E4  -- 16 B na falę, 66 B na slot SFX
@@ -388,10 +505,6 @@ local function isBomb(c,r)
     if b.c==c and b.r==r then return true end
   end
   return false
-end
-
-local function isDanger(c,r)
-  return isBlast(c,r) or isBomb(c,r)
 end
 
 local function collectPowerup(p)
@@ -754,11 +867,18 @@ end
 local function botPickupDir(p,danger)
   if #powerups==0 then return nil end
   local item={}
-  for _,pu in ipairs(powerups) do item[pu.r*W+pu.c]=true end
+  for _,pu in ipairs(powerups) do
+    if p.team==1 or not QUEST_ITEM[pu.kind] then item[pu.r*W+pu.c]=pu.kind end
+  end
   local path=botPath(p.c,p.r,
     function(c,r) return botPassable(c,r) and not danger[r*W+c] end,
     function(c,r) return item[r*W+c] end)
-  if path and #path<=BOT_PICKUP_RANGE then return {path[1].c-p.c, path[1].r-p.r} end
+  if not path then return nil end
+  local last=path[#path]
+  -- quest items are worth any walk: the stage cannot be won without them
+  if #path<=BOT_PICKUP_RANGE or QUEST_ITEM[item[last.r*W+last.c]] then
+    return {path[1].c-p.c, path[1].r-p.r}
+  end
   return nil
 end
 
@@ -798,6 +918,43 @@ local function botTryBomb(p)
   return placeBomb(p)
 end
 
+-- for a hero: the first step towards the safe bomb spot nearest to a sparkling crate, so it
+-- digs its way to the quest item instead of blowing up the closest crates
+function botQuestDir(p,danger)
+  local quests={}
+  for k in pairs(hidden) do
+    if mget(k//100,k%100)==T_BLOCK then quests[#quests+1]={k//100,k%100} end
+  end
+  if #quests==0 then return nil end
+  local function dist(c,r)
+    local m=math.huge
+    for _,q in ipairs(quests) do m=math.min(m,math.abs(c-q[1])+math.abs(r-q[2])) end
+    return m
+  end
+  local function open(c,r) return botPassable(c,r) and not danger[r*W+c] end
+  local spots,seen,queue,i={},{[p.r*W+p.c]=true},{{p.c,p.r}},1
+  while queue[i] do
+    local c,r=queue[i][1],queue[i][2]
+    i=i+1
+    if botIsTargetSpot(p,c,r) then spots[#spots+1]={c,r,dist(c,r),i} end
+    for _,d in ipairs(BOT_DIRS) do
+      local nc,nr=c+d[1],r+d[2]
+      if not seen[nr*W+nc] and open(nc,nr) then seen[nr*W+nc]=true queue[#queue+1]={nc,nr} end
+    end
+  end
+  -- ties go to the spot nearer the bot (earlier in the flood); otherwise two equal spots on
+  -- opposite sides make it turn back and forth every step
+  table.sort(spots,function(a,b) return a[3]<b[3] or a[3]==b[3] and a[4]<b[4] end)
+  for _,sp in ipairs(spots) do
+    if botBombSafe(p,sp[1],sp[2]) then
+      if sp[1]==p.c and sp[2]==p.r then return nil end
+      local path=botPath(p.c,p.r,open,function(c,r) return c==sp[1] and r==sp[2] end)
+      return path and {path[1].c-p.c,path[1].r-p.r}
+    end
+  end
+  return nil
+end
+
 local function updateBot(p)
   if not p.alive then return end
   botOrder=p.botOrder
@@ -805,6 +962,13 @@ local function updateBot(p)
   p.botDirTimer=p.botDirTimer-1
 
   local danger=botDanger(BOT_FLEE_FRAMES)
+  if mode=="camp" and p.team==1 then
+    -- a hero bot keeps a step away from monsters, which kill on touch
+    for _,m in ipairs(monsters) do
+      danger[m.r*W+m.c]=true
+      for _,d in ipairs(BOT_DIRS) do danger[(m.r+d[2])*W+m.c+d[1]]=true end
+    end
+  end
   local dir
   local pickup=not danger[p.r*W+p.c] and botPickupDir(p,danger)
   if danger[p.r*W+p.c] then
@@ -825,7 +989,8 @@ local function updateBot(p)
         function(c,r) return isSpot(p,c,r) and botBombSafe(p,c,r) end)
       return path and {path[1].c-p.c, path[1].r-p.r}
     end
-    dir=huntStep(botTrapSpot) or huntStep(botEnemySpot) or huntStep(botIsTargetSpot)
+    dir=(p.team==1 and botQuestDir(p,danger)) or huntStep(botTrapSpot) or huntStep(botEnemySpot)
+      or huntStep(botIsTargetSpot)
   end
 
   if not dir then
@@ -864,6 +1029,7 @@ local WARN_SLOWEST,WARN_FASTEST=24,4
 
 -- open interior still in play; shrinkAt is the frame at which the next step closes
 function resetShrink()
+  zoneCycle,zoneSteps=SHRINK_CYCLE,0
   shrinkBox={x0=1,y0=1,x1=W-2,y1=H-2}
   shrinkAt=SHRINK_DELAY+SHRINK_CYCLE-1
   roundFrames=0
@@ -872,6 +1038,9 @@ resetShrink()
 
 local function shrinkTile(c,r)
   mset(c,r,T_WALL)
+  for i=#monsters,1,-1 do
+    if monsters[i].c==c and monsters[i].r==r then table.remove(monsters,i) end
+  end
   local items={}
   for _,pu in ipairs(powerups) do
     if pu.c~=c or pu.r~=r then items[#items+1]=pu end
@@ -942,10 +1111,11 @@ function updateShrink()
   roundFrames=roundFrames+1
   if roundFrames<shrinkAt then return end
   local cells=nextStepCells()
-  if not cells then shrinkDone=true return end
+  if not cells then return end
   for _,cell in ipairs(cells) do shrinkTile(cell[1],cell[2]) end
+  zoneSteps=zoneSteps+1
   advanceBox(shrinkBox)
-  shrinkAt=roundFrames+SHRINK_CYCLE
+  shrinkAt=roundFrames+zoneCycle
 end
 
 -- while a step blinks: its open tiles and the frames left before it closes
@@ -1251,7 +1421,7 @@ local function drawTitle()
   local saved=pmem(SAVE_SLOT)
   for i,item in ipairs(MENU) do
     local label=item
-    if i<3 and saved>1 then label=label.." (CH "..STAGES[saved][1]..")" end
+    if i<3 and saved>1 then label=label.." (STAGE "..saved..")" end
     local y=52+i*14
     if i==menuSel then print(">",72,y,4,false,1,true) end
     print(label,82,y,i==menuSel and 12 or 13,false,1,true)
@@ -1306,26 +1476,32 @@ end
 -- four player segments of 56 px around a 16 px zone countdown in the middle
 local HUD_X={2,58,128,184}
 
+-- a player's head (crossed out once dead) and, from x+gap, bombs, range and shield
+function drawPlayerStats(p,x,gap)
+  local col=p.alive and p.color or 13
+  local txt=p.alive and 12 or 13
+  drawHead(x,1,col)
+  if not p.alive then
+    line(x,1,x+4,5,BOMB_COL)
+    line(x+4,1,x,5,BOMB_COL)
+  end
+  x=x+gap
+  drawIcon(HUD_ICONS.B,x,1)
+  print(p.stats.bombs,x+6,1,txt,false,1,true)
+  drawIcon(HUD_ICONS.R,x+10,1)
+  print(p.stats.len,x+16,1,txt,false,1,true)
+  if p.shield then drawIcon(HUD_ICONS.S,x+21,1) end
+end
+
 local function drawHUD()
   rect(0,0,W*TILE,7,0)
   for i,p in ipairs(players) do
     local x=HUD_X[i]
-    local col=p.alive and p.color or 13
-    local txt=p.alive and 12 or 13
-    drawHead(x,1,col)
-    if not p.alive then
-      line(x,1,x+4,5,BOMB_COL)
-      line(x+4,1,x,5,BOMB_COL)
-    end
-    print(humans[i] and "P" or "C",x+6,1,col,false,1,true)
+    drawPlayerStats(p,x,25)
+    print(p.human and "P" or "C",x+6,1,p.alive and p.color or 13,false,1,true)
     for k=1,MATCH_WINS do
       if score[i]>=k then rect(x+8+k*4,2,3,3,4) else rectb(x+8+k*4,2,3,3,13) end
     end
-    drawIcon(HUD_ICONS.B,x+25,1)
-    print(p.stats.bombs,x+31,1,txt,false,1,true)
-    drawIcon(HUD_ICONS.R,x+35,1)
-    print(p.stats.len,x+41,1,txt,false,1,true)
-    if p.shield then drawIcon(HUD_ICONS.S,x+46,1) end
   end
   local left=shrinkAt-roundFrames
   local warning=left<=SHRINK_WARN
@@ -1339,19 +1515,34 @@ end
 -- Sir Aldric chases the wizard Morgath, who took Princess Elena; from chapter 2 Elena
 -- fights along (P2 in Story 2P, a bot ally otherwise).
 
--- chapter, goal, crate density, goblins, bats, skeletons, boss, scroll ("h" wide, "v" tall)
-STAGES={
-  {1,"exit",.35,3,0,0,nil,"h"},{1,"enemies",.3,5,0,0},{1,"keys",.4,4,0,0,nil,"v"},{1,"boss",.2,0,0,0,"troll"},
-  {2,"exit",.4,0,3,0,nil,"v"},{2,"keys",.35,2,3,0,nil,"h"},{2,"survive",.3,0,3,0},{2,"boss",.2,0,0,0,"witch"},
-  {3,"enemies",.35,2,0,2,nil,"h"},{3,"keys",.35,0,2,2,nil,"v"},{3,"exit",.4,3,2,1,nil,"h"},{3,"boss",.2,0,0,0,"dragon"},
-  {4,"enemies",.3,3,3,2,nil,"v"},{4,"survive",.35,0,3,2},{4,"keys",.4,3,3,2,nil,"h"},{4,"boss",.15,0,2,0,"morgath"},
-}
+BOSS_HP={troll=3,witch=3,dragon=4,morgath=6}
+local CH_BOSS={"troll","witch","dragon","morgath"}
+local GOAL_CYCLE={"exit","enemies","keys","survive"}
+local SCROLLS={"h","v",false}
+STAGE_COUNT,CHAPTER_LEN=100,25
+
+-- stage n: chapter, goal, crate density, goblins, bats, skeletons, boss, scroll ("h" wide,
+-- "v" tall), boss hp. Every 5th stage is a boss fight: earlier bosses come back in between,
+-- the chapter's own boss ends it. Monsters grow with n; bats from chapter 2, skeletons from 3.
+function stageDef(n)
+  local ch,i=(n-1)//CHAPTER_LEN+1,(n-1)%CHAPTER_LEN+1
+  local boss=i%5==0 and (i==CHAPTER_LEN and CH_BOSS[ch] or CH_BOSS[(i//5-1)%math.min(ch,3)+1])
+  local foes=not boss
+  return {ch,boss and "boss" or GOAL_CYCLE[(n-1)%4+1],0.3+0.05*(n%3),
+    foes and math.min(6,2+n//15) or 0,
+    foes and ch>=2 and math.min(5,1+(n-26)//15) or 0,
+    foes and ch>=3 and math.min(3,1+(n-51)//25) or 0,
+    boss,SCROLLS[n%3+1],boss and BOSS_HP[boss]+ch-1}
+end
+
+STAGES={}
+for n=1,STAGE_COUNT do STAGES[n]=stageDef(n) end
 CHAPTERS={"ENCHANTED FOREST","WITCH'S SWAMP","DRAGON'S TOWER","THE KING'S CASTLE"}
 local GOALS={exit="FIND THE EXIT",enemies="DEFEAT ALL MONSTERS",keys="FIND 3 KEYS",
   survive="SURVIVE THE WALLS",boss="DEFEAT THE BOSS"}
-BOSS_HP={troll=3,witch=3,dragon=4,morgath=6}
 local SKELETON_COL=13
 SAVE_SLOT=0
+SURVIVE_STEPS=5  -- a survive stage ends after this many zone steps, with room still left
 
 mode="pvp"
 camX,camY=0,0
@@ -1386,8 +1577,8 @@ end
 
 -- items the goal needs, under crates when there are enough of them, else on the floor
 local function hideItems(kind,n)
-  local crates=farCells(function(c,r) return mget(c,r)==T_BLOCK end,(W+H)//3)
-  local floor=farCells(function(c,r) return mget(c,r)==T_EMPTY end,(W+H)//3)
+  local crates=farCells(function(c,r) return mget(c,r)==T_BLOCK end,(W+H)//4)
+  local floor=farCells(function(c,r) return mget(c,r)==T_EMPTY end,(W+H)//4)
   for i=1,n do
     local cell=table.remove(crates)
     if cell then hidden[cell[1]*100+cell[2]]=kind
@@ -1429,12 +1620,12 @@ function startStage(n)
   if st[7] then
     local c,r=W//2-1,H//2-1
     for dc=0,1 do for dr=0,1 do mset(c+dc,r+dr,T_EMPTY) end end
-    boss={kind=st[7],c=c,r=r,x=gpx(c),y=gpy(r),hp=BOSS_HP[st[7]],t=0,inv=0}
+    boss={kind=st[7],c=c,r=r,x=gpx(c),y=gpy(r),hp=st[9],max=st[9],t=0,inv=0}
     if st[7]=="dragon" then hideItems("E",1) end
   end
   resetShrink()
-  if st[2]~="survive" then shrinkAt=math.huge end
-  shrinkDone=false
+  -- survive: the walls start after 10 s and step on as soon as the 5 s blink is over
+  if st[2]=="survive" then shrinkAt,zoneCycle=600,SHRINK_WARN else shrinkAt=math.huge end
   frame,state,restartTimer=0,"game",0
 end
 
@@ -1445,15 +1636,16 @@ end
 function startCampaign(coop)
   mode="camp"
   local saved=pmem(SAVE_SLOT)
-  camp={coop=coop,lives=3,tries=0,friend=false,stage=(saved>=1 and saved<=#STAGES) and saved or 1}
+  camp={coop=coop,lives=3,tries=0,friend=false,stage=(saved>=1 and saved<=#STAGES) and saved or 1,
+    stats={{bombs=MAX_BOMBS,len=BLAST_LEN},{bombs=MAX_BOMBS,len=BLAST_LEN}}}
   beginChapterOrMap(camp.stage)
 end
 
 function beginChapterOrMap(n)
   camp.stage=n
+  pmem(SAVE_SLOT,n)
   if chapterStart(n) then
     camp.stats={{bombs=MAX_BOMBS,len=BLAST_LEN},{bombs=MAX_BOMBS,len=BLAST_LEN}}
-    pmem(SAVE_SLOT,n)
     playScene(SCENE_OF_CHAPTER[STAGES[n][1]],function() showMap(n) end)
   else
     showMap(n)
@@ -1562,7 +1754,7 @@ local function stageGoalMet()
   local goal=STAGES[camp.stage][2]
   if goal=="exit" then return camp.done
   elseif goal=="keys" then return camp.keys>=3
-  elseif goal=="survive" then return shrinkDone
+  elseif goal=="survive" then return zoneSteps>=SURVIVE_STEPS
   elseif goal=="boss" then return boss.hp<=0 or camp.friend end
   for _,p in ipairs(players) do if p.alive and p.team==2 then return false end end
   return #monsters==0
@@ -1665,14 +1857,11 @@ end
 local function drawCampaignHUD()
   rect(0,0,240,7,0)
   for k=1,camp.lives do drawArt("heart",2+(k-1)*7,0,1) end
-  print(STAGES[camp.stage][1].."-"..((camp.stage-1)%4+1),26,1,12,false,1,true)
+  print(STAGES[camp.stage][1].."-"..((camp.stage-1)%CHAPTER_LEN+1),24,1,12,false,1,true)
   local x=44
   for _,p in ipairs(players) do
     if p.team==1 then
-      drawHead(x,1,p.alive and p.color or 13)
-      drawIcon(HUD_ICONS.B,x+7,1) print(p.stats.bombs,x+13,1,12,false,1,true)
-      drawIcon(HUD_ICONS.R,x+18,1) print(p.stats.len,x+24,1,12,false,1,true)
-      if p.shield then drawIcon(HUD_ICONS.S,x+29,1) end
+      drawPlayerStats(p,x,7)
       x=x+40
     end
   end
@@ -1682,22 +1871,37 @@ local function drawCampaignHUD()
     local n=#monsters
     for _,p in ipairs(players) do if p.alive and p.team==2 then n=n+1 end end
     txt="LEFT "..n
-  elseif goal=="survive" then txt=shrinkDone and "SAFE" or "HOLD ON"
+  elseif goal=="survive" then txt="HOLD ON "..math.max(0,SURVIVE_STEPS-zoneSteps)
   elseif goal=="exit" then txt="FIND EXIT" end
   if txt then print(txt,238-#txt*4,1,12,false,1,true) end
   if goal=="boss" and boss then
     rect(160,2,74,3,15)
-    rect(160,2,74*math.max(0,boss.hp)//BOSS_HP[boss.kind],3,BOMB_COL)
+    rect(160,2,74*math.max(0,boss.hp)//boss.max,3,BOMB_COL)
   end
 end
 
 function drawCampaign()
+  -- crates hiding a quest item sparkle now and then, so the search is no lottery
+  if frame%50<6 then
+    for k in pairs(hidden) do
+      local c,r=k//100,k%100
+      if mget(c,r)==T_BLOCK then
+        local x,y=gpx(c)-camX+5,gpy(r)-camY+2
+        line(x-1,y,x+1,y,12) line(x,y-1,x,y+1,12)
+      end
+    end
+  end
   drawMonsters()
   drawBoss()
   drawCampaignHUD()
   local msg=state=="clear" and "STAGE CLEAR!" or state=="lost" and "OUCH!" or state=="gameover" and "GAME OVER"
   if msg then
-    print(msg,120-#msg*6,52,12,false,2,true)
+    if state=="clear" then
+      for k=1,40 do
+        pix((k*53+frame*(k%3+1))%240,(k*29+frame*(k%4+1))%136,k%15+1)
+      end
+    end
+    print(msg,120-#msg*6,52+(state=="clear" and math.floor(math.sin(frame/6)*3) or 0),12,false,2,true)
     if state=="lost" then print("LIVES LEFT: "..camp.lives,90,72,13,false,1,true) end
     restartTimer=restartTimer-1
     if restartTimer<=0 or (restartTimer<90 and btnp(4)) then campaignNext() end
@@ -1811,9 +2015,12 @@ end
 local mapAnim
 local REGION_COL={6,7,13,15}
 
+-- the chapter's 25 stages as a snake of five rows
 local function nodePos(n)
-  local x=14+(n-1)*14
-  return x,72+math.floor(math.sin(n*1.3)*26)
+  local i=(n-1)%CHAPTER_LEN
+  local row,col=i//5,i%5
+  if row%2==1 then col=4-col end
+  return 40+col*40,40+row*18
 end
 
 function showMap(n)
@@ -1824,27 +2031,26 @@ end
 function drawWorldMap()
   local m=mapAnim
   m.t=m.t+1
-  cls(0)
-  for c=1,4 do rect((c-1)*56+4,24,56,100,REGION_COL[c]) end
-  for i=1,#STAGES-1 do
+  local st=STAGES[m.n]
+  local first=(st[1]-1)*CHAPTER_LEN+1
+  cls(REGION_COL[st[1]])
+  for i=first,first+CHAPTER_LEN-2 do
     local x0,y0=nodePos(i) local x1,y1=nodePos(i+1)
     line(x0,y0,x1,y1,12)
   end
-  for i=1,#STAGES do
+  for i=first,first+CHAPTER_LEN-1 do
     local x,y=nodePos(i)
-    local done=i<m.n
-    circ(x,y,STAGES[i][7] and 4 or 3,done and 4 or (i==m.n and frame%20<10) and 12 or 15)
+    circ(x,y,STAGES[i][7] and 4 or 2,i<m.n and 4 or (i==m.n and frame%20<10) and 12 or 0)
   end
-  local fx,fy=nodePos(math.max(1,m.n-1))
+  local fx,fy=nodePos(math.max(first,m.n-1))
   local tx,ty=nodePos(m.n)
   local k=math.min(1,m.t/60)
-  drawSp(5+(m.t//8)%2*(k<1 and 1 or 0),fx+(tx-fx)*k-4,fy+(ty-fy)*k-12,12,false)
-  local st=STAGES[m.n]
+  drawSp(5+(k<1 and (m.t//8)%2 or 0),fx+(tx-fx)*k-4,fy+(ty-fy)*k-11,12,tx<fx)
   local title=CHAPTERS[st[1]]
   print(title,120-#title*3,4,12,false,1,false)
-  local sub="STAGE "..st[1].."-"..((m.n-1)%4+1)..": "..GOALS[st[2]]
-  print(sub,120-#sub*2,14,4,false,1,true)
-  if m.t>60 and m.t%40<28 then print("PRESS Z",104,128,13,false,1,true) end
+  local sub="STAGE "..st[1].."-"..((m.n-1)%CHAPTER_LEN+1)..": "..GOALS[st[2]]
+  print(sub,120-#sub*2,16,4,false,1,true)
+  if m.t>60 and m.t%40<28 then print("PRESS Z",104,128,12,false,1,true) end
   if m.t>200 or (m.t>30 and btnp(4)) then mapAnim=nil startStage(m.n) end
 end
 
@@ -1873,9 +2079,8 @@ function TIC()
     updateBlasts()
     updateInvul()
     updateShrink()
-    for i,p in ipairs(players) do
-      local human=mode=="camp" and p.human or mode~="camp" and humans[i]
-      if human then updatePlayer(p) else updateBot(p) end
+    for _,p in ipairs(players) do
+      if p.human then updatePlayer(p) else updateBot(p) end
     end
 
     if mode=="camp" then
