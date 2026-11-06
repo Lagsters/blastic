@@ -4,7 +4,9 @@
 -- script: lua
 -- input:  gamepad
 
-W,H=30,17
+-- The outer wall ring lies just off screen (left, right, bottom) and under the HUD (top):
+-- the 30x16 interior fills the 240x136 screen.
+W,H=32,18
 TILE=8
 MAX_BOMBS=1
 BOMB_CAP=5
@@ -24,7 +26,7 @@ MATCH_TIME=210
 T_EMPTY,T_WALL,T_BLOCK=0,1,2
 
 STARTS={{1,1},{W-2,1},{1,H-2},{W-2,H-2}}
-local COLORS={12,11,9,14}
+local COLORS={12,5,9,2}  -- white, green, blue, red
 
 local B_UP,B_DOWN,B_LEFT,B_RIGHT,B_BOMB=0,1,2,3,4
 
@@ -41,9 +43,10 @@ titleTimer=0
 
 function mget(c,r) return map[r] and map[r][c] or T_WALL end
 local function mset(c,r,v) if map[r] then map[r][c]=v end end
-function gpx(c) return c*TILE end
+function gpx(c) return (c-1)*TILE end
 function gpy(r) return r*TILE end
-local function gcell(x) return math.floor(x/TILE) end
+local function gcol(x) return math.floor(x/TILE)+1 end
+local function grow(y) return math.floor(y/TILE) end
 
 -- ── init ─────────────────────────────────────────────────────────────────────
 
@@ -54,7 +57,8 @@ local function initMap()
     for c=0,W-1 do
       if r==0 or r==H-1 or c==0 or c==W-1 then
         map[r][c]=T_WALL
-      elseif r%2==0 and (c<W//2 and c%2==0 or c>=W//2 and (W-1-c)%2==0) then
+      elseif (r<H//2 and r%2==0 or r>=H//2 and (H-1-r)%2==0)
+         and (c<W//2 and c%2==0 or c>=W//2 and (W-1-c)%2==0) then
         map[r][c]=T_WALL
       elseif math.random()<0.4 then
         local corner=false
@@ -109,11 +113,13 @@ local function initPlayers()
 end
 
 -- ── muzyka ───────────────────────────────────────────────────────────────────
--- Pętla z tools/music/wav2tic.py: IMA ADPCM, plastry po takcie i lista kolejności, jak w module.
--- Kanał PCM TIC-80 1.4 gra co klatkę 128 bajtów z 0x14E24 (7680 Hz) i sam je zeruje.
+-- Blob z tools/music/wav2tic.py: muzyka w IMA ADPCM, plastry po takcie i lista kolejności, jak w
+-- module, oraz próbka wybuchu. Mikser sumuje oba głosy w kanale PCM TIC-80 1.4, który gra co
+-- klatkę 128 bajtów z 0x14E24 (7680 Hz) i sam je zeruje.
 -- Dane zajmują TILES+SPRITES+MAP i MUSIC PATTERNS+TRACKS: tych obszarów nie wolno używać na grafikę ani music().
 local PCM=0x14E24
 local MUSIC_LOW,MUSIC_LOW_SIZE,MUSIC_HIGH=0x04000,0xBF80,0x11164
+local HEADER=8
 local ADPCM_STEPS={7,8,9,10,11,12,13,14,16,17,19,21,23,25,28,31,34,37,41,45,50,55,
   60,66,73,80,88,97,107,118,130,143,157,173,190,209,230,253,279,307,337,
   371,408,449,494,544,598,658,724,796,876,963,1060,1166,1282,1411,1552,
@@ -121,66 +127,110 @@ local ADPCM_STEPS={7,8,9,10,11,12,13,14,16,17,19,21,23,25,28,31,34,37,41,45,50,5
   6484,7132,7845,8630,9493,10442,11487,12635,13899,15289,16818,18500,20350,
   22385,24623,27086,29794,32767}
 local ADPCM_INDEX={-1,-1,-1,-1,2,4,6,8}
-local music=nil
+local music,boom=nil,nil
 
 local function musicByte(off)
   if off<MUSIC_LOW_SIZE then return peek(MUSIC_LOW+off) end
   return peek(MUSIC_HIGH+off-MUSIC_LOW_SIZE)
 end
 
+local function musicWord(off)
+  return musicByte(off)|musicByte(off+1)<<8
+end
+
+-- voice state from a 3-byte header (s16 predictor, u8 step index) followed by nibbles
+local function startVoice(v,h)
+  v.pred=musicWord(h)
+  if v.pred>32767 then v.pred=v.pred-65536 end
+  v.idx=musicByte(h+2)
+  v.i=0
+end
+
+local function nextSample(v)
+  local n=v.nibble+v.i
+  local code=musicByte(n>>1)
+  if n&1==1 then code=code>>4 else code=code&15 end
+  local step=ADPCM_STEPS[v.idx+1]
+  local d=step>>3
+  if code&4~=0 then d=d+step end
+  if code&2~=0 then d=d+(step>>1) end
+  if code&1~=0 then d=d+(step>>2) end
+  if code&8~=0 then d=-d end
+  v.pred=math.max(-32768,math.min(32767,v.pred+d))
+  v.idx=math.max(0,math.min(88,v.idx+ADPCM_INDEX[(code&7)+1]))
+  v.i=v.i+1
+  return v.pred//256
+end
+
 local function startSlice(m)
-  local s=musicByte(4+m.pos)
-  local h=4+m.orders+3*s
-  m.pred=musicByte(h)|musicByte(h+1)<<8
-  if m.pred>32767 then m.pred=m.pred-65536 end
-  m.idx=musicByte(h+2)
+  local s=musicByte(HEADER+m.pos)
+  startVoice(m,HEADER+m.orders+3*s)
   m.nibble=(m.data+s*m.len//2)*2
-  m.i=0
 end
 
 local function startMusic()
-  local len=musicByte(0)|musicByte(1)<<8
+  local len=musicWord(0)
   if len==0 then music=nil return end
   local slices,orders=musicByte(2),musicByte(3)
-  music={len=len,orders=orders,data=4+orders+3*slices,pos=0}
+  music={len=len,orders=orders,data=HEADER+orders+3*slices,pos=0}
   startSlice(music)
+end
+
+function sndExplosion()
+  local off=musicWord(4)
+  if off==0 then return end
+  boom={len=musicWord(6),nibble=(off+3)*2}
+  startVoice(boom,off)
 end
 
 local function updateMusic()
   local m=music
-  if not m then return end
+  if not m and not boom then return end
   for k=0,127 do
-    if m.i==m.len then
-      m.pos=(m.pos+1)%m.orders
-      startSlice(m)
+    local v=0
+    if m then
+      if m.i==m.len then
+        m.pos=(m.pos+1)%m.orders
+        startSlice(m)
+      end
+      v=nextSample(m)
     end
-    local n=m.nibble+m.i
-    local code=musicByte(n>>1)
-    if n&1==1 then code=code>>4 else code=code&15 end
-    local step=ADPCM_STEPS[m.idx+1]
-    local d=step>>3
-    if code&4~=0 then d=d+step end
-    if code&2~=0 then d=d+(step>>1) end
-    if code&1~=0 then d=d+(step>>2) end
-    if code&8~=0 then d=-d end
-    m.pred=math.max(-32768,math.min(32767,m.pred+d))
-    m.idx=math.max(0,math.min(88,m.idx+ADPCM_INDEX[(code&7)+1]))
-    poke(PCM+k,m.pred//256+128)
-    m.i=m.i+1
+    if boom then
+      v=v+nextSample(boom)
+      if boom.i==boom.len then boom=nil end
+    end
+    poke(PCM+k,math.max(-128,math.min(127,v))+128)
   end
 end
 
 local WAVES,SFX_RAM=0x0FFE4,0x100E4  -- 16 B na falę, 66 B na slot SFX
+local NOISE,SAW,TRI=0,1,3
 
--- zapis jednego SFX w slocie n: frames = {{nuta, oktawa, głośność}, ...}
-local function putSfx(n,frames,wave,speed)
+-- Jeden slot SFX w formacie TIC-80 1.x; ticks={{głośność 0-15, półtony w górę 0-15}, ...}.
+-- TIC-80 zapisuje głośność jako tłumienie (0 = najgłośniej), więc ticki po dźwięku muszą być
+-- zapisane jako cisza, inaczej efekt gra pełną głośnością do końca czasu z sfx().
+local function putSfx(n,ticks,wave,octave,note)
   local b=SFX_RAM+66*n
-  for i,t in ipairs(frames) do
-    poke(b+(i-1)*2,   (t[2]<<4)|t[1])
-    poke(b+(i-1)*2+1, (t[3]<<4)|wave)
+  for i=0,29 do
+    local t=ticks[i+1] or {0,0}
+    poke(b+i*2,(15-t[1])|wave<<4)
+    poke(b+i*2+1,t[2])
   end
-  for i=#frames,29 do poke(b+i*2,0); poke(b+i*2+1,0) end
-  poke(b+60,0); poke(b+61,speed)
+  poke(b+60,octave)
+  poke(b+61,note)
+  for i=62,65 do poke(b+i,0) end
+end
+
+-- Sweetie16 has no skin or wood tones; colours drawn nowhere else become them.
+SKIN,WOOD,WOOD_DARK,WOOD_LIGHT=10,1,8,6
+local function setColour(i,r,g,b)
+  poke(0x03FC0+i*3,r); poke(0x03FC0+i*3+1,g); poke(0x03FC0+i*3+2,b)
+end
+local function initPalette()
+  setColour(SKIN,0xFF,0xCC,0xAA)
+  setColour(WOOD,0xA0,0x6A,0x32)
+  setColour(WOOD_DARK,0x5C,0x3A,0x1A)
+  setColour(WOOD_LIGHT,0xC8,0x92,0x52)
 end
 
 local audioReady=false
@@ -188,41 +238,13 @@ local function initAudio()
   if audioReady then return end
   audioReady=true
 
-  -- Wave 0: noise (explosion) — wysokoentropyjna, chaotyczna
-  local w0={15,3,11,7,1,13,5,9,14,2,10,6,0,12,4,8,
-             8,4,12,0,6,10,2,14,9,5,13,1,7,11,3,15}
-  for i=0,15 do poke(WAVES+i, w0[i*2+1]|(w0[i*2+2]<<4)) end
+  -- Wave 0: płaska fala zerowa, którą TIC-80 gra jako szum
+  for i=0,15 do poke(WAVES+i,0) end
 
-  -- Wave 1: opadająca piła (yell śmierci) — 15,14,13,...,0,15,14,...
+  -- Wave 1: opadająca piła
   for i=0,15 do
     poke(WAVES+16+i, (15-i*2%16)|((15-(i*2+1)%16)<<4))
   end
-
-  -- SFX 0: wybuch — szum, oct 5→4→3, gwałtowny zanik głośności
-  -- format na tick: byte0=(oct<<4)|note, byte1=(vol<<4)|wave
-  local exp={
-    {9,5,15},{9,5,13},{7,5,11},{7,4,9},{5,4,7},
-    {5,4,5}, {2,4,3}, {2,3,2}, {0,3,1}, {0,3,0},
-  }
-  local b=SFX_RAM
-  for i,t in ipairs(exp) do
-    poke(b+(i-1)*2,   (t[2]<<4)|t[1])
-    poke(b+(i-1)*2+1, (t[3]<<4)|0)   -- wave 0 (noise)
-  end
-  for i=#exp,29 do poke(b+i*2,0); poke(b+i*2+1,0) end
-  poke(b+60,0); poke(b+61,2)          -- no loop, speed 2
-
-  -- SFX 1: śmierć — "aaah!" opadający yell A5→G5→E4→C4→A3
-  local die={
-    {9,5,13},{7,5,12},{4,4,10},{0,4,7},{9,3,4},{9,3,1},
-  }
-  local b2=SFX_RAM+66
-  for i,t in ipairs(die) do
-    poke(b2+(i-1)*2,   (t[2]<<4)|t[1])
-    poke(b2+(i-1)*2+1, (t[3]<<4)|1)  -- wave 1 (piła)
-  end
-  for i=#die,29 do poke(b2+i*2,0); poke(b2+i*2+1,0) end
-  poke(b2+60,0); poke(b2+61,2)        -- no loop, speed 2
 
   -- Wave 2: prostokąt
   for i=0,7  do poke(WAVES+32+i,0x00) end
@@ -233,26 +255,18 @@ local function initAudio()
              0xEF,0xCD,0xAB,0x89,0x67,0x45,0x23,0x01}
   for i=0,15 do poke(WAVES+48+i,tri[i+1]) end
 
-  -- SFX 4: hi-hat/percussion — noise, szybki decay
-  local bp=SFX_RAM+66*4
-  local pe={7,6,5,4,3,2,1,0}
-  for i=0,#pe-1 do
-    poke(bp+i*2,0)
-    poke(bp+i*2+1,(pe[i+1]<<4)|0)  -- noise wave
-  end
-  for i=#pe,29 do poke(bp+i*2,0); poke(bp+i*2+1,0) end
-  poke(bp+60,0); poke(bp+61,2)  -- speed 2, szybki attack
-
-  -- SFX 5: postawienie bomby — krótki, niski blip (kwadrat)
-  putSfx(5,{{0,3,12},{0,2,10},{0,2,6},{0,2,2}},2,2)
-  -- SFX 6: podniesienie bonusu — rosnący arpeggio (trójkąt)
-  putSfx(6,{{0,4,10},{4,4,10},{7,4,10},{0,5,12}},3,2)
-  -- SFX 7: pęknięcie tarczy — szum opadający
-  putSfx(7,{{5,4,15},{2,4,12},{7,3,9},{0,3,4}},0,2)
+  -- SFX 1: śmierć — "aaah!" opadające od A4 do A3
+  putSfx(1,{{9,12},{9,10},{8,7},{7,5},{6,3},{5,1},{3,0},{2,0},{1,0}},SAW,3,9)
+  -- SFX 5: postawienie bomby — krótki, niski, miękki stuk
+  putSfx(5,{{8,0},{6,0},{4,0},{2,0}},TRI,2,0)
+  -- SFX 6: podniesienie bonusu — rosnące arpeggio C-E-G-C
+  putSfx(6,{{7,0},{7,0},{7,4},{7,4},{7,7},{7,7},{6,12},{4,12},{2,12}},TRI,4,0)
+  -- SFX 7: pęknięcie tarczy — krótki opadający szum
+  putSfx(7,{{9,0},{7,0},{5,0},{3,0},{1,0}},NOISE,4,0)
 end
 
-function sndPickup() sfx(6,-1,24,3,12) end
-function sndShield() sfx(7,-1,24,3,12) end
+function sndPickup() sfx(6,-1,24,3,9) end
+function sndShield() sfx(7,-1,24,3,9) end
 
 function init()
   math.randomseed(time())
@@ -262,6 +276,7 @@ function init()
   initMap()
   initPlayers()
   initAudio()
+  initPalette()
   resetShrink()
   frame=0
   state="game"
@@ -290,7 +305,7 @@ end
 
 -- returns set of covered cells keyed c*100+r
 local function explode(b)
-  sfx(0,-1,25,0,15)
+  sndExplosion()
   local bc,br=b.c,b.r
   local len=b.len or BLAST_LEN
   local hit={}
@@ -381,8 +396,8 @@ local function movePlayer(p,dc,dr)
   local passable={}
   for _,b in ipairs(bombs) do
     if b.owner==p then
-      local ox0=gcell(p.x+margin); local ox1=gcell(p.x+TILE-margin-1)
-      local oy0=gcell(p.y+margin); local oy1=gcell(p.y+TILE-margin-1)
+      local ox0=gcol(p.x+margin); local ox1=gcol(p.x+TILE-margin-1)
+      local oy0=grow(p.y+margin); local oy1=grow(p.y+TILE-margin-1)
       if b.c>=ox0 and b.c<=ox1 and b.r>=oy0 and b.r<=oy1 then
         passable[b.c*100+b.r]=true
       end
@@ -390,10 +405,10 @@ local function movePlayer(p,dc,dr)
   end
   local function blocked(x,y)
     local cs={
-      {gcell(x+margin),          gcell(y+margin)},
-      {gcell(x+TILE-margin-1),   gcell(y+margin)},
-      {gcell(x+margin),          gcell(y+TILE-margin-1)},
-      {gcell(x+TILE-margin-1),   gcell(y+TILE-margin-1)},
+      {gcol(x+margin),          grow(y+margin)},
+      {gcol(x+TILE-margin-1),   grow(y+margin)},
+      {gcol(x+margin),          grow(y+TILE-margin-1)},
+      {gcol(x+TILE-margin-1),   grow(y+TILE-margin-1)},
     }
     for _,co in ipairs(cs) do
       local t=mget(co[1],co[2])
@@ -407,38 +422,42 @@ local function movePlayer(p,dc,dr)
   if hx then p.x=nx end
   if hy then p.y=ny end
 
-  -- corridor snap: nudge 1px perpendicularly to ease entry into passages
-  local SNAP=3
-  if dc~=0 and not hx then
-    local oy=p.y%TILE
-    if oy>0 and oy<=SNAP then
-      if not blocked(p.x,p.y-1) then p.y=p.y-1 end
-    elseif oy>=TILE-SNAP and oy<TILE then
-      if not blocked(p.x,p.y+1) then p.y=p.y+1 end
+  -- corner assist: off the row (column) axis, slide toward the row whose next cell in the
+  -- pressed direction is open, the nearer one first; also centres the player while walking
+  local function assist(pos,aheadFree,stepFree)
+    local a=pos-pos%TILE
+    if pos==a then return pos end
+    local near,far=a,a+TILE
+    if pos-a>TILE//2 then near,far=far,near end
+    for _,t in ipairs({near,far}) do
+      if aheadFree(t) then
+        local s=t>pos and SPEED or -SPEED
+        if stepFree(pos+s) then return pos+s end
+        return pos
+      end
     end
+    return pos
   end
-  if dr~=0 and not hy then
-    local ox=p.x%TILE
-    if ox>0 and ox<=SNAP then
-      if not blocked(p.x-1,p.y) then p.x=p.x-1 end
-    elseif ox>=TILE-SNAP and ox<TILE then
-      if not blocked(p.x+1,p.y) then p.x=p.x+1 end
-    end
+  if dc~=0 then
+    p.y=assist(p.y,function(t) return not blocked(nx,t) end,function(v) return not blocked(p.x,v) end)
+  end
+  if dr~=0 then
+    p.x=assist(p.x,function(t) return not blocked(t,ny) end,function(v) return not blocked(v,p.y) end)
   end
 
-  p.c=gcell(p.x+TILE//2)
-  p.r=gcell(p.y+TILE//2)
+  p.c=gcol(p.x+TILE//2)
+  p.r=grow(p.y+TILE//2)
   collectPowerup(p)
 end
 
 local function placeBomb(p)
   if p.bombs<p.stats.bombs then
-    local bc=gcell(p.x+TILE//2)
-    local br=gcell(p.y+TILE//2)
+    local bc=gcol(p.x+TILE//2)
+    local br=grow(p.y+TILE//2)
     if not isBomb(bc,br) then
       bombs[#bombs+1]={c=bc,r=br,t=BOMB_TIMER,owner=p,len=p.stats.len}
       p.bombs=p.bombs+1
-      sfx(5,-1,20,3,12)
+      sfx(5,-1,20,3,8)
       return true
     end
   end
@@ -448,7 +467,7 @@ end
 local function killPlayer(p)
   p.alive=false
   p.deathT=DEATH_TIME
-  sfx(1,-1,15,1,12)
+  sfx(1,-1,15,1,9)
 end
 
 local function updateDeaths()
@@ -803,9 +822,9 @@ end
 
 -- ── arena shrink ──────────────────────────────────────────────────────────────
 
-SHRINK_DELAY=1200
-SHRINK_PAUSE=60
-SHRINK_WARN=120
+SHRINK_DELAY=1800
+SHRINK_PAUSE=120
+SHRINK_WARN=300
 SHRINK_CYCLE=SHRINK_PAUSE+SHRINK_WARN
 local WARN_COL=9
 local WARN_SLOWEST,WARN_FASTEST=24,4
@@ -820,6 +839,11 @@ resetShrink()
 
 local function shrinkTile(c,r)
   mset(c,r,T_WALL)
+  local items={}
+  for _,pu in ipairs(powerups) do
+    if pu.c~=c or pu.r~=r then items[#items+1]=pu end
+  end
+  powerups=items
   for _,p in ipairs(players) do
     if p.alive and p.c==c and p.r==r then killPlayer(p) end
   end
@@ -834,12 +858,7 @@ local function shrinkTile(c,r)
   bombs=keep
 end
 
--- a wider arena first loses its two side columns, a square one its whole outline
-local function sidesOnly(box)
-  return box.x1-box.x0>=box.y1-box.y0+2
-end
-
--- open tiles the next step closes: both side columns, or the whole outline of the box
+-- open tiles the next step closes: the whole outline of the box
 local function stepCells(box)
   local cells={}
   local function add(c,r)
@@ -849,19 +868,16 @@ local function stepCells(box)
     add(box.x0,r)
     if box.x1>box.x0 then add(box.x1,r) end
   end
-  if not sidesOnly(box) then
-    for c=box.x0+1,box.x1-1 do
-      add(c,box.y0)
-      if box.y1>box.y0 then add(c,box.y1) end
-    end
+  for c=box.x0+1,box.x1-1 do
+    add(c,box.y0)
+    if box.y1>box.y0 then add(c,box.y1) end
   end
   return cells
 end
 
 local function advanceBox(box)
-  local sides=sidesOnly(box)
   box.x0,box.x1=box.x0+1,box.x1-1
-  if not sides then box.y0,box.y1=box.y0+1,box.y1-1 end
+  box.y0,box.y1=box.y0+1,box.y1-1
 end
 
 -- the next step with open tiles, skipping steps that have none; nil when the box is gone
@@ -911,14 +927,26 @@ end
 -- ── draw ─────────────────────────────────────────────────────────────────────
 
 local WALL_COL=13
-local BLOCK_COL=6
+local BLOCK_COL=WOOD
 local FLOOR_COL=0
 local BOMB_COL=2
 
+-- crate: dark frame and seams between three boards, light grain shifted per tile so neighbours differ
+local WOOD_GRAIN={{1,1},{5,0},{3,3},{6,4},{0,6},{4,7},{2,7}}
+
+local function drawWood(c,r)
+  local x,y=gpx(c),gpy(r)
+  rectb(x,y,TILE,TILE,WOOD_DARK)
+  line(x,y+2,x+TILE-1,y+2,WOOD_DARK)
+  line(x,y+5,x+TILE-1,y+5,WOOD_DARK)
+  local k=(c*5+r*3)%TILE
+  for _,g in ipairs(WOOD_GRAIN) do pix(x+(g[1]+k)%TILE,y+g[2],WOOD_LIGHT) end
+end
+
 local function drawMap()
   local warn=shrinkWarnTiles()
-  for r=0,H-1 do
-    for c=0,W-1 do
+  for r=1,H-2 do
+    for c=1,W-2 do
       local t=mget(c,r)
       local col=FLOOR_COL
       if t==T_WALL  then col=WALL_COL
@@ -927,11 +955,12 @@ local function drawMap()
       rect(gpx(c),gpy(r),TILE,TILE,col)
       if t==T_WALL then
         rectb(gpx(c),gpy(r),TILE,TILE,15)
-      elseif t==T_BLOCK then
-        rectb(gpx(c),gpy(r),TILE,TILE,5)
+      elseif t==T_BLOCK and not warn[c*100+r] then
+        drawWood(c,r)
       end
     end
   end
+  rectb(0,TILE-1,(W-2)*TILE,(H-1)*TILE-(TILE-1),WALL_COL)
 end
 
 local function drawBlasts()
@@ -955,69 +984,70 @@ local function drawBombs()
   end
 end
 
--- Sprite pixel data: 0=transparent 1=skin(light blue) 2=body(player col) 3=dark(outline/eyes)
 -- 8×8 pixels per frame, 6 frames: down0,down1,up0,up1,right0,right1
 -- left = right flipped horizontally
+-- Helmet in the player's colour around a small face: 0 transparent, 1 skin, 2 player colour,
+-- 3 black eyes, 4 legs.
 local SPR={
-  -- [1] facing down, walk-0 (arms spread)
-  {0,0,2,2,2,2,0,0,
-   0,2,1,1,1,1,2,0,
-   0,2,1,3,3,1,2,0,
-   0,2,1,1,1,1,2,0,
-   2,0,2,2,2,2,0,2,
-   0,0,2,2,2,2,0,0,
-   0,0,2,0,0,2,0,0,
-   0,0,3,0,0,3,0,0},
-  -- [2] facing down, walk-1 (arms in, legs cross)
-  {0,0,2,2,2,2,0,0,
-   0,2,1,1,1,1,2,0,
-   0,2,1,3,3,1,2,0,
-   0,2,1,1,1,1,2,0,
+  -- [1] facing down, walk-0
+  {0,2,2,2,2,2,2,0,
+   2,2,2,2,2,2,2,2,
+   2,2,1,1,1,1,2,2,
+   2,2,3,1,1,3,2,2,
+   2,2,1,1,1,1,2,2,
    0,2,2,2,2,2,2,0,
-   2,0,2,2,2,2,0,2,
-   0,0,0,2,2,0,0,0,
-   0,0,2,0,0,2,0,0},
-  -- [3] facing up, walk-0 (back of head, no eyes)
-  {0,0,2,2,2,2,0,0,
-   0,2,1,1,1,1,2,0,
-   0,2,1,1,1,1,2,0,
-   0,2,2,2,2,2,2,0,
-   2,0,2,2,2,2,0,2,
    0,0,2,2,2,2,0,0,
-   0,0,2,0,0,2,0,0,
-   0,0,3,0,0,3,0,0},
+   0,0,4,0,0,4,0,0},
+  -- [2] facing down, walk-1
+  {0,2,2,2,2,2,2,0,
+   2,2,2,2,2,2,2,2,
+   2,2,1,1,1,1,2,2,
+   2,2,3,1,1,3,2,2,
+   2,2,1,1,1,1,2,2,
+   0,2,2,2,2,2,2,0,
+   0,2,2,2,2,2,2,0,
+   0,0,0,4,4,0,0,0},
+  -- [3] facing up, walk-0 (back of the helmet)
+  {0,2,2,2,2,2,2,0,
+   2,2,2,2,2,2,2,2,
+   2,2,2,2,2,2,2,2,
+   2,2,2,2,2,2,2,2,
+   2,2,2,2,2,2,2,2,
+   0,2,2,2,2,2,2,0,
+   0,0,2,2,2,2,0,0,
+   0,0,4,0,0,4,0,0},
   -- [4] facing up, walk-1
-  {0,0,2,2,2,2,0,0,
-   0,2,1,1,1,1,2,0,
-   0,2,1,1,1,1,2,0,
+  {0,2,2,2,2,2,2,0,
+   2,2,2,2,2,2,2,2,
+   2,2,2,2,2,2,2,2,
+   2,2,2,2,2,2,2,2,
+   2,2,2,2,2,2,2,2,
    0,2,2,2,2,2,2,0,
    0,2,2,2,2,2,2,0,
-   2,0,2,2,2,2,0,2,
-   0,0,0,2,2,0,0,0,
-   0,0,2,0,0,2,0,0},
-  -- [5] facing right, walk-0 (one eye, arm forward)
-  {0,0,0,2,2,2,0,0,
-   0,0,2,1,1,1,2,0,
-   0,0,2,1,3,1,2,0,
-   0,0,2,1,1,1,2,0,
-   0,0,2,2,2,2,2,2,
+   0,0,0,4,4,0,0,0},
+  -- [5] facing right, walk-0 (one eye)
+  {0,2,2,2,2,2,2,0,
+   2,2,2,2,2,2,2,2,
+   2,2,2,2,1,1,1,2,
+   2,2,2,2,1,1,3,2,
+   2,2,2,2,1,1,1,2,
+   0,2,2,2,2,2,2,0,
    0,0,2,2,2,2,0,0,
-   0,0,2,0,2,0,0,0,
-   0,0,3,0,3,0,0,0},
-  -- [6] facing right, walk-1 (arm back)
-  {0,0,0,2,2,2,0,0,
-   0,0,2,1,1,1,2,0,
-   0,0,2,1,3,1,2,0,
-   0,0,2,1,1,1,2,0,
-   2,2,2,2,2,2,0,0,
-   0,0,2,2,2,2,0,0,
-   0,0,0,2,0,2,0,0,
-   0,0,2,0,0,3,0,0},
+   0,0,4,0,4,0,0,0},
+  -- [6] facing right, walk-1
+  {0,2,2,2,2,2,2,0,
+   2,2,2,2,2,2,2,2,
+   2,2,2,2,1,1,1,2,
+   2,2,2,2,1,1,3,2,
+   2,2,2,2,1,1,1,2,
+   0,2,2,2,2,2,2,0,
+   0,2,2,2,2,0,0,0,
+   0,4,0,0,0,4,0,0},
 }
 
 local function drawSp(id,x,y,col,flipH)
   local sp=SPR[id]
-  local skin=10  -- TIC-80 color 10 = light blue
+  local skin=SKIN
   for i=0,63 do
     local c=sp[i+1]
     if c~=0 then
@@ -1025,6 +1055,7 @@ local function drawSp(id,x,y,col,flipH)
       local py = y+math.floor(i/8)
       if c==1 then pix(px,py,skin)
       elseif c==2 then pix(px,py,col)
+      elseif c==4 then pix(px,py,13)
       else pix(px,py,0) end
     end
   end
@@ -1182,17 +1213,49 @@ end
 -- ── game HUD ──────────────────────────────────────────────────────────────────
 
 -- Pasek nad ścianą górnego rzędu (r=0): nie zasłania pola gry.
+-- 5x5 head for the HUD: 2 player colour (grey once dead), 1 skin, 3 eyes
+local HUD_HEAD={".222.","22222","23132","22222",".222."}
+
+local function drawHead(x,y,col)
+  for j,row in ipairs(HUD_HEAD) do
+    for i=1,5 do
+      local k=row:sub(i,i)
+      if k=="2" then pix(x+i-1,y+j-1,col)
+      elseif k=="1" then pix(x+i-1,y+j-1,SKIN)
+      elseif k=="3" then pix(x+i-1,y+j-1,0) end
+    end
+  end
+end
+
+-- four player segments of 56 px around a 16 px zone countdown in the middle
+local HUD_X={2,58,128,184}
+
 local function drawHUD()
   rect(0,0,W*TILE,7,0)
   for i,p in ipairs(players) do
-    local x=(i-1)*60+2
-    rect(x,1,4,5,p.alive and p.color or 13)
-    print("W"..score[i],x+6,1,12,false,1,true)
-    drawIcon(HUD_ICONS.B,x+18,1)
-    print(p.stats.bombs-p.bombs,x+24,1,12,false,1,true)
-    drawIcon(HUD_ICONS.R,x+31,1)
-    print(p.stats.len,x+37,1,12,false,1,true)
-    if p.shield then drawIcon(HUD_ICONS.S,x+44,1) end
+    local x=HUD_X[i]
+    local col=p.alive and p.color or 13
+    local txt=p.alive and 12 or 13
+    drawHead(x,1,col)
+    if not p.alive then
+      line(x,1,x+4,5,BOMB_COL)
+      line(x+4,1,x,5,BOMB_COL)
+    end
+    print(humans[i] and "P" or "C",x+6,1,col,false,1,true)
+    for k=1,MATCH_WINS do
+      if score[i]>=k then rect(x+8+k*4,2,3,3,4) else rectb(x+8+k*4,2,3,3,13) end
+    end
+    drawIcon(HUD_ICONS.B,x+25,1)
+    print(p.stats.bombs,x+31,1,txt,false,1,true)
+    drawIcon(HUD_ICONS.R,x+35,1)
+    print(p.stats.len,x+41,1,txt,false,1,true)
+    if p.shield then drawIcon(HUD_ICONS.S,x+46,1) end
+  end
+  local left=shrinkAt-roundFrames
+  local warning=left<=SHRINK_WARN
+  if left>0 and not (warning and frame%20<10) then
+    local secs=tostring(left//60+1)
+    print(secs,120-#secs*2,1,warning and WARN_COL or 12,false,1,true)
   end
 end
 

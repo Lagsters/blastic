@@ -9,16 +9,19 @@ The loop is cut into equal beat slices. When the slices do not fit, similar ones
 sample (k-medoids on log-mel spectra) and an order list replays them, as in an Amiga module.
 
 Usage: python wav2tic.py <in.wav> <out.bin> [--bars N] [--start-bar N] [--slice beats]
-                         [--gain G] [--preview out.wav]
+                         [--loop-bars N] [--gain G] [--sfx boom.wav] [--preview out.wav]
 Blob layout (little endian):
-  u16 slice length in samples, u8 slice count, u8 order length, order[], then per slice
-  s16 predictor + u8 step index, then 4-bit IMA ADPCM nibbles (low nibble first), slices back to back.
+  u16 slice length in samples, u8 slice count, u8 order length, u16 sound effect offset (0 = none),
+  u16 sound effect length in samples, order[], then per slice s16 predictor + u8 step index, then
+  4-bit IMA ADPCM nibbles (low nibble first), slices back to back; then the sound effect:
+  s16 predictor + u8 step index and its nibbles.
 """
 import argparse, sys
 import numpy as np, soundfile as sf, librosa
 from scipy.signal import resample_poly
 
 RATE = 7680
+HEADER = 8
 LOW_SIZE = 0x0FF80 - 0x04000
 SEAM = 384
 BUDGET = LOW_SIZE + 0x13FFC - 0x11164
@@ -81,10 +84,10 @@ def encode_slice(x):
 def decode_blob(blob):
     """One pass of the order list as the bytes blastic.lua pokes (pred // 256 + 128)."""
     slice_len, k, n = int.from_bytes(blob[0:2], "little"), blob[2], blob[3]
-    data = 4 + n + 3 * k
+    data = HEADER + n + 3 * k
     out = []
-    for s in blob[4:4 + n]:
-        h = 4 + n + 3 * s
+    for s in blob[HEADER:HEADER + n]:
+        h = HEADER + n + 3 * s
         pred, idx = int.from_bytes(blob[h:h + 2], "little", signed=True), blob[h + 2]
         base = data + s * slice_len // 2
         codes = [(blob[base + j // 2] >> (4 * (j & 1))) & 15 for j in range(slice_len)]
@@ -120,6 +123,8 @@ def main():
     ap.add_argument("--gain", type=float, default=0.8, help="peak level, leaves headroom for SFX")
     ap.add_argument("--loop-bars", type=int, default=0,
                     help="the whole input is an exact loop of N 4-beat bars (no beat tracking, no fade)")
+    ap.add_argument("--sfx", help="one-shot sound (the explosion) stored after the music")
+    ap.add_argument("--sfx-gain", type=float, default=0.9)
     ap.add_argument("--preview")
     a = ap.parse_args()
 
@@ -151,7 +156,12 @@ def main():
         x[end - fade:end] = x[end - fade:end] * (1 - ramp) + x[first - fade:first] * ramp
         slices = [x[first + i * slice_len: first + (i + 1) * slice_len] for i in range(n)]
 
-    header = 4 + n
+    sfx = None
+    if a.sfx:
+        z, zr = librosa.load(a.sfx, sr=None, mono=True)
+        z = resample_poly(z, RATE, zr)
+        sfx = (z / np.max(np.abs(z)) * a.sfx_gain * 32767)[:len(z) & ~1]
+    header = HEADER + n + (len(sfx) // 2 + 3 if sfx is not None else 0)
     cost = slice_len // 2 + 3
     k = min(n, (BUDGET - header) // cost, 255)
     if k < 1: sys.exit("slice does not fit the budget")
@@ -167,12 +177,18 @@ def main():
 
     enc = [encode_slice(slices[m]) for m in med]
     blob = bytearray()
-    blob += slice_len.to_bytes(2, "little") + bytes([k, n]) + bytes(int(i) for i in assign)
+    blob += slice_len.to_bytes(2, "little") + bytes([k, n, 0, 0, 0, 0]) + bytes(int(i) for i in assign)
     for pred, idx, _ in enc:
         blob += int(pred).to_bytes(2, "little", signed=True) + bytes([idx])
     for _, _, codes in enc:
         for j in range(0, len(codes), 2):
             blob.append(codes[j] | (codes[j + 1] << 4))
+    if sfx is not None:
+        pred, idx, codes = encode_slice(sfx)
+        blob[4:8] = len(blob).to_bytes(2, "little") + len(sfx).to_bytes(2, "little")
+        blob += int(pred).to_bytes(2, "little", signed=True) + bytes([idx])
+        blob += bytes(codes[j] | (codes[j + 1] << 4) for j in range(0, len(codes), 2))
+        print(f"sound effect {len(sfx) / RATE:.2f} s, {len(codes) // 2 + 3} B")
     assert len(blob) <= BUDGET, len(blob)
     open(a.out, "wb").write(blob)
 

@@ -303,13 +303,13 @@ check("adjacent bomb chains in the same tick", not bomb_at(6,5),
 -- three-bomb chain A->B->C resolves in one tick, each bomb explodes once
 open_arena({3,4})
 local explosions=0
-local real_sfx=env.sfx
-env.sfx=function(id) if id==0 then explosions=explosions+1 end end
+local real_boom=env.sndExplosion
+env.sndExplosion=function() explosions=explosions+1 end
 local ca=add_bomb(env.players[1],5,5,1)
 add_bomb(env.players[2],6,5,env.BOMB_TIMER)   -- covered by A (BLAST_LEN reach)
 add_bomb(env.players[1],8,5,env.BOMB_TIMER)   -- covered by B only
 run_frames(1)
-env.sfx=real_sfx
+env.sndExplosion=real_boom
 check("three-bomb chain resolves in one tick", #env.bombs==0,
       "pending="..#env.bombs)
 check("each chained bomb explodes exactly once", explosions==3,
@@ -380,7 +380,7 @@ check("no second shield: hit after invulnerability kills", not sp.alive)
 new_game()
 env.players[3].alive=false; env.players[4].alive=false
 env.powerups={{c=3,r=3,kind="B"},{c=4,r=3,kind="R"}}
-env.map[3][4]=env.T_EMPTY
+env.map[3][4]=env.T_EMPTY; env.map[3][5]=env.T_EMPTY  -- a block in reach would drop a new item
 env.bombs={{c=3,r=3,t=1,len=2}}
 env.TIC()
 local left={}
@@ -453,17 +453,39 @@ run_frames(env.SHRINK_DELAY+env.SHRINK_CYCLE-2)
 check("no tile shrinks before the cycle ends", open_count()==open_before,
       ("open %d->%d"):format(open_before, open_count()))
 run_frames(1)
-check("both side columns close at once", col_open(1)==0 and col_open(env.W-2)==0 and col_open(2)>0,
-      ("col1=%d col2=%d"):format(col_open(1), col_open(2)))
-check("top and bottom rows stay while the arena is wider than tall",
-      row_open(1)>0 and row_open(env.H-2)>0)
+check("the whole outline closes at once",
+      col_open(1)==0 and col_open(env.W-2)==0 and row_open(1)==0 and row_open(env.H-2)==0
+      and col_open(2)>0 and row_open(2)>0,
+      ("col1=%d row1=%d col2=%d"):format(col_open(1), row_open(1), col_open(2)))
 
-close_steps(6)
-check("sides keep closing until the arena is nearly square",
-      col_open(6)==0 and col_open(7)>0 and row_open(1)>0)
-close_steps(7)
-check("then the whole outline closes evenly", row_open(1)==0 and row_open(env.H-2)==0
-      and col_open(7)==0 and col_open(8)>0 and row_open(2)>0)
+close_steps(3)
+check("each step closes the next ring, keeping a rectangle",
+      col_open(3)==0 and row_open(3)==0 and col_open(env.W-4)==0 and row_open(env.H-4)==0
+      and col_open(4)>0 and row_open(4)>0)
+
+-- the arena fills the screen under the HUD; its edge is one thin line on all four sides
+new_game()
+local ring_walls,frame_line=0,false
+do
+  local real_rect,real_rectb=env.rect,env.rectb
+  env.rect=function(x,y,w,h,col)
+    local ring=x<0 or x>=240 or y<env.TILE or y>=136
+    if w==env.TILE and col==13 and ring then ring_walls=ring_walls+1 end
+  end
+  env.rectb=function(x,y,w,h,col)
+    if x==0 and y==env.TILE-1 and w==240 and h==136-(env.TILE-1) then
+      frame_line=true
+    end
+  end
+  env.state="game"
+  env.TIC()
+  env.rect,env.rectb=real_rect,real_rectb
+end
+check("the outer wall ring is not drawn as wall tiles", ring_walls==0, "ring wall tiles="..ring_walls)
+check("one even line frames the arena on all four sides", frame_line)
+check("the arena fills the screen below the HUD",
+      env.gpx(1)==0 and env.gpx(env.W-2)==240-env.TILE and env.gpy(1)==env.TILE
+      and env.gpy(env.H-2)==136-env.TILE)
 
 -- the ring blinks faster as it nears closing
 new_game()
@@ -838,6 +860,15 @@ for r=0,env.H-1 do
   end
 end
 check("walls mirror left-right", asym==nil, asym and ("first mismatch at "..asym))
+asym=nil
+for r=0,env.H-1 do
+  for c=0,env.W-1 do
+    local a=env.mget(c,r)==env.T_WALL
+    local b=env.mget(c,env.H-1-r)==env.T_WALL
+    if a~=b and not asym then asym=c..","..r end
+  end
+end
+check("walls mirror top-bottom", asym==nil, asym and ("first mismatch at "..asym))
 
 -- ── TEST: tuning (one starting bomb, half walking speed) ──────────────────────
 
@@ -882,7 +913,10 @@ local function icon_pixels(kind)
   env.powerups={{c=5,r=5,kind=kind}}
   local seen={}
   local real_pix,real_rect,real_print=env.pix,env.rect,env.print
-  env.pix=function(x,y,col) seen[#seen+1]=x..","..y..","..col end
+  local x0,y0=env.gpx(5),env.gpy(5)-1  -- the item's tile, bobbing one pixel up
+  env.pix=function(x,y,col)
+    if x>=x0 and x<x0+8 and y>=y0 and y<y0+9 then seen[#seen+1]=x..","..y..","..col end
+  end
   env.rect=function() end
   env.print=function() end
   env.TIC()
@@ -944,8 +978,160 @@ check("an active shield draws no square frame", #shielded.rectb==#plain.rectb,
 check("HUD shows bomb and range icons for every player",
       hud_colour_in(hud_plain,13,2,62) and hud_colour_in(hud_plain,3,2,62)
       and hud_colour_in(hud_plain,13,182,240) and hud_colour_in(hud_plain,3,182,240))
+local hud_text,hud_heads={},{}
+do
+  new_game()
+  env.state="game"
+  local saved_print,saved_pix=env.print,env.pix
+  env.print=function(t,x,y) if y and y<7 then hud_text[#hud_text+1]={t=tostring(t),x=x} end return 0 end
+  env.pix=function(x,y,col) if y<7 then hud_heads[col]=(hud_heads[col] or 0)+1 end end
+  env.TIC()
+  env.print,env.pix=saved_print,saved_pix
+end
+local function label_in(t,x0,x1)
+  for _,h in ipairs(hud_text) do if h.t==t and h.x>=x0 and h.x<x1 then return true end end
+  return false
+end
+check("HUD marks humans P and bots C",
+      label_in("P",0,60) and label_in("P",60,120) and label_in("C",120,180) and label_in("C",180,240))
+local heads=true
+for _,pl in ipairs(env.players) do if (hud_heads[pl.color] or 0)<4 then heads=false end end
+check("HUD shows a little head in each player's colour", heads)
+-- HUD: wins as dots, the zone countdown in the middle, maximum bombs, a crossed-out dead head
+local hud_rects,hud_prints,hud_lines={}, {}, {}
+do
+  new_game()
+  env.state="game"
+  env.score={2,0,0,0}
+  env.players[1].stats.bombs=3; env.players[1].bombs=1
+  env.players[4].alive=false
+  env.roundFrames=0
+  local sr,sp,sl,spix=env.rect,env.print,env.line,env.pix
+  env.rect=function(x,y,w,h,col) if y<7 then hud_rects[#hud_rects+1]={x=x,w=w,col=col} end end
+  env.print=function(t,x,y,col) if y and y<7 then hud_prints[#hud_prints+1]={t=tostring(t),x=x,col=col} end return 0 end
+  env.line=function(x0,y0,x1,y1,col) if y0<7 then hud_lines[#hud_lines+1]={x=x0,col=col} end end
+  env.pix=function() end
+  env.TIC()
+  env.rect,env.print,env.line,env.pix=sr,sp,sl,spix
+  env.score={0,0,0,0}
+end
+local won=0
+for _,r in ipairs(hud_rects) do if r.w==3 and r.col==4 and r.x<56 then won=won+1 end end
+check("HUD shows wins as filled dots", won==2, "filled="..won)
+local timer=nil
+for _,p in ipairs(hud_prints) do if p.x>=112 and p.x<128 and p.t:match("^%d+$") then timer=tonumber(p.t) end end
+check("HUD counts down to the next zone step", timer and timer>=30 and timer<=40, "timer="..tostring(timer))
+local max_shown=false
+for _,p in ipairs(hud_prints) do if p.t=="3" and p.x<56 then max_shown=true end end
+check("HUD shows how many bombs a player can hold", max_shown)
+local crossed=false
+for _,l in ipairs(hud_lines) do if l.x>=184 and l.col==2 then crossed=true end end
+check("HUD crosses out a dead player's head", crossed)
 check("HUD shows the shield icon only while the player has one",
       hud_colour_in(hud_shield,11,2,62) and not hud_colour_in(hud_plain,11,2,62))
+
+-- ── TEST: corner assist and zone items ───────────────────────────────────────
+
+io.write("\n=== corner assist ===\n")
+
+-- 1-wide corridor going right from (3,5); the player stands half a tile below its axis
+new_game()
+env.state="game"
+for id=2,3 do env.players[id].alive=false end  -- P4 stays, or the round would end at once
+env.bombs={}; env.powerups={}
+for r=1,env.H-2 do for c=1,env.W-2 do env.map[r][c]=env.T_WALL end end
+env.map[env.H-2][env.W-2]=env.T_EMPTY
+for c=3,8 do env.map[5][c]=env.T_EMPTY end
+env.map[6][3]=env.T_EMPTY
+local walker=env.players[1]
+walker.x,walker.y=env.gpx(3),env.gpy(5)+4
+walker.c,walker.r=3,5
+for _=1,40 do _held={[3]=true}; env.TIC() end
+clear_inputs()
+check("a player off the corridor axis slides into it", walker.c>=5 and walker.y==env.gpy(5),
+      ("c=%d y-off=%d"):format(walker.c, walker.y-env.gpy(5)))
+
+-- the closing zone takes the items lying on it
+new_game()
+env.powerups={{c=1,r=1,kind="B"},{c=5,r=5,kind="R"}}
+env.roundFrames=env.shrinkAt-1
+env.updateShrink()
+check("items in the closing zone disappear", #env.powerups==1 and env.powerups[1].c==5,
+      "items="..#env.powerups)
+
+-- a block is a wooden crate: several shades inside one tile, varying between blocks
+local function block_shades(c,r)
+  new_game()
+  env.state="game"
+  env.map[r][c]=env.T_BLOCK
+  local shades,pattern={},{}
+  local saved,saved_line=env.pix,env.line
+  env.pix=function(x,y,col)
+    if x>=env.gpx(c) and x<env.gpx(c)+8 and y>=env.gpy(r) and y<env.gpy(r)+8 then
+      shades[col]=true; pattern[#pattern+1]=(x-env.gpx(c))..","..(y-env.gpy(r))
+    end
+  end
+  env.line=function(x0,y0,x1,y1,col)
+    if x0>=env.gpx(c) and x0<env.gpx(c)+8 and y0>=env.gpy(r) and y0<env.gpy(r)+8 then shades[col]=true end
+  end
+  env.TIC()
+  env.pix,env.line=saved,saved_line
+  local n=0
+  for _ in pairs(shades) do n=n+1 end
+  table.sort(pattern)
+  return n,table.concat(pattern,";")
+end
+local shades,pat_a=block_shades(5,3)
+local _,pat_b=block_shades(7,3)
+check("blocks are textured wood", shades>=2, "shades="..shades)
+check("neighbouring blocks differ in texture", pat_a~=pat_b)
+
+-- ── TEST: player sprite ───────────────────────────────────────────────────────
+
+io.write("\n=== player sprite ===\n")
+
+-- pixels of P1 facing down, relative to its tile
+local function player_pixels()
+  new_game()
+  env.state="game"
+  local p=env.players[1]
+  p.dir={0,1}; p.walkAnim=0
+  local px={}
+  local saved=env.pix
+  env.pix=function(x,y,col)
+    local dx,dy=x-p.x,y-p.y
+    if dx>=0 and dx<8 and dy>=0 and dy<8 then px[#px+1]={x=dx,y=dy,col=col} end
+  end
+  env.TIC()
+  env.pix=saved
+  return px
+end
+
+local sprite=player_pixels()
+local eye_cols,face,body={},0,0
+for _,q in ipairs(sprite) do
+  if q.col==10 then face=face+1 end
+  if q.y>=6 then body=body+1 end
+  if q.col==0 and q.y<6 then eye_cols[q.x]=true end
+end
+local eyes={}
+for x in pairs(eye_cols) do eyes[#eyes+1]=x end
+table.sort(eyes)
+check("the face has two separate eyes", #eyes==2 and eyes[2]-eyes[1]>=2,
+      "eye columns "..table.concat(eyes,","))
+local colour=0
+for _,q in ipairs(sprite) do if q.col==env.players[1].color then colour=colour+1 end end
+check("a small face in a lot of player colour", face>=6 and face<=12 and colour>=30,
+      ("face=%d colour=%d"):format(face,colour))
+local legs=0
+for _,q in ipairs(sprite) do if q.y==7 and q.col~=0 then legs=legs+1 end end
+check("the legs show on the dark floor", legs>=2, "visible leg pixels="..legs)
+
+-- player colours chosen by the owner: white, green, blue, red; faces stay skin-toned
+local want={12,5,9,2}
+local wrong=nil
+for i,p in ipairs(env.players) do if p.color~=want[i] then wrong=i end end
+check("players are white, green, blue and red", wrong==nil, wrong and ("player "..wrong))
 
 -- ── TEST: helpers covered directly ────────────────────────────────────────────
 
@@ -1011,11 +1197,12 @@ check("bot lays a bomb next to a block when it can escape", bot_bombs>=1,
 
 -- shrinkWarnTiles: the next tiles to shrink are tinted once the delay has passed
 new_game()
+env.state="game"
 env.roundFrames=env.shrinkAt-env.SHRINK_WARN
 local warn_rects=0
 local real_rect=env.rect
 env.rect=function(_,_,_,_,col) if col==9 then warn_rects=warn_rects+1 end end
-env.TIC()
+for _=1,30 do env.TIC() end  -- a full blink period, the ring is lit in half of it
 env.rect=real_rect
 check("shrink warns about the next tiles", warn_rects>=1, "rects="..warn_rects)
 
@@ -1041,11 +1228,28 @@ audio_game.init()
 -- stereo volume and persistent memory, which audio must never touch.
 check("initAudio writes the bomb-placed sound slot", pokes[0x100E4+66*5]~=nil)
 check("initAudio writes the shield-break sound slot", pokes[0x100E4+66*7]~=nil)
-check("initAudio writes the explosion and death slots", pokes[0x100E4]~=nil and pokes[0x100E4+66]~=nil)
+check("initAudio writes the death slot", pokes[0x100E4+66]~=nil)
 check("initAudio writes the waveforms", pokes[0x0FFE4]~=nil and pokes[0x0FFE4+16*3]~=nil)
 local stray=false
 for addr in pairs(pokes) do if addr>=0x14000 and addr<0x14404 then stray=true end end
+check("faces are skin-toned: palette colour 10 is set warm",
+      pokes[0x03FC0+30] and pokes[0x03FC0+30]>pokes[0x03FC0+32])
+local function brown(i)
+  local r,g,b=pokes[0x03FC0+i*3],pokes[0x03FC0+i*3+1],pokes[0x03FC0+i*3+2]
+  return r and r>g and g>b
+end
+check("blocks are wood brown", brown(1) and brown(6) and brown(8))
 check("initAudio leaves stereo volume and persistent memory alone", not stray)
+-- SFX slot format: per tick byte0 = attenuation (0 loudest) | wave<<4, byte1 = chord | pitch<<4
+local blip=0x100E4+66*5
+check("SFX ticks after the sound are silent", pokes[blip+20] and pokes[blip+20]&15==15,
+      "tick 10 byte0="..tostring(pokes[blip+20]))
+local arp=0
+for t=0,3 do arp=arp|((pokes[blip+t*2+1] or 0)&15) end
+check("the bomb-placed blip has no arpeggio", arp==0)
+local flat=true
+for i=0,15 do if pokes[0x0FFE4+i]~=0 then flat=false end end
+check("wave 0 is TIC-80 noise (a flat zero wave)", flat)
 
 -- Muzyka: blob z wav2tic.py w pamięci, jak go układa make_tic.py; zbieramy bajty kanału PCM.
 local PCM=0x14E24
@@ -1061,13 +1265,14 @@ local function music_stream(blob,frames)
     if addr>=PCM and addr<PCM+128 then stream[#stream+1]=v end
   end,function() end)
   e.peek=function(addr) return mem[addr] or 0 end
+  e.sndExplosion=function() end  -- bots' bombs would mix into the stream
   for _=1,frames do e.TIC() end
   return stream
 end
 
--- len 4, 2 plastry, kolejność {1,0,1}; plaster 0: pred 0, indeks 88, kody 7,15,0,8;
+-- len 4, 2 plastry, kolejność {1,0,1}, bez wybuchu; plaster 0: pred 0, indeks 88, kody 7,15,0,8;
 -- plaster 1: pred 2560, indeks 0, kody 0 (krok 7>>3=0, stoi na 2560 -> 138).
-local tiny=string.char(4,0, 2,3, 1,0,1, 0,0,88, 0,10,0, 0xF7,0x80, 0,0)
+local tiny=string.char(4,0, 2,3, 0,0,0,0, 1,0,1, 0,0,88, 0,10,0, 0xF7,0x80, 0,0)
 local s=music_stream(tiny,2)
 local cycle={138,138,138,138, 255,16,32,17, 138,138,138,138}
 local same=#s==128
@@ -1079,6 +1284,7 @@ local f=io.open("music.bin","rb")
 local blob=f:read("a"); f:close()
 local len=blob:byte(1)|blob:byte(2)<<8
 local loop=len*blob:byte(4)
+check("music.bin carries the explosion", (blob:byte(5)|blob:byte(6)<<8)>0 and (blob:byte(7)|blob:byte(8)<<8)>0)
 local frames=(loop*2)//128+2
 local st=music_stream(blob,frames)
 local repeats,varies=#st>=loop*2,false
@@ -1086,6 +1292,27 @@ for i=1,loop do
   if st[i]~=st[i+loop] then repeats=false break end
   if st[i]~=st[1] then varies=true end
 end
+-- Ten sam blob z wybuchem na końcu: 2 próbki, pred 1280 (bajt 5), kody 0 -> muzyka 138 + 5.
+local with_boom=string.char(4,0, 2,3, 21,0,2,0, 1,0,1, 0,0,88, 0,10,0, 0xF7,0x80, 0,0, 0,5,0, 0)
+local mixed
+do
+  local mem={}
+  for i=1,#with_boom do mem[0x04000+i-1]=with_boom:byte(i) end
+  local frames={}
+  local e=fresh_game(function(addr,v)
+    if addr>=PCM and addr<PCM+128 then frames[#frames+1]=v end
+  end,function() end)
+  e.peek=function(addr) return mem[addr] or 0 end
+  e.TIC(); e.TIC()
+  frames={}
+  e.sndExplosion()
+  e.TIC()
+  mixed=frames
+end
+check("explosion mixes into the music for its length",
+      mixed[1]==143 and mixed[2]==143 and mixed[3]==cycle[11],
+      "got "..table.concat(mixed,",",1,4))
+
 check("music.bin uses the patterns region", #blob>0xBF80, "size "..#blob)
 check("music.bin loop repeats byte for byte", repeats and varies)
 
