@@ -997,10 +997,47 @@ audio_game.init()
 check("initAudio writes the bomb-placed sound slot", pokes[0x14100+66*5]~=nil)
 check("initAudio writes the shield-break sound slot", pokes[0x14100+66*7]~=nil)
 
-local played={}
-local music_game=fresh_game(function() end,function(id) played[id]=true end)
-for _=1,60 do music_game.TIC() end
-check("title music plays the bass line", played[3]==true)
+-- Muzyka: blob z wav2tic.py w pamięci, jak go układa make_tic.py; zbieramy bajty kanału PCM.
+local PCM=0x14E24
+local function music_stream(blob,frames)
+  local mem={}
+  for i=1,#blob do
+    local off=i-1
+    local addr=off<0xBF80 and 0x04000+off or 0x11164+off-0xBF80
+    mem[addr]=blob:byte(i)
+  end
+  local stream={}
+  local e=fresh_game(function(addr,v)
+    if addr>=PCM and addr<PCM+128 then stream[#stream+1]=v end
+  end,function() end)
+  e.peek=function(addr) return mem[addr] or 0 end
+  for _=1,frames do e.TIC() end
+  return stream
+end
+
+-- len 4, 2 plastry, kolejność {1,0,1}; plaster 0: pred 0, indeks 88, kody 7,15,0,8;
+-- plaster 1: pred 2560, indeks 0, kody 0 (krok 7>>3=0, stoi na 2560 -> 138).
+local tiny=string.char(4,0, 2,3, 1,0,1, 0,0,88, 0,10,0, 0xF7,0x80, 0,0)
+local s=music_stream(tiny,2)
+local cycle={138,138,138,138, 255,16,32,17, 138,138,138,138}
+local same=#s==128
+for i=1,#s do same=same and s[i]==cycle[(i-1)%12+1] end
+check("music decodes IMA ADPCM slices in order and loops", same,
+      "got "..table.concat(s,",",1,math.min(#s,16)))
+
+local f=io.open("music.bin","rb")
+local blob=f:read("a"); f:close()
+local len=blob:byte(1)|blob:byte(2)<<8
+local loop=len*blob:byte(4)
+local frames=(loop*2)//128+2
+local st=music_stream(blob,frames)
+local repeats,varies=#st>=loop*2,false
+for i=1,loop do
+  if st[i]~=st[i+loop] then repeats=false break end
+  if st[i]~=st[1] then varies=true end
+end
+check("music.bin uses the patterns region", #blob>0xBF80, "size "..#blob)
+check("music.bin loop repeats byte for byte", repeats and varies)
 
 -- ── Summary ───────────────────────────────────────────────────────────────────
 

@@ -6,8 +6,10 @@
 ![game](docs/screenshot-game.png)
 
 Four-player arena game for [TIC-80](https://tic80.com): drop blasts, break blocks and be the
-last one standing. P1 and P2 are human, P3 and P4 are bots. Graphics and music are generated
-in Lua; the cart contains only the code chunk.
+last one standing. P1 and P2 are human, P3 and P4 are bots. Graphics and sound effects are generated
+in Lua. The music is an instrumental loop made locally with MusicGen (`tools/music/`) and
+streamed as IMA ADPCM through the PCM channel of TIC-80 1.4; `music.bin` fills the cart's tile,
+sprite, map and music-pattern memory.
 
 Melancholy (Android TV libretro frontend by Lagsters) downloads the cart from this
 repository's releases and uses it in its instrumented tests.

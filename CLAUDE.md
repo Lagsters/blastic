@@ -1,7 +1,8 @@
 # BlasTIC — gra TIC-80 (Lua)
 
 Arena dla czterech graczy (P1, P2 ludzie; P3, P4 boty). Kod to jeden plik `blastic.lua`,
-cart `.tic` budowany z niego przez `make_tic.py`. Grafika i muzyka powstają w kodzie.
+cart `.tic` budowany z niego przez `make_tic.py`. Grafika i efekty dźwiękowe powstają w kodzie;
+muzyka to pętla PCM z `music.bin` (źródło i konwerter w `tools/music/`).
 Cart pobiera aplikacja Melancholy z releasów tego repo.
 
 ## Zasady nadrzędne
@@ -42,7 +43,9 @@ Rozstrzygają każdy spór, w tej kolejności.
 | `blastic.lua` | cała gra; globalne `TIC()` i `init()` wymagane przez TIC-80 |
 | `test_blastic.lua` | testy logiki, API TIC-80 zamockowane, ziarno stałe |
 | `sim_blastic.lua` | symulator czterech botów bez grafiki, z niezmiennikami |
-| `make_tic.py` | buduje `.tic` (tylko chunk kodu; wolny TIC-80 nie zapisuje `.lua`) |
+| `make_tic.py` | buduje `.tic`: chunk kodu i `music.bin` (wolny TIC-80 nie zapisuje `.lua`) |
+| `music.bin` | muzyka: IMA ADPCM, 7680 Hz, w RAM od `0x04000` (kafle, sprite'y, mapa) i od `0x11164` (wzorce, ścieżki) |
+| `tools/music/` | `gen_music.py` (MusicGen), `wav2tic.py` (WAV → `music.bin`), `source.flac` (źródło) |
 | `check.py` | bramka „gotowe” |
 
 - Statystyki gracza (`stats.bombs`, `stats.len`) są w `players[i].stats`; `humans[i]` mówi, czy
@@ -58,6 +61,7 @@ Rozstrzygają każdy spór, w tej kolejności.
 | `lua test_blastic.lua` | testy logiki |
 | `lua sim_blastic.lua [rund] [ziarno]` | symulacja botów |
 | `python make_tic.py` | build `blastic.tic` |
+| `python tools/music/wav2tic.py tools/music/source.flac music.bin --bars 8 --slice 4` | konwersja muzyki (torch niepotrzebny; numpy, scipy, librosa, soundfile) |
 | `lua tools/shot.lua <dir>` + `python tools/shot.py <dir> <out>` | screeny tytułu i rozgrywki z kodu gry (napisy dorysowuje Pillow, więc krój pisma różni się od TIC-80) |
 
 Lua 5.4, jak `lua5.4` w CI na Ubuntu 24.04. Windows: `winget install DEVCOM.Lua`.

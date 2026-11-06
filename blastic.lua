@@ -109,58 +109,65 @@ local function initPlayers()
 end
 
 -- ── muzyka ───────────────────────────────────────────────────────────────────
--- Spokojny ambientowy podkład: niskie tony, dużo ciszy, c-moll
--- API: sfx(id, note, duration, channel, volume, speed)
--- note: 0..95 (0=C-0, 12=C-1, 24=C-2, 36=C-3, 48=C-4)
--- -1 = pauza (cisza)
+-- Pętla z tools/music/wav2tic.py: IMA ADPCM, plastry po takcie i lista kolejności, jak w module.
+-- Kanał PCM TIC-80 1.4 gra co klatkę 128 bajtów z 0x14E24 (7680 Hz) i sam je zeruje.
+-- Dane zajmują TILES+SPRITES+MAP i MUSIC PATTERNS+TRACKS: tych obszarów nie wolno używać na grafikę ani music().
+local PCM=0x14E24
+local MUSIC_LOW,MUSIC_LOW_SIZE,MUSIC_HIGH=0x04000,0xBF80,0x11164
+local ADPCM_STEPS={7,8,9,10,11,12,13,14,16,17,19,21,23,25,28,31,34,37,41,45,50,55,
+  60,66,73,80,88,97,107,118,130,143,157,173,190,209,230,253,279,307,337,
+  371,408,449,494,544,598,658,724,796,876,963,1060,1166,1282,1411,1552,
+  1707,1878,2066,2272,2499,2749,3024,3327,3660,4026,4428,4871,5358,5894,
+  6484,7132,7845,8630,9493,10442,11487,12635,13899,15289,16818,18500,20350,
+  22385,24623,27086,29794,32767}
+local ADPCM_INDEX={-1,-1,-1,-1,2,4,6,8}
+local music=nil
 
--- Bas (oktawa 2): C2, Eb2, G2, Bb2 — wolne, miękkie
-local BASS={24,-1,-1,-1, 27,-1,-1,-1, 31,-1,-1,-1, 22,-1,-1,-1,
-            24,-1,-1,-1, 27,-1,-1,-1, 29,-1,-1,-1, 27,-1,-1,-1}
+local function musicByte(off)
+  if off<MUSIC_LOW_SIZE then return peek(MUSIC_LOW+off) end
+  return peek(MUSIC_HIGH+off-MUSIC_LOW_SIZE)
+end
 
--- Pad (oktawa 3): C3, Eb3, G3, F3, Bb3 — z dużymi pauzami
-local PAD ={-1,-1,36,-1, -1,-1,39,-1, -1,-1,43,-1, -1,-1,41,-1,
-            -1,-1,36,-1, -1,-1,39,-1, -1,-1,41,-1, -1,-1,39,-1}
-
--- Ozdobnik (oktawa 3): cichy ton od czasu do czasu
-local DECO={-1,-1,-1,-1, -1,-1,-1,-1, -1,-1,-1,-1, -1,-1,-1,38,
-            -1,-1,-1,-1, -1,-1,-1,-1, -1,-1,-1,-1, -1,-1,-1,36}
-
-local PATTERN_LEN=32
-local STEP_FRAMES=24  -- ~0.4 sek per krok przy 60fps
-local musicStep=0
-local musicTimer=0
-local musicOn=false
-
-local function updateMusic()
-  if not musicOn then return end
-
-  musicTimer = musicTimer + 1
-  if musicTimer < STEP_FRAMES then return end
-  musicTimer = 0
-
-  local i = (musicStep % PATTERN_LEN) + 1
-  local bn = BASS[i]
-  local pn = PAD[i]
-  local dn = DECO[i]
-
-  if bn and bn >= 0 then
-    sfx(3, bn, 80, 0, 6, 0)  -- bas: triangle, wolny, cichy, długie wybrzmienie
-  end
-  if pn and pn >= 0 then
-    sfx(2, pn, 60, 1, 4, 1)  -- pad: triangle, średnia długość, cichy
-  end
-  if dn and dn >= 0 then
-    sfx(2, dn, 40, 2, 3, 1)  -- ozdobnik: bardzo cichy
-  end
-
-  musicStep = musicStep + 1
+local function startSlice(m)
+  local s=musicByte(4+m.pos)
+  local h=4+m.orders+3*s
+  m.pred=musicByte(h)|musicByte(h+1)<<8
+  if m.pred>32767 then m.pred=m.pred-65536 end
+  m.idx=musicByte(h+2)
+  m.nibble=(m.data+s*m.len//2)*2
+  m.i=0
 end
 
 local function startMusic()
-  musicOn = true
-  musicStep = 0
-  musicTimer = 0
+  local len=musicByte(0)|musicByte(1)<<8
+  if len==0 then music=nil return end
+  local slices,orders=musicByte(2),musicByte(3)
+  music={len=len,orders=orders,data=4+orders+3*slices,pos=0}
+  startSlice(music)
+end
+
+local function updateMusic()
+  local m=music
+  if not m then return end
+  for k=0,127 do
+    if m.i==m.len then
+      m.pos=(m.pos+1)%m.orders
+      startSlice(m)
+    end
+    local n=m.nibble+m.i
+    local code=musicByte(n>>1)
+    if n&1==1 then code=code>>4 else code=code&15 end
+    local step=ADPCM_STEPS[m.idx+1]
+    local d=step>>3
+    if code&4~=0 then d=d+step end
+    if code&2~=0 then d=d+(step>>1) end
+    if code&1~=0 then d=d+(step>>2) end
+    if code&8~=0 then d=-d end
+    m.pred=math.max(-32768,math.min(32767,m.pred+d))
+    m.idx=math.max(0,math.min(88,m.idx+ADPCM_INDEX[(code&7)+1]))
+    poke(PCM+k,m.pred//256+128)
+    m.i=m.i+1
+  end
 end
 
 -- zapis jednego SFX w slocie n: frames = {{nuta, oktawa, głośność}, ...}
@@ -219,24 +226,10 @@ local function initAudio()
   for i=0,7  do poke(0x14020+i,0x00) end
   for i=8,15 do poke(0x14020+i,0xFF) end
 
-  -- Wave 3: trójkąt (melodia i bas)
+  -- Wave 3: trójkąt
   local tri={0x10,0x32,0x54,0x76,0x98,0xBA,0xDC,0xFE,
              0xEF,0xCD,0xAB,0x89,0x67,0x45,0x23,0x01}
   for i=0,15 do poke(0x14030+i,tri[i+1]) end
-
-  -- SFX 2: melodia — trójkąt, bardzo cichy, krótki
-  local bm=0x14184
-  local me={6,6,5,4,3,2,1,0}
-  for i=0,#me-1 do poke(bm+i*2,0); poke(bm+i*2+1,(me[i+1]<<4)|3) end
-  for i=#me,29 do poke(bm+i*2,0); poke(bm+i*2+1,0) end
-  poke(bm+60,0); poke(bm+61,1)
-
-  -- SFX 3: bas — trójkąt, szeptem
-  local bb=0x141C6
-  local be={4,4,3,2,1,0}
-  for i=0,#be-1 do poke(bb+i*2,0); poke(bb+i*2+1,(be[i+1]<<4)|3) end
-  for i=#be,29 do poke(bb+i*2,0); poke(bb+i*2+1,0) end
-  poke(bb+60,0); poke(bb+61,1)
 
   -- SFX 4: hi-hat/percussion — noise, szybki decay
   local bp=0x14208

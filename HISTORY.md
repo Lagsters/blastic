@@ -56,3 +56,17 @@ Format wpisu: **FAKT** / **DECYZJA** / **ŚLEPA ULICZKA**, data, jedno–dwa zda
   (14% zamiast 7%, bo ocaleni giną w ostatnim kroku razem). Okno migania 120 klatek wystarcza
   na ucieczkę z korytarza długiego na 7 pól; dłuższa ślepa uliczka na skraju areny kończy się
   śmiercią.
+- **FAKT** 2026-11-06: TIC-80 1.4 ma kanał PCM: co klatkę gra 128 bajtów bez znaku z `0x14E24`
+  (7680 Hz, 8 bit), niezależnie od czterech kanałów SFX, i zeruje je na początku klatki
+  (`src/core/sound.c`, `runPcm`). Muzyka gry to pętla IMA ADPCM dekodowana w `TIC()`.
+- **FAKT** 2026-11-06: wolna pamięć carta, której gra nie używa: kafle+sprite'y+mapa (49 024 B) i
+  wzorce+ścieżki muzyki (11 928 B); region SFX zostaje dla efektów. Przy 4 bitach na próbkę
+  mieści się 15,8 s; pętla ma 8 taktów (13,8 s, 139 BPM, SNR 21 dB względem 7680 Hz).
+- **ŚLEPA ULICZKA** 2026-11-06: dłuższa pętla przez podmianę podobnych taktów lub beatów jedną
+  próbką (k-medoids na log-mel, lista kolejności jak w module Amigi): SNR ok. 0 dB, bo muzyka z
+  MusicGen nigdy nie powtarza się próbka w próbkę; zostaje jako opcja `--slice` dla dłuższych utworów.
+- **FAKT** 2026-11-06: `initAudio` w `blastic.lua` pisze fale pod `0x14000` i SFX pod `0x14100`;
+  w TIC-80 1.x to głośność stereo i pamięć trwała (pmem). Fale są pod `0x0FFE4`, SFX pod `0x100E4`.
+  Błąd nienaprawiony (osobne zadanie).
+- **FAKT** 2026-11-06: w TIC-80 1.4.1 na Windows przechwytywanie okna przez gdigrab po tytule daje
+  stałą klatkę; zrzut pulpitu (`-i desktop`) pokazuje stan faktyczny.
