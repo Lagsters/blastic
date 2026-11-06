@@ -11,9 +11,8 @@ CHUNK_DEFAULT = 17
 CHUNK_CODE    = 5
 CODE_LIMIT    = 65535
 MUSIC_BLOB    = 'music.bin'
-# Where the music blob lands in RAM, in blob order: TILES, SPRITES, MAP, MUSIC PATTERNS, MUSIC TRACKS.
-# blastic.lua reads it back with the same split (MUSIC_LOW_SIZE).
-MUSIC_CHUNKS  = [(1, 8192), (2, 8192), (4, 32640), (15, 11520), (14, 408)]
+# The music samples land in RAM from 0x04000 (TILES, then SPRITES), where blastic.lua reads them.
+MUSIC_CHUNKS  = [(1, 8192), (2, 8192)]
 # TIC-80 reads the cart's metadata from these header comments, so they stay.
 METADATA = re.compile(r'--\s*(title|author|desc|script|input|saveid|site|license|version):')
 LONG_OPEN = re.compile(r'\[(=*)\[')
