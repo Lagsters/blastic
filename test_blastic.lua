@@ -12,6 +12,7 @@ env.cls   = function() end
 env.rect  = function() end
 env.rectb = function() end
 env.circ  = function() end
+env.circb = function() end
 env.line  = function() end
 env.pix   = function() end
 env.print = function() end  -- TIC-80 screen draw, shadows Lua's print inside game
@@ -904,6 +905,48 @@ end
 check("no icon uses the lit bomb red", not uses_colour(a,env.BOMB_COL or 2)
       and not uses_colour(b,env.BOMB_COL or 2) and not uses_colour(c,env.BOMB_COL or 2))
 
+-- ── TEST: shield bubble and HUD items ─────────────────────────────────────────
+
+io.write("\n=== shield and HUD ===\n")
+
+-- Draws one game frame; returns pix() calls in the HUD bar and the drawing calls by name.
+local function draw_frame(setup)
+  new_game()
+  env.state="game"
+  setup(env.players[1])
+  local hud,calls={},{circb={},rectb={}}
+  local saved={env.pix,env.circb,env.rectb}
+  env.pix=function(x,y,col) if y<7 then hud[#hud+1]={x=x,y=y,col=col} end end
+  env.circb=function(...) calls.circb[#calls.circb+1]={...} end
+  env.rectb=function(...) calls.rectb[#calls.rectb+1]={...} end
+  env.TIC()
+  env.pix,env.circb,env.rectb=saved[1],saved[2],saved[3]
+  return hud,calls
+end
+
+local function hud_colour_in(hud,col,x0,x1)
+  for _,p in ipairs(hud) do
+    if p.col==col and p.x>=x0 and p.x<x1 then return true end
+  end
+  return false
+end
+
+local hud_plain,plain=draw_frame(function(p) p.shield=false end)
+local hud_shield,shielded=draw_frame(function(p) p.shield=true; p.invul=0 end)
+local p1=env.players[1]
+local round=false
+for _,c in ipairs(shielded.circb) do
+  if math.abs(c[1]-(p1.x+3))<=1 and math.abs(c[2]-(p1.y+3))<=1 and c[3]>=5 then round=true end
+end
+check("an active shield is a round bubble around the player", round)
+check("an active shield draws no square frame", #shielded.rectb==#plain.rectb,
+      "rectb "..#plain.rectb.." -> "..#shielded.rectb)
+check("HUD shows bomb and range icons for every player",
+      hud_colour_in(hud_plain,13,2,62) and hud_colour_in(hud_plain,3,2,62)
+      and hud_colour_in(hud_plain,13,182,240) and hud_colour_in(hud_plain,3,182,240))
+check("HUD shows the shield icon only while the player has one",
+      hud_colour_in(hud_shield,11,2,62) and not hud_colour_in(hud_plain,11,2,62))
+
 -- ── TEST: helpers covered directly ────────────────────────────────────────────
 
 io.write("\n=== helpers ===\n")
@@ -979,7 +1022,7 @@ check("shrink warns about the next tiles", warn_rects>=1, "rects="..warn_rects)
 -- initAudio / updateMusic need a fresh game instance: initAudio runs once per instance
 local function fresh_game(poke_fn,sfx_fn)
   local e={}
-  for _,n in ipairs({"cls","rect","rectb","circ","line","pix","print"}) do e[n]=function() end end
+  for _,n in ipairs({"cls","rect","rectb","circ","circb","line","pix","print"}) do e[n]=function() end end
   e.btn=function() return false end
   e.btnp=function() return false end
   e.time=function() return 42 end
@@ -994,8 +1037,15 @@ end
 local pokes={}
 local audio_game=fresh_game(function(addr,v) pokes[addr]=v end,function() end)
 audio_game.init()
-check("initAudio writes the bomb-placed sound slot", pokes[0x14100+66*5]~=nil)
-check("initAudio writes the shield-break sound slot", pokes[0x14100+66*7]~=nil)
+-- TIC-80 1.x RAM: WAVEFORMS at 0x0FFE4, SFX at 0x100E4 (66 bytes per slot); 0x14000.. is
+-- stereo volume and persistent memory, which audio must never touch.
+check("initAudio writes the bomb-placed sound slot", pokes[0x100E4+66*5]~=nil)
+check("initAudio writes the shield-break sound slot", pokes[0x100E4+66*7]~=nil)
+check("initAudio writes the explosion and death slots", pokes[0x100E4]~=nil and pokes[0x100E4+66]~=nil)
+check("initAudio writes the waveforms", pokes[0x0FFE4]~=nil and pokes[0x0FFE4+16*3]~=nil)
+local stray=false
+for addr in pairs(pokes) do if addr>=0x14000 and addr<0x14404 then stray=true end end
+check("initAudio leaves stereo volume and persistent memory alone", not stray)
 
 -- Muzyka: blob z wav2tic.py w pamięci, jak go układa make_tic.py; zbieramy bajty kanału PCM.
 local PCM=0x14E24

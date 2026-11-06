@@ -170,9 +170,11 @@ local function updateMusic()
   end
 end
 
+local WAVES,SFX_RAM=0x0FFE4,0x100E4  -- 16 B na falę, 66 B na slot SFX
+
 -- zapis jednego SFX w slocie n: frames = {{nuta, oktawa, głośność}, ...}
 local function putSfx(n,frames,wave,speed)
-  local b=0x14100+66*n
+  local b=SFX_RAM+66*n
   for i,t in ipairs(frames) do
     poke(b+(i-1)*2,   (t[2]<<4)|t[1])
     poke(b+(i-1)*2+1, (t[3]<<4)|wave)
@@ -189,11 +191,11 @@ local function initAudio()
   -- Wave 0: noise (explosion) — wysokoentropyjna, chaotyczna
   local w0={15,3,11,7,1,13,5,9,14,2,10,6,0,12,4,8,
              8,4,12,0,6,10,2,14,9,5,13,1,7,11,3,15}
-  for i=0,15 do poke(0x14000+i, w0[i*2+1]|(w0[i*2+2]<<4)) end
+  for i=0,15 do poke(WAVES+i, w0[i*2+1]|(w0[i*2+2]<<4)) end
 
   -- Wave 1: opadająca piła (yell śmierci) — 15,14,13,...,0,15,14,...
   for i=0,15 do
-    poke(0x14010+i, (15-i*2%16)|((15-(i*2+1)%16)<<4))
+    poke(WAVES+16+i, (15-i*2%16)|((15-(i*2+1)%16)<<4))
   end
 
   -- SFX 0: wybuch — szum, oct 5→4→3, gwałtowny zanik głośności
@@ -202,7 +204,7 @@ local function initAudio()
     {9,5,15},{9,5,13},{7,5,11},{7,4,9},{5,4,7},
     {5,4,5}, {2,4,3}, {2,3,2}, {0,3,1}, {0,3,0},
   }
-  local b=0x14100
+  local b=SFX_RAM
   for i,t in ipairs(exp) do
     poke(b+(i-1)*2,   (t[2]<<4)|t[1])
     poke(b+(i-1)*2+1, (t[3]<<4)|0)   -- wave 0 (noise)
@@ -214,7 +216,7 @@ local function initAudio()
   local die={
     {9,5,13},{7,5,12},{4,4,10},{0,4,7},{9,3,4},{9,3,1},
   }
-  local b2=0x14100+66
+  local b2=SFX_RAM+66
   for i,t in ipairs(die) do
     poke(b2+(i-1)*2,   (t[2]<<4)|t[1])
     poke(b2+(i-1)*2+1, (t[3]<<4)|1)  -- wave 1 (piła)
@@ -223,16 +225,16 @@ local function initAudio()
   poke(b2+60,0); poke(b2+61,2)        -- no loop, speed 2
 
   -- Wave 2: prostokąt
-  for i=0,7  do poke(0x14020+i,0x00) end
-  for i=8,15 do poke(0x14020+i,0xFF) end
+  for i=0,7  do poke(WAVES+32+i,0x00) end
+  for i=8,15 do poke(WAVES+32+i,0xFF) end
 
   -- Wave 3: trójkąt
   local tri={0x10,0x32,0x54,0x76,0x98,0xBA,0xDC,0xFE,
              0xEF,0xCD,0xAB,0x89,0x67,0x45,0x23,0x01}
-  for i=0,15 do poke(0x14030+i,tri[i+1]) end
+  for i=0,15 do poke(WAVES+48+i,tri[i+1]) end
 
   -- SFX 4: hi-hat/percussion — noise, szybki decay
-  local bp=0x14208
+  local bp=SFX_RAM+66*4
   local pe={7,6,5,4,3,2,1,0}
   for i=0,#pe-1 do
     poke(bp+i*2,0)
@@ -1070,10 +1072,29 @@ local ICONS={
      "...cb..."},
 }
 
+-- 5x5 versions for the HUD bar (7 px high).
+local HUD_ICONS={
+  B={"...g.",
+     ".lll.",
+     "lwlll",
+     "lllll",
+     ".lll."},
+  R={"..o..",
+     ".oyo.",
+     "oywyo",
+     ".oyo.",
+     "..o.."},
+  S={"ccccb",
+     "cwccb",
+     "ccccb",
+     ".ccb.",
+     "..b.."},
+}
+
 local function drawIcon(rows,x,y)
-  for j=1,8 do
+  for j=1,#rows do
     local row=rows[j]
-    for i=1,8 do
+    for i=1,#row do
       local col=ICON_COL[row:sub(i,i)]
       if col then pix(x+i-1,y+j-1,col) end
     end
@@ -1093,7 +1114,7 @@ local function drawPlayers()
     local dying=p.deathT>0 and p.deathT%4<2
     if (p.alive and not blinking) or dying then
       drawPlayer(p)
-      if p.alive and p.shield then rectb(p.x-1,p.y-1,TILE+2,TILE+2,7) end
+      if p.alive and p.shield then circb(p.x+3,p.y+3,5+(frame//12)%2,ICON_COL.c) end
     end
   end
 end
@@ -1166,8 +1187,12 @@ local function drawHUD()
   for i,p in ipairs(players) do
     local x=(i-1)*60+2
     rect(x,1,4,5,p.alive and p.color or 13)
-    local text=("W%d B%d R%d"):format(score[i], p.stats.bombs-p.bombs, p.stats.len)
-    print(text,x+6,1,12,false,1,true)
+    print("W"..score[i],x+6,1,12,false,1,true)
+    drawIcon(HUD_ICONS.B,x+18,1)
+    print(p.stats.bombs-p.bombs,x+24,1,12,false,1,true)
+    drawIcon(HUD_ICONS.R,x+31,1)
+    print(p.stats.len,x+37,1,12,false,1,true)
+    if p.shield then drawIcon(HUD_ICONS.S,x+44,1) end
   end
 end
 

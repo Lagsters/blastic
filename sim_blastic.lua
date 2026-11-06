@@ -4,7 +4,7 @@ local seed=tonumber(arg and arg[2]) or 1
 local MAX_FRAMES=20000
 
 local env={}
-for _,n in ipairs{"cls","rect","rectb","circ","line","pix","print","poke","sfx"} do env[n]=function() end end
+for _,n in ipairs{"cls","rect","rectb","circ","circb","line","pix","print","poke","sfx"} do env[n]=function() end end
 env.btn=function() return false end
 env.btnp=function() return false end
 env.peek=function() return 0 end
