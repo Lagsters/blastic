@@ -13,6 +13,9 @@ env.rect  = function() end
 env.rectb = function() end
 env.circ  = function() end
 env.circb = function() end
+env.tri   = function() end
+local _pmem={}
+env.pmem  = function(i,v) if v then _pmem[i]=v end return _pmem[i] or 0 end
 env.line  = function() end
 env.pix   = function() end
 env.print = function() end  -- TIC-80 screen draw, shadows Lua's print inside game
@@ -24,7 +27,8 @@ setmetatable(env, {__index = _G})
 
 -- ── Load game ────────────────────────────────────────────────────────────────
 
-local f = io.open("blastic.lua")
+-- the source by default; check.py also passes the minified code that goes into the cart
+local f = io.open(arg and arg[1] or "blastic.lua")
 if not f then error("run from the repository root") end
 local src = f:read("*a"); f:close()
 local chunk, err = load(src, "blastic", "t", env)
@@ -1214,7 +1218,8 @@ check("shrink warns about the next tiles", warn_rects>=1, "rects="..warn_rects)
 -- initAudio / updateMusic need a fresh game instance: initAudio runs once per instance
 local function fresh_game(poke_fn,sfx_fn)
   local e={}
-  for _,n in ipairs({"cls","rect","rectb","circ","circb","line","pix","print"}) do e[n]=function() end end
+  for _,n in ipairs({"cls","rect","rectb","circ","circb","line","pix","print","tri"}) do e[n]=function() end end
+  e.pmem=function() return 0 end
   e.btn=function() return false end
   e.btnp=function() return false end
   e.time=function() return 42 end
@@ -1297,8 +1302,9 @@ for i=1,loop do
   if st[i]~=st[i+loop] then repeats=false break end
   if st[i]~=st[1] then varies=true end
 end
--- Ten sam blob z wybuchem na końcu: 2 próbki, pred 1280 (bajt 5), kody 0 -> muzyka 138 + 5.
-local with_boom=string.char(4,0, 2,3, 21,0,2,0, 1,0,1, 0,0,88, 0,10,0, 0xF7,0x80, 0,0, 0,5,0, 0)
+-- Ten sam blob z wybuchem na końcu: 2 próbki, pred 2560 (bajt 10), kody 0; muzyka ściszona
+-- o połowę na czas wybuchu: 128 + (138-128)//2 + 10 = 143.
+local with_boom=string.char(4,0, 2,3, 21,0,2,0, 1,0,1, 0,0,88, 0,10,0, 0xF7,0x80, 0,0, 0,10,0, 0)
 local mixed
 do
   local mem={}
@@ -1314,12 +1320,207 @@ do
   e.TIC()
   mixed=frames
 end
-check("explosion mixes into the music for its length",
+check("explosion mixes over the halved music for its length",
       mixed[1]==143 and mixed[2]==143 and mixed[3]==cycle[11],
       "got "..table.concat(mixed,",",1,4))
 
 check("music.bin uses the patterns region", #blob>0xBF80, "size "..#blob)
 check("music.bin loop repeats byte for byte", repeats and varies)
+
+-- ── TEST: campaign ────────────────────────────────────────────────────────────
+
+io.write("\n=== campaign ===\n")
+
+-- press Z every frame until the state is `want` (scenes and the world map wait for it)
+local function skip_to(want,max)
+  for _=1,max or 3000 do
+    if env.state==want then return true end
+    press_frame(4)
+  end
+  return env.state==want
+end
+
+local function has_hidden(kind)
+  for _,k in pairs(env.hidden) do if k==kind then return true end end
+  for _,pu in ipairs(env.powerups) do if pu.kind==kind then return true end end
+  return false
+end
+
+-- menu: up wraps to the last item, Z on BATTLE starts a battle
+env.state,env.titleTimer,env.menuSel="title",2,1
+press_frame(0)
+check("menu: up from the first item wraps to BATTLE", env.menuSel==3, "sel="..env.menuSel)
+press_frame(4)
+check("menu: BATTLE starts a battle", env.state=="game" and env.mode=="pvp")
+
+-- a new story opens with the intro scene, then the world map, then stage 1
+for k in pairs(_pmem) do _pmem[k]=nil end
+env.startCampaign(false)
+check("story opens with the intro scene", env.state=="scene" and env.mode=="camp")
+check("story start saves the chapter", env.pmem(env.SAVE_SLOT)==1)
+check("the intro ends on the world map", skip_to("map"))
+check("the world map leads into stage 1", skip_to("game") and env.camp.stage==1)
+check("stage 1 scrolls sideways on a wider map", env.W==62 and env.H==18, ("W=%d H=%d"):format(env.W,env.H))
+check("chapter 1 has only Aldric", #env.players==1 and env.players[1].team==1)
+check("stage 1 has its goblins", #env.monsters==3, "monsters="..#env.monsters)
+check("stage 1 hides an exit", has_hidden("X"))
+
+-- the camera follows Aldric along x only, within the map
+local hero=env.players[1]
+hero.x=env.gpx(40); hero.c=40
+env.TIC()
+check("the camera follows the hero sideways",
+      env.camX>0 and env.camX<=(env.W-2)*env.TILE-240 and env.camY==0,
+      ("camX=%d camY=%d"):format(env.camX,env.camY))
+
+-- a crate hiding the exit drops it, and a later blast does not destroy it
+env.monsters={}
+hero=env.players[1]
+local ec,er=10,5
+for dc=-3,4 do for dr=-2,2 do env.map[er+dr][ec+dc]=env.T_EMPTY end end
+env.map[er][ec+2]=env.T_BLOCK
+env.hidden={[(ec+2)*100+er]="X"}
+env.powerups={}
+env.bombs={{c=ec+1,r=er,t=1,len=2}}
+hero.c,hero.r,hero.x,hero.y=ec-3,er-2,env.gpx(ec-3),env.gpy(er-2)
+env.TIC()
+local exit_item=nil
+for _,pu in ipairs(env.powerups) do if pu.kind=="X" then exit_item=pu end end
+check("a destroyed crate reveals the hidden exit", exit_item and exit_item.c==ec+2)
+env.bombs={{c=ec+1,r=er,t=1,len=2}}
+for _=1,40 do env.TIC() end
+check("blasts do not destroy quest items", has_hidden("X"))
+
+-- stepping on the exit clears the stage; then the map shows stage 2
+hero.c,hero.r,hero.x,hero.y=ec+2,er,env.gpx(ec+2),env.gpy(er)
+env.TIC()
+check("the exit clears the stage", env.state=="clear", "state="..env.state)
+check("after the stage clear comes the world map", skip_to("map") and env.camp.stage==2)
+
+-- monsters: a blast kills one, touching one kills the hero and costs a life (stage 1: its
+-- goal is the exit, so an empty monster list does not end it)
+env.startStage(1)
+env.monsters={{kind="g",c=5,r=5,x=env.gpx(5),y=env.gpy(5),d={0,0}}}
+env.blasts={{c=5,r=5,t=10}}
+env.TIC()
+check("a blast kills a monster", #env.monsters==0)
+env.blasts={}
+local lives=env.camp.lives
+hero=env.players[1]
+hero.shield,hero.invul=false,0
+env.monsters={{kind="g",c=hero.c,r=hero.r,x=hero.x,y=hero.y,d={0,0}}}
+env.TIC()
+check("touching a monster kills the hero", not hero.alive)
+check("a dead hero costs a life", env.camp.lives==lives-1 and env.state=="lost")
+check("the stage restarts after a lost life", skip_to("game") and env.camp.stage==1 and env.camp.tries==1)
+
+-- a bat walks towards the hero
+hero=env.players[1]
+for r=1,env.H-2 do for c=1,env.W-2 do
+  if env.map[r][c]==env.T_BLOCK then env.map[r][c]=env.T_EMPTY end
+end end
+local bc,br=hero.c+4,hero.r
+env.map[br][bc]=env.T_EMPTY
+env.monsters={{kind="b",c=bc,r=br,x=env.gpx(bc),y=env.gpy(br),d={0,0}}}
+local d0=math.abs(bc-hero.c)+math.abs(br-hero.r)
+for _=1,20 do env.TIC() end
+local bat=env.monsters[1]
+check("a bat chases the hero", bat and math.abs(bat.c-hero.c)+math.abs(bat.r-hero.r)<d0)
+
+-- goals: keys, all enemies, surviving the walls
+env.startStage(3)
+for _=1,3 do
+  local h=env.players[1]
+  env.powerups={{c=h.c,r=h.r,kind="K"}}
+  env.TIC()
+end
+check("three keys clear a keys stage", env.state=="clear", "keys="..env.camp.keys)
+env.startStage(2)
+env.monsters={}
+env.TIC()
+check("no monsters left clears an enemies stage", env.state=="clear")
+env.startStage(7)
+env.monsters={}
+env.shrinkDone=true
+env.TIC()
+check("a stopped zone clears a survive stage", env.state=="clear")
+
+-- chapter 2+: Elena fights along, a bot ally unless Story 2P
+env.camp.coop=false
+env.startStage(5)
+local elena=env.players[2]
+check("Elena joins from chapter 2 as a bot ally", elena and elena.team==1 and not elena.human)
+env.camp.coop=true
+env.startStage(5)
+check("in Story 2P Elena is player 2", env.players[2].human==true and env.players[2].id==2)
+env.camp.coop=false
+
+-- teams: the ally hunts monsters and skeletons, never Aldric; skeletons hunt the heroes
+env.startStage(9)
+local al,el,sk=env.players[1],env.players[2],env.players[3]
+env.monsters={{kind="g",c=al.c+3,r=al.r,x=0,y=0,d={0,0}}}
+check("Elena does not target Aldric", not env.foeAt(el,al.c,al.r))
+check("Elena targets monsters", env.foeAt(el,al.c+3,al.r))
+check("skeletons target the heroes", sk and sk.team==2 and env.foeAt(sk,al.c,al.r))
+env.monsters={}
+env.powerups={{c=sk.c,r=sk.r,kind="K"}}
+env.camp.keys=0
+env.TIC()
+check("skeletons leave quest items", env.camp.keys==0 and #env.powerups>=1)
+
+-- bosses: blasts hurt them with a pause between hits; the dragon's egg wins too
+env.startStage(4)
+local b=env.boss
+check("the troll waits in the middle", b and b.kind=="troll" and b.hp==env.BOSS_HP.troll)
+env.blasts={{c=b.c,r=b.r,t=30}}
+env.TIC()
+check("a blast hurts the boss once", b.hp==env.BOSS_HP.troll-1 and b.inv>0)
+env.TIC()
+check("the boss is briefly invulnerable", b.hp==env.BOSS_HP.troll-1)
+b.hp,b.inv=1,0
+env.blasts={{c=b.c,r=b.r,t=30}}
+env.TIC()
+check("defeating the boss clears the stage", env.state=="clear")
+env.startStage(12)
+check("the dragon's egg is hidden", has_hidden("E"))
+local h=env.players[1]
+env.powerups={{c=h.c,r=h.r,kind="E"}}
+env.TIC()
+check("returning the egg befriends the dragon", env.camp.friend and env.state=="clear")
+env.camp.friend=false
+
+-- running out of lives ends the story; it continues from the saved chapter
+env.startStage(6)
+env.camp.lives=1
+for _,p in ipairs(env.players) do p.alive=false end
+env.TIC()
+check("losing the last life is game over", env.state=="gameover")
+check("game over returns to the title", skip_to("title"))
+_pmem[env.SAVE_SLOT]=5
+env.startCampaign(false)
+check("the story continues from the saved chapter", env.camp.stage==5 and env.state=="scene")
+
+-- the last boss leads into the ending, which clears the save
+env.startStage(#env.STAGES)
+env.boss.hp=0
+env.TIC()
+check("beating Morgath clears the last stage", env.state=="clear")
+check("the ending scene follows", skip_to("scene"))
+check("the ending returns to the title", skip_to("title") and env.pmem(env.SAVE_SLOT)==0)
+
+-- scenes animate: the dialogue types out letter by letter
+env.playScene("swamp",function() env.state="title" end)
+for _=1,140 do env.TIC() end
+local shown={}
+do
+  local sp=env.print
+  env.print=function(t,x,y) if y==124 then shown[#shown+1]=t end return 0 end
+  for _=1,4 do env.TIC() end  -- a letter every second frame
+  env.print=sp
+end
+check("scene dialogue types out", #shown==4 and #shown[1]>0 and #shown[4]>#shown[1])
+skip_to("title")
+env.mode="pvp"
 
 -- ── Summary ───────────────────────────────────────────────────────────────────
 

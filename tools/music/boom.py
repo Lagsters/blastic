@@ -25,7 +25,7 @@ def main():
     blast = filt(noise, 'low', 600) * np.exp(-t * 14) + filt(noise, 'low', 250) * np.exp(-t * 4)
     attack = np.minimum(1, t / 0.002)
     boom = (thump * 1.4 + blast * 0.9) * attack
-    boom = np.tanh(boom * 1.6)
+    boom = np.tanh(boom * 3.5)  # dense: as loud as the PCM channel allows
     boom[-800:] *= np.linspace(1, 0, 800)
     sf.write(sys.argv[1], (boom / np.abs(boom).max() * 0.95).astype(np.float32), SR, subtype="PCM_16")
     print(sys.argv[1], LENGTH, "s")

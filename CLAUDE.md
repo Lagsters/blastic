@@ -22,9 +22,10 @@ Rozstrzygają każdy spór, w tej kolejności.
 
 ## Autonomia i weryfikacja
 
-- Bramka „gotowe”: `python check.py` (kod wyjścia 0). Uruchamia testy logiki
-  (`lua test_blastic.lua`), symulację botów (`lua sim_blastic.lua 300 1`), build carta i sprawdza
-  limit kodu 65535 B. Kodu wyjścia nie maskuj potokiem (`| tail`).
+- Bramka „gotowe”: `python check.py` (kod wyjścia 0). Uruchamia testy minifikatora, testy logiki
+  na źródle i na kodzie zminifikowanym, build carta i sprawdza limit 65535 B kodu po minifikacji.
+  `python check.py --sim` dokłada symulację botów (`lua sim_blastic.lua 300 1`): tylko gdy zmiana
+  dotyka zachowania botów albo zasad, na które reagują. Kodu wyjścia nie maskuj potokiem (`| tail`).
 - Zmiana funkcji nie jest skończona bez testu w `test_blastic.lua`, który ją pokrywa.
 - Błąd: **najpierw test, który go odtwarza (czerwony), potem poprawka.** Zielony test dowodzi,
   że poprawka pomogła.
@@ -43,14 +44,15 @@ Rozstrzygają każdy spór, w tej kolejności.
 | `blastic.lua` | cała gra; globalne `TIC()` i `init()` wymagane przez TIC-80 |
 | `test_blastic.lua` | testy logiki, API TIC-80 zamockowane, ziarno stałe |
 | `sim_blastic.lua` | symulator czterech botów bez grafiki, z niezmiennikami |
-| `make_tic.py` | buduje `.tic`: chunk kodu i `music.bin` (wolny TIC-80 nie zapisuje `.lua`) |
+| `make_tic.py` | buduje `.tic`: zminifikowany kod (`DEVIATIONS.md`) i `music.bin` (wolny TIC-80 nie zapisuje `.lua`) |
+| `test_make_tic.py` | testy minifikatora |
 | `music.bin` | muzyka: IMA ADPCM, 7680 Hz, w RAM od `0x04000` (kafle, sprite'y, mapa) i od `0x11164` (wzorce, ścieżki) |
 | `tools/music/` | `compose.py` (utwór w kodzie, bas z próbek GeneralUser GS), `wav2tic.py` (WAV → `music.bin`) |
 | `check.py` | bramka „gotowe” |
 
 - Statystyki gracza (`stats.bombs`, `stats.len`) są w `players[i].stats`; `humans[i]` mówi, czy
   gracz jest człowiekiem. Symulator ustawia wszystkich na boty.
-- Limit kodu carta to 65535 B. Mierz po każdej większej zmianie.
+- Limit kodu carta to 65535 B po minifikacji (komentarze się nie liczą). Mierz po każdej większej zmianie.
 - Teksty dla gracza po angielsku (ekran 240×136).
 
 ## Narzędzia

@@ -152,7 +152,7 @@ def main():
             place(drums, b0 + i * STEP, hat(open_=(i % 8 == 6)) * (1.0 if i % 2 == 0 else 0.6))
     bass = render_bass(notes, sys.argv[2])
     bass = bass / np.abs(bass).max() * 0.9
-    mix = bass * 3.0 + synth * 0.35 + drums * 0.45
+    mix = bass * 2.4 + synth * 0.35 + drums * 0.45
     mix = np.tanh(mix * 2.0)
     sf.write(out, (mix / np.abs(mix).max() * 0.9).astype(np.float32), SR, subtype="PCM_16")
     print(out, LOOP / SR, "s")

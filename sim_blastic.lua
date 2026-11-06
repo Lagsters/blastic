@@ -4,10 +4,11 @@ local seed=tonumber(arg and arg[2]) or 1
 local MAX_FRAMES=20000
 
 local env={}
-for _,n in ipairs{"cls","rect","rectb","circ","circb","line","pix","print","poke","sfx"} do env[n]=function() end end
+for _,n in ipairs{"cls","rect","rectb","circ","circb","line","pix","print","poke","sfx","tri"} do env[n]=function() end end
 env.btn=function() return false end
 env.btnp=function() return false end
 env.peek=function() return 0 end
+env.pmem=function() return 0 end
 local t=0
 env.time=function() t=t+1; return seed*1000+t end
 setmetatable(env,{__index=_G})

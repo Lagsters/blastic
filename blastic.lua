@@ -25,7 +25,13 @@ MATCH_TIME=210
 
 T_EMPTY,T_WALL,T_BLOCK=0,1,2
 
-STARTS={{1,1},{W-2,1},{1,H-2},{W-2,H-2}}
+-- the arena and its four start corners; the campaign uses wider or taller ones
+function setArena(w,h)
+  W,H=w,h
+  STARTS={{1,1},{W-2,1},{1,H-2},{W-2,H-2}}
+end
+setArena(W,H)
+blockDensity=0.4
 local COLORS={12,5,9,2}  -- white, green, blue, red
 
 local B_UP,B_DOWN,B_LEFT,B_RIGHT,B_BOMB=0,1,2,3,4
@@ -60,7 +66,7 @@ local function initMap()
       elseif (r<H//2-1 and r%2==0 or r>H//2 and (H-1-r)%2==0)
          and (c<W//2 and c%2==0 or c>=W//2 and (W-1-c)%2==0) then
         map[r][c]=T_WALL
-      elseif math.random()<0.4 then
+      elseif math.random()<blockDensity then
         local corner=false
         for _,s in ipairs(STARTS) do
           local sc,sr=s[1],s[2]
@@ -87,29 +93,33 @@ local function shuffledDirs()
   return dirs
 end
 
+function newPlayer(id,c,r)
+  return {
+    c=c, r=r,
+    x=gpx(c), y=gpy(r),
+    alive=true,
+    stats={bombs=MAX_BOMBS,len=BLAST_LEN},
+    bombs=0,
+    shield=false,
+    invul=0,
+    color=COLORS[id],
+    id=id,
+    team=id,
+    human=humans[id],
+    dir={0,1},
+    walkAnim=0,
+    botDir={0,0},
+    botOrder=shuffledDirs(),
+    botDirTimer=0,
+    botBombTimer=0,
+    botEscape=0,
+    deathT=0,
+  }
+end
+
 local function initPlayers()
   players={}
-  for i,s in ipairs(STARTS) do
-    players[i]={
-      c=s[1], r=s[2],
-      x=gpx(s[1]), y=gpy(s[2]),
-      alive=true,
-      stats={bombs=MAX_BOMBS,len=BLAST_LEN},
-      bombs=0,
-      shield=false,
-      invul=0,
-      color=COLORS[i],
-      id=i,
-      dir={0,1},
-      walkAnim=0,
-      botDir={0,0},
-      botOrder=shuffledDirs(),
-      botDirTimer=0,
-      botBombTimer=0,
-      botEscape=0,
-      deathT=0,
-    }
-  end
+  for i,s in ipairs(STARTS) do players[i]=newPlayer(i,s[1],s[2]) end
 end
 
 -- ── muzyka ───────────────────────────────────────────────────────────────────
@@ -196,7 +206,7 @@ local function updateMusic()
       v=nextSample(m)
     end
     if boom then
-      v=v+nextSample(boom)
+      v=v//2+nextSample(boom)  -- the music ducks under an explosion so the blast stands out
       if boom.i==boom.len then boom=nil end
     end
     poke(PCM+k,math.max(-128,math.min(127,v))+128)
@@ -269,6 +279,9 @@ function sndShield() sfx(7,-1,24,3,15) end
 
 function init()
   math.randomseed(time())
+  mode,camX,camY,boss,monsters,hidden="pvp",0,0,nil,{},{}
+  setArena(32,18)
+  blockDensity=0.4
   bombs={}
   blasts={}
   powerups={}
@@ -285,9 +298,13 @@ end
 
 -- ── blast ─────────────────────────────────────────────────────────────────────
 
+-- exit, keys and the dragon's egg survive blasts: a stage could not be finished without them
+local QUEST_ITEM={X=true,K=true,E=true}
+
 local function removePowerupAt(c,r)
   for i=#powerups,1,-1 do
-    if powerups[i].c==c and powerups[i].r==r then table.remove(powerups,i) end
+    local pu=powerups[i]
+    if pu.c==c and pu.r==r and not QUEST_ITEM[pu.kind] then table.remove(powerups,i) end
   end
 end
 
@@ -297,7 +314,10 @@ local function addBlast(c,r)
 end
 
 local function dropPowerup(c,r)
-  if math.random()<POWERUP_CHANCE then
+  local quest=hidden[c*100+r]
+  if quest then
+    powerups[#powerups+1]={c=c,r=r,kind=quest}
+  elseif math.random()<POWERUP_CHANCE then
     powerups[#powerups+1]={c=c,r=r,kind=POWERUP_KINDS[math.random(#POWERUP_KINDS)]}
   end
 end
@@ -376,10 +396,13 @@ end
 
 local function collectPowerup(p)
   for i,pu in ipairs(powerups) do
-    if pu.c==p.c and pu.r==p.r then
-      if pu.kind=="B" then p.stats.bombs=math.min(BOMB_CAP,p.stats.bombs+1)
+    if pu.c==p.c and pu.r==p.r and (p.team==1 or not QUEST_ITEM[pu.kind]) then
+      if pu.kind=="K" then camp.keys=camp.keys+1
+      elseif pu.kind=="X" then camp.done=true
+      elseif pu.kind=="E" then camp.friend=true
+      elseif pu.kind=="B" then p.stats.bombs=math.min(BOMB_CAP,p.stats.bombs+1)
       elseif pu.kind=="R" then p.stats.len=math.min(LEN_CAP,p.stats.len+1)
-      else p.shield=true end
+      elseif pu.kind=="S" then p.shield=true end
       table.remove(powerups,i)
       sndPickup()
       return
@@ -678,6 +701,19 @@ local function botEscapePath(sc,sr,from,to,blocked)
   return nil
 end
 
+-- a living enemy of p on (c,r): another team's player, or for the heroes a monster or the boss
+function foeAt(p,c,r)
+  for _,op in ipairs(players) do
+    if op.alive and op.team~=p.team and op.c==c and op.r==r then return true end
+  end
+  if p.team==1 and mode=="camp" then
+    for _,m in ipairs(monsters) do if m.c==c and m.r==r then return true end end
+    local b=boss
+    if b and b.hp>0 and c>=b.c and c<=b.c+1 and r>=b.r and r<=b.r+1 then return true end
+  end
+  return false
+end
+
 -- true when a living enemy stands in the blast line of a bomb laid on (c,r)
 local function botEnemySpot(p,c,r)
   for _,d in ipairs(BOT_DIRS) do
@@ -685,9 +721,7 @@ local function botEnemySpot(p,c,r)
       local nc,nr=c+d[1]*k,r+d[2]*k
       local t=mget(nc,nr)
       if t~=T_EMPTY then break end
-      for _,op in ipairs(players) do
-        if op.alive and op.id~=p.id and op.c==nc and op.r==nr then return true end
-      end
+      if foeAt(p,nc,nr) then return true end
     end
   end
   return false
@@ -701,7 +735,7 @@ local function botTrapSpot(p,c,r)
   if not botEscapePath(c,r,from,to) then return false end
   for _,op in ipairs(players) do
     local k=op.r*W+op.c
-    if op.alive and op.id~=p.id and from[k] and not botEscapePath(op.c,op.r,from,to,r*W+c) then
+    if op.alive and op.team~=p.team and from[k] and not botEscapePath(op.c,op.r,from,to,r*W+c) then
       return true
     end
   end
@@ -908,7 +942,7 @@ function updateShrink()
   roundFrames=roundFrames+1
   if roundFrames<shrinkAt then return end
   local cells=nextStepCells()
-  if not cells then return end
+  if not cells then shrinkDone=true return end
   for _,cell in ipairs(cells) do shrinkTile(cell[1],cell[2]) end
   advanceBox(shrinkBox)
   shrinkAt=roundFrames+SHRINK_CYCLE
@@ -944,22 +978,24 @@ local BOMB_COL=2
 
 local function drawMap()
   local warn=shrinkWarnTiles()
-  for r=1,H-2 do
-    for c=1,W-2 do
+  local c0,r0=camX//TILE+1,camY//TILE+1
+  for r=r0,math.min(H-2,r0+16) do
+    for c=c0,math.min(W-2,c0+30) do
       local t=mget(c,r)
       local col=FLOOR_COL
       if t==T_WALL  then col=WALL_COL
       elseif t==T_BLOCK then col=BLOCK_COL end
       if warn[c*100+r] then col=WARN_COL end
-      rect(gpx(c),gpy(r),TILE,TILE,col)
+      local x,y=gpx(c)-camX,gpy(r)-camY
+      rect(x,y,TILE,TILE,col)
       if t==T_WALL then
-        rectb(gpx(c),gpy(r),TILE,TILE,15)
+        rectb(x,y,TILE,TILE,15)
       elseif t==T_BLOCK and not warn[c*100+r] then
-        rectb(gpx(c),gpy(r),TILE,TILE,WOOD_DARK)
+        rectb(x,y,TILE,TILE,WOOD_DARK)
       end
     end
   end
-  rectb(0,TILE,(W-2)*TILE,(H-2)*TILE,WALL_COL)
+  rectb(-camX,TILE-camY,(W-2)*TILE,(H-2)*TILE,WALL_COL)
 end
 
 local function drawBlasts()
@@ -968,7 +1004,7 @@ local function drawBlasts()
     local r=math.min(TILE//2-1,1+age//3)
     local frac=bl.t/BLAST_TIME
     local col=frac>0.66 and 4 or frac>0.33 and 3 or 2
-    circ(gpx(bl.c)+TILE//2,gpy(bl.r)+TILE//2,r,col)
+    circ(gpx(bl.c)+TILE//2-camX,gpy(bl.r)+TILE//2-camY,r,col)
   end
 end
 
@@ -976,9 +1012,10 @@ local function drawBombs()
   for _,b in ipairs(bombs) do
     local blink=(b.t<40 and frame%6<3)
     local col=blink and 7 or BOMB_COL
-    circ(gpx(b.c)+TILE//2,gpy(b.r)+TILE//2,3,col)
-    local fx,fy=gpx(b.c)+TILE//2+2,gpy(b.r)-1
-    line(gpx(b.c)+TILE//2,gpy(b.r)+1,fx,fy,7)
+    local bx,by=gpx(b.c)+TILE//2-camX,gpy(b.r)+TILE//2-camY
+    circ(bx,by,3,col)
+    local fx,fy=bx+2,by-TILE//2-1
+    line(bx,by-3,fx,fy,7)
     circ(fx,fy,1,(frame//2)%2==0 and 9 or 14)
   end
 end
@@ -1069,13 +1106,37 @@ local function drawPlayer(p)
   elseif dy<0 then id=3+step
   elseif dx>0 then id=5+step; flip=false
   else id=5+step; flip=true end
-  drawSp(id,p.x,p.y,p.color,flip)
+  drawSp(id,p.x-camX,p.y-camY,p.color,flip)
 end
 
 -- Icons are 8x8 character maps, '.' transparent. None uses the red (2) of a lit bomb, so a
 -- bomb on the floor is never mistaken for an extra-bomb pickup.
-local ICON_COL={g=5,w=12,y=4,o=3,l=13,c=11,b=9}
+local ICON_COL={g=5,w=12,y=4,o=3,l=13,c=11,b=9,n=8}
 local ICONS={
+  X={"nnnnnnnn",
+     "nyyyyyyn",
+     "nynnnnyn",
+     "nynnnnyn",
+     "nynnnyyn",
+     "nynnnnyn",
+     "nynnnnyn",
+     "nnnnnnnn"},
+  K={"........",
+     ".yyy....",
+     "y...y...",
+     "y...yyyy",
+     "y...y.y.",
+     ".yyy..y.",
+     "........",
+     "........"},
+  E={"...ww...",
+     "..wwww..",
+     ".wwgwww.",
+     ".wwwwww.",
+     "wwwgwwww",
+     ".wwwwww.",
+     ".wwwww..",
+     "..www..."},
   B={"......g.",
      ".y...ggg",
      "..l...g.",
@@ -1134,7 +1195,7 @@ end
 local function drawPowerups()
   local bob=(frame//10)%2
   for _,pu in ipairs(powerups) do
-    drawIcon(ICONS[pu.kind],gpx(pu.c),gpy(pu.r)-bob)
+    drawIcon(ICONS[pu.kind],gpx(pu.c)-camX,gpy(pu.r)-bob-camY)
   end
 end
 
@@ -1144,7 +1205,7 @@ local function drawPlayers()
     local dying=p.deathT>0 and p.deathT%4<2
     if (p.alive and not blinking) or dying then
       drawPlayer(p)
-      if p.alive and p.shield then circb(p.x+3,p.y+3,5+(frame//12)%2,ICON_COL.c) end
+      if p.alive and p.shield then circb(p.x+3-camX,p.y+3-camY,5+(frame//12)%2,ICON_COL.c) end
     end
   end
 end
@@ -1158,6 +1219,9 @@ local function countAlive()
 end
 
 -- ── title screen ──────────────────────────────────────────────────────────────
+
+local MENU={"STORY","STORY 2P","BATTLE"}
+menuSel=1
 
 local function drawTitle()
   cls(0)
@@ -1174,20 +1238,33 @@ local function drawTitle()
 
   -- print returns the text width; draw off-screen first to centre the title
   local tw=print("BLASTIC",0,-40,12,false,3,true) or 0
-  print("BLASTIC",(240-tw)//2,18,12,false,3,true)
-  print("4 PLAYERS",62,44,11,false,2,true)
+  print("BLASTIC",(240-tw)//2,14,12,false,3,true)
+  print("NOT YOUR PRINCESS",70,34,4,false,1,true)
 
-  rectb(28,62,184,52,5)
-  print("P1: Arrows + Z  (bomb)",32,66,11,false,1,true)
-  print("P2: WASD  + Tab (bomb)",32,74,11,false,1,true)
-  print("P3 & P4: bots",32,82,9,false,1,true)
-  print("Last survivor wins!",36,90,7,false,1,true)
+  -- a knight runs from a goblin along the bottom, the title bomb's fuse sparks
+  local kx=(t*2)%300-30
+  drawSp(5+(t//6)%2,kx,116,12,false)
+  drawArt("g",kx-20,116,1)
+  circ(186,22,5,BOMB_COL)
+  circ(192,14,1,t%6<3 and 4 or 3)
 
-  if titleTimer%60<40 then
-    print("Press Z or Tab to start",34,120,12,false,1,true)
+  local saved=pmem(SAVE_SLOT)
+  for i,item in ipairs(MENU) do
+    local label=item
+    if i<3 and saved>1 then label=label.." (CH "..STAGES[saved][1]..")" end
+    local y=52+i*14
+    if i==menuSel then print(">",72,y,4,false,1,true) end
+    print(label,82,y,i==menuSel and 12 or 13,false,1,true)
   end
+  print("P1: Arrows + Z   P2: WASD + Tab",42,108,13,false,1,true)
 
-  if btnp(4) or btnp(12) or titleTimer>300 then
+  if btnp(0) or btnp(1) then
+    menuSel=(menuSel+(btnp(0) and -2 or 0))%#MENU+1
+    titleTimer=2
+  end
+  if btnp(4) or btnp(12) then
+    if menuSel==3 then state="game" init() else startCampaign(menuSel==2) end
+  elseif titleTimer>300 then
     state="game"
     init()
   end
@@ -1258,6 +1335,519 @@ local function drawHUD()
   end
 end
 
+-- ── campaign: "Not Your Princess" ────────────────────────────────────────────
+-- Sir Aldric chases the wizard Morgath, who took Princess Elena; from chapter 2 Elena
+-- fights along (P2 in Story 2P, a bot ally otherwise).
+
+-- chapter, goal, crate density, goblins, bats, skeletons, boss, scroll ("h" wide, "v" tall)
+STAGES={
+  {1,"exit",.35,3,0,0,nil,"h"},{1,"enemies",.3,5,0,0},{1,"keys",.4,4,0,0,nil,"v"},{1,"boss",.2,0,0,0,"troll"},
+  {2,"exit",.4,0,3,0,nil,"v"},{2,"keys",.35,2,3,0,nil,"h"},{2,"survive",.3,0,3,0},{2,"boss",.2,0,0,0,"witch"},
+  {3,"enemies",.35,2,0,2,nil,"h"},{3,"keys",.35,0,2,2,nil,"v"},{3,"exit",.4,3,2,1,nil,"h"},{3,"boss",.2,0,0,0,"dragon"},
+  {4,"enemies",.3,3,3,2,nil,"v"},{4,"survive",.35,0,3,2},{4,"keys",.4,3,3,2,nil,"h"},{4,"boss",.15,0,2,0,"morgath"},
+}
+CHAPTERS={"ENCHANTED FOREST","WITCH'S SWAMP","DRAGON'S TOWER","THE KING'S CASTLE"}
+local GOALS={exit="FIND THE EXIT",enemies="DEFEAT ALL MONSTERS",keys="FIND 3 KEYS",
+  survive="SURVIVE THE WALLS",boss="DEFEAT THE BOSS"}
+BOSS_HP={troll=3,witch=3,dragon=4,morgath=6}
+local SKELETON_COL=13
+SAVE_SLOT=0
+
+mode="pvp"
+camX,camY=0,0
+monsters={}
+boss=nil
+hidden={}
+camp={}
+
+local function stageSize(scroll)
+  if scroll=="h" then return 62,18 elseif scroll=="v" then return 32,34 end
+  return 32,18
+end
+
+local function heroAt(c,r)
+  for _,p in ipairs(players) do
+    if p.alive and p.team==1 and p.c==c and p.r==r then return p end
+  end
+  return nil
+end
+
+local function aldric() return players[1] end
+
+-- random cells passing ok, as far from the heroes' corner as `minDist`
+local function farCells(ok,minDist)
+  local out={}
+  for r=1,H-2 do for c=1,W-2 do
+    if ok(c,r) and math.abs(c-STARTS[1][1])+math.abs(r-STARTS[1][2])>=minDist then out[#out+1]={c,r} end
+  end end
+  for i=#out,2,-1 do local j=math.random(i) out[i],out[j]=out[j],out[i] end
+  return out
+end
+
+-- items the goal needs, under crates when there are enough of them, else on the floor
+local function hideItems(kind,n)
+  local crates=farCells(function(c,r) return mget(c,r)==T_BLOCK end,(W+H)//3)
+  local floor=farCells(function(c,r) return mget(c,r)==T_EMPTY end,(W+H)//3)
+  for i=1,n do
+    local cell=table.remove(crates)
+    if cell then hidden[cell[1]*100+cell[2]]=kind
+    else cell=table.remove(floor) powerups[#powerups+1]={c=cell[1],r=cell[2],kind=kind} end
+  end
+end
+
+local function spawnMonster(kind,c,r)
+  monsters[#monsters+1]={kind=kind,c=c,r=r,x=gpx(c),y=gpy(r),d={0,0}}
+end
+
+function startStage(n)
+  local st=STAGES[n]
+  camp.stage,camp.keys,camp.done=n,0,false
+  math.randomseed(n*7919+camp.tries)
+  setArena(stageSize(st[8]))
+  blockDensity=st[3]
+  bombs,blasts,powerups,monsters,hidden,boss={},{},{},{},{},nil
+  initMap()
+  players={}
+  local function hero(id,c,r)
+    local p=newPlayer(id,c,r)
+    p.team,p.human=1,id==1 or camp.coop
+    p.stats={bombs=camp.stats[id].bombs,len=camp.stats[id].len}
+    players[#players+1]=p
+  end
+  hero(1,STARTS[1][1],STARTS[1][2])
+  if st[1]>=2 then hero(2,STARTS[1][1],STARTS[1][2]+1) end
+  local far={STARTS[4],STARTS[st[8]=="v" and 3 or 2]}
+  for i=1,st[6] do
+    local p=newPlayer(2+i,far[i][1],far[i][2])
+    p.team,p.human,p.color=2,false,SKELETON_COL
+    players[#players+1]=p
+  end
+  local free=farCells(function(c,r) return mget(c,r)==T_EMPTY end,8)
+  for _=1,st[4] do local cell=table.remove(free) if cell then spawnMonster("g",cell[1],cell[2]) end end
+  for _=1,st[5] do local cell=table.remove(free) if cell then spawnMonster("b",cell[1],cell[2]) end end
+  if st[2]=="exit" then hideItems("X",1) elseif st[2]=="keys" then hideItems("K",3) end
+  if st[7] then
+    local c,r=W//2-1,H//2-1
+    for dc=0,1 do for dr=0,1 do mset(c+dc,r+dr,T_EMPTY) end end
+    boss={kind=st[7],c=c,r=r,x=gpx(c),y=gpy(r),hp=BOSS_HP[st[7]],t=0,inv=0}
+    if st[7]=="dragon" then hideItems("E",1) end
+  end
+  resetShrink()
+  if st[2]~="survive" then shrinkAt=math.huge end
+  shrinkDone=false
+  frame,state,restartTimer=0,"game",0
+end
+
+local function chapterStart(n)
+  return n==1 or STAGES[n][1]~=STAGES[n-1][1]
+end
+
+function startCampaign(coop)
+  mode="camp"
+  local saved=pmem(SAVE_SLOT)
+  camp={coop=coop,lives=3,tries=0,friend=false,stage=(saved>=1 and saved<=#STAGES) and saved or 1}
+  beginChapterOrMap(camp.stage)
+end
+
+function beginChapterOrMap(n)
+  camp.stage=n
+  if chapterStart(n) then
+    camp.stats={{bombs=MAX_BOMBS,len=BLAST_LEN},{bombs=MAX_BOMBS,len=BLAST_LEN}}
+    pmem(SAVE_SLOT,n)
+    playScene(SCENE_OF_CHAPTER[STAGES[n][1]],function() showMap(n) end)
+  else
+    showMap(n)
+  end
+end
+
+-- ── monsters ──────────────────────────────────────────────────────────────────
+
+local MONSTER_PERIOD={g=3,b=2}
+
+local function updateMonsters()
+  for i=#monsters,1,-1 do
+    local m=monsters[i]
+    if isBlast(m.c,m.r) then
+      table.remove(monsters,i)
+    elseif frame%MONSTER_PERIOD[m.kind]==0 then
+      if m.x==gpx(m.c) and m.y==gpy(m.r) then
+        if m.kind=="b" then
+          local path=botPath(m.c,m.r,botPassable,heroAt)
+          m.d=path and {path[1].c-m.c,path[1].r-m.r} or {0,0}
+        elseif math.random()<0.15 or not botPassable(m.c+m.d[1],m.r+m.d[2]) then
+          m.d=BOT_DIRS[math.random(4)]
+        end
+        if not botPassable(m.c+m.d[1],m.r+m.d[2]) then m.d={0,0} end
+      end
+      m.x,m.y=m.x+m.d[1],m.y+m.d[2]
+      m.c,m.r=gcol(m.x+TILE//2),grow(m.y+TILE//2)
+    end
+  end
+end
+
+-- ── bosses ────────────────────────────────────────────────────────────────────
+
+local function bossCovers(b,c,r)
+  return c>=b.c and c<=b.c+1 and r>=b.r and r<=b.r+1
+end
+
+local function bossFree(c,r)
+  for dc=0,1 do for dr=0,1 do
+    if not botPassable(c+dc,r+dr) or heroAt(c+dc,r+dr) then return false end
+  end end
+  return true
+end
+
+local function bossTeleport(b)
+  local spots=farCells(function(c,r) return bossFree(c,r) end,0)
+  local a=aldric()
+  for _,s in ipairs(spots) do
+    if math.abs(s[1]-a.c)+math.abs(s[2]-a.r)>=6 then
+      b.c,b.r,b.x,b.y=s[1],s[2],gpx(s[1]),gpy(s[2])
+      return
+    end
+  end
+end
+
+-- the dragon's breath: a row (or column) through a hero, warned a second before it burns
+local function bossFire(b)
+  if not b.warn then
+    local a=aldric()
+    b.warn={row=math.random()<0.5,c=a.c,r=a.r,t=60}
+  else
+    b.warn.t=b.warn.t-1
+    if b.warn.t<=0 then
+      for k=1,(b.warn.row and W or H)-2 do
+        local c,r=b.warn.row and k or b.warn.c,b.warn.row and b.warn.r or k
+        if mget(c,r)==T_EMPTY and not bossCovers(b,c,r) then addBlast(c,r) end
+      end
+      b.warn=nil
+    end
+  end
+end
+
+local function updateBoss()
+  local b=boss
+  if not b or b.hp<=0 then return end
+  b.t=b.t+1
+  if b.inv>0 then b.inv=b.inv-1 end
+  for dc=0,1 do for dr=0,1 do
+    if b.inv==0 and isBlast(b.c+dc,b.r+dr) then b.hp=b.hp-1 b.inv=60 sndShield() end
+  end end
+  local kind=b.kind
+  if kind=="morgath" then kind=b.hp>4 and "witch" or b.hp>2 and "summon" or "dragon" end
+  if kind=="troll" and b.t%3==0 then
+    local a=aldric()
+    if b.x==gpx(b.c) and b.y==gpy(b.r) then
+      b.d={0,0}
+      for _,d in ipairs(BOT_DIRS) do
+        local nc,nr=b.c+d[1],b.r+d[2]
+        if bossFree(nc,nr) and math.abs(nc-a.c)+math.abs(nr-a.r)<math.abs(b.c-a.c)+math.abs(b.r-a.r) then b.d=d end
+      end
+    end
+    b.x,b.y=b.x+b.d[1],b.y+b.d[2]
+    b.c,b.r=gcol(b.x+TILE//2),grow(b.y+TILE//2)
+  elseif (kind=="witch" or kind=="summon") and b.t%150==0 then
+    if kind=="summon" then spawnMonster("g",b.c,b.r) end
+    bossTeleport(b)
+    if kind=="witch" then bombs[#bombs+1]={c=b.c,r=b.r,t=BOMB_TIMER,len=3} end
+  elseif kind=="dragon" and (b.warn or b.t%120==0) then
+    bossFire(b)
+  end
+end
+
+-- ── campaign rules ────────────────────────────────────────────────────────────
+
+local function stageGoalMet()
+  local goal=STAGES[camp.stage][2]
+  if goal=="exit" then return camp.done
+  elseif goal=="keys" then return camp.keys>=3
+  elseif goal=="survive" then return shrinkDone
+  elseif goal=="boss" then return boss.hp<=0 or camp.friend end
+  for _,p in ipairs(players) do if p.alive and p.team==2 then return false end end
+  return #monsters==0
+end
+
+-- camera follows the heroes along the stage's one scrolling axis
+local function updateCamera()
+  local x,y,n=0,0,0
+  for _,p in ipairs(players) do
+    if p.team==1 and p.alive then x,y,n=x+p.x,y+p.y,n+1 end
+  end
+  if n==0 then return end
+  camX=math.max(0,math.min((W-2)*TILE-240,x//n-116))
+  camY=math.max(0,math.min((H-2)*TILE-128,y//n-60))
+end
+
+function updateCampaign()
+  updateMonsters()
+  updateBoss()
+  local heroes=0
+  for _,p in ipairs(players) do
+    if p.alive and p.team==1 then
+      collectPowerup(p)  -- an item can appear under a hero who stands still
+      for _,m in ipairs(monsters) do if m.c==p.c and m.r==p.r then blastHit(p) end end
+      if boss and boss.hp>0 and not camp.friend and bossCovers(boss,p.c,p.r) then blastHit(p) end
+      if p.alive then heroes=heroes+1 end
+    end
+  end
+  updateCamera()
+  if heroes==0 then
+    camp.lives=camp.lives-1
+    state,restartTimer=camp.lives>0 and "lost" or "gameover",150
+  elseif stageGoalMet() then
+    for _,p in ipairs(players) do
+      if p.team==1 then camp.stats[p.id]={bombs=p.stats.bombs,len=p.stats.len} end
+    end
+    state,restartTimer="clear",120
+  end
+end
+
+-- after a stage: next stage, a chapter scene, or the ending
+function campaignNext()
+  if state=="clear" then
+    camp.tries=0
+    if camp.stage==#STAGES then
+      pmem(SAVE_SLOT,0)
+      playScene("ending",function() mode="pvp" state="title" titleTimer=2 end)
+    else
+      beginChapterOrMap(camp.stage+1)
+    end
+  elseif state=="lost" then
+    camp.tries=camp.tries+1
+    startStage(camp.stage)
+  else
+    mode,state,titleTimer="pvp","title",2
+  end
+end
+
+-- ── campaign drawing ──────────────────────────────────────────────────────────
+
+-- 8x8 art, one character per pixel: '.' transparent, other letters index ART_COL
+local ART_COL={g=5,k=0,w=12,d=15,r=2,y=4,s=10,t=7,p=9,o=3}
+local ART={
+  g={"..gggg..",".gggggg.","gwkggwkg","gggggggg",".gyyyyg.","..gggg..",".g.gg.g.","g......g"},
+  b={"d......d","dd.dd.dd","ddddddd.",".drddrd.","..dddd..","...dd...","........","........"},
+  troll={"..tttt..",".tttttt.","twkttwkt","tttttttt","tyttttyt",".tttttt.",".tt..tt.",".tt..tt."},
+  witch={"...dd...","..dddd..","dddddddd",".ssssss.",".skssks.",".sssyss.","..gggg..",".gggggg."},
+  dragon={"r......r","rr.rr.rr","rrrrrrrr","rwkrrwkr","rrrrrrrr","ryyyyyyr",".rr..rr.","rr....rr"},
+  heart={"........",".rr.rr..","rrrrrrr.","rrrrrrr.",".rrrrr..","..rrr...","...r....","........"},
+  morgath={"...pp...","..pppp..",".pppppp.","..ssss..","..kssk..","..sooss.",".pppppp.","pppppppp"},
+}
+
+function drawArt(name,x,y,scale,flash)
+  local rows=ART[name]
+  for j=1,8 do
+    local row=rows[j]
+    for i=1,8 do
+      local col=ART_COL[row:sub(i,i)]
+      if col then rect(x+(i-1)*scale,y+(j-1)*scale,scale,scale,flash and 12 or col) end
+    end
+  end
+end
+
+local function drawMonsters()
+  for _,m in ipairs(monsters) do drawArt(m.kind,m.x-camX,m.y-camY,1) end
+end
+
+local function drawBoss()
+  local b=boss
+  if not b or b.hp<=0 or camp.friend then return end
+  if b.warn and frame%8<4 then
+    for k=1,(b.warn.row and W or H)-2 do
+      local c,r=b.warn.row and k or b.warn.c,b.warn.row and b.warn.r or k
+      rectb(gpx(c)-camX,gpy(r)-camY,TILE,TILE,BOMB_COL)
+    end
+  end
+  drawArt(b.kind,b.x-camX,b.y-camY,2,b.inv>0 and frame%6<3)
+end
+
+local function drawCampaignHUD()
+  rect(0,0,240,7,0)
+  for k=1,camp.lives do drawArt("heart",2+(k-1)*7,0,1) end
+  print(STAGES[camp.stage][1].."-"..((camp.stage-1)%4+1),26,1,12,false,1,true)
+  local x=44
+  for _,p in ipairs(players) do
+    if p.team==1 then
+      drawHead(x,1,p.alive and p.color or 13)
+      drawIcon(HUD_ICONS.B,x+7,1) print(p.stats.bombs,x+13,1,12,false,1,true)
+      drawIcon(HUD_ICONS.R,x+18,1) print(p.stats.len,x+24,1,12,false,1,true)
+      if p.shield then drawIcon(HUD_ICONS.S,x+29,1) end
+      x=x+40
+    end
+  end
+  local goal,txt=STAGES[camp.stage][2],nil
+  if goal=="keys" then txt="KEYS "..camp.keys.."/3"
+  elseif goal=="enemies" then
+    local n=#monsters
+    for _,p in ipairs(players) do if p.alive and p.team==2 then n=n+1 end end
+    txt="LEFT "..n
+  elseif goal=="survive" then txt=shrinkDone and "SAFE" or "HOLD ON"
+  elseif goal=="exit" then txt="FIND EXIT" end
+  if txt then print(txt,238-#txt*4,1,12,false,1,true) end
+  if goal=="boss" and boss then
+    rect(160,2,74,3,15)
+    rect(160,2,74*math.max(0,boss.hp)//BOSS_HP[boss.kind],3,BOMB_COL)
+  end
+end
+
+function drawCampaign()
+  drawMonsters()
+  drawBoss()
+  drawCampaignHUD()
+  local msg=state=="clear" and "STAGE CLEAR!" or state=="lost" and "OUCH!" or state=="gameover" and "GAME OVER"
+  if msg then
+    print(msg,120-#msg*6,52,12,false,2,true)
+    if state=="lost" then print("LIVES LEFT: "..camp.lives,90,72,13,false,1,true) end
+    restartTimer=restartTimer-1
+    if restartTimer<=0 or (restartTimer<90 and btnp(4)) then campaignNext() end
+  end
+end
+
+-- ── scenes ────────────────────────────────────────────────────────────────────
+-- actors: {who, x0,y0, x1,y1, t0,t1}; lines start once the last actor stops moving
+
+local WHO_COL={aldric=12,elena=5,king=4}
+
+local function bgCastle(night)
+  cls(night and 0 or 9)
+  if night then for i=1,30 do pix((i*53)%240,(i*29)%60,12) end end
+  rect(0,104,240,32,7)
+  rect(140,40,80,64,13) rect(130,24,18,80,13) rect(212,24,18,80,13)
+  for i=0,5 do rect(140+i*14,34,8,6,13) end
+  rect(170,76,20,28,15)
+end
+
+local function bgForest(swamp)
+  cls(swamp and 7 or 9)
+  rect(0,104,240,32,swamp and 6 or 5)
+  for i=0,7 do
+    local x=i*32+8
+    rect(x+6,70,4,34,8)
+    tri(x,76,x+8,36+(i%3)*8,x+16,76,swamp and 7 or 6)
+  end
+  if swamp then for i=0,9 do line(i*24,112+(i%3)*6,i*24+14,112+(i%3)*6,11) end end
+end
+
+local function bgTower()
+  cls(0)
+  for i=1,30 do pix((i*37)%240,(i*17)%90,12) end
+  rect(0,104,240,32,15)
+  rect(150,20,40,84,13) tri(144,20,170,0,196,20,2)
+  rect(164,60,12,20,15)
+end
+
+local BACKGROUNDS={castle=function() bgCastle(false) end,night=function() bgCastle(true) end,
+  forest=function() bgForest(false) end,swamp=function() bgForest(true) end,tower=bgTower}
+
+SCENES={
+  intro={bg="castle",act={{"king",40,96,40,96,0,0},{"elena",100,96,100,96,0,80},{"morgath",250,60,110,86,0,70},
+      {"morgath",110,86,260,-30,80,170},{"elena",100,96,250,-20,80,170},{"aldric",-10,96,80,96,170,230}},
+    lines={{"KING","Sir Aldric! Morgath took my daughter!"},{"ALDRIC","With what? I only have bombs."},
+      {"KING","Swords are so last century. GO!"}}},
+  swamp={bg="swamp",act={{"elena",150,96,150,96,0,0},{"aldric",-10,96,110,96,0,90}},
+    lines={{"ALDRIC","Princess! I came to rescue..."},{"ELENA","You're late. I rescued myself."},
+      {"ELENA","Morgath ran to the swamp. Keep up."}}},
+  tower={bg="tower",act={{"elena",60,96,60,96,0,0},{"aldric",-10,96,40,96,0,60},{"dragon",168,40,168,40,0,0}},
+    lines={{"ELENA","The dragon guards Morgath's tower..."},{"ELENA","...because he stole its egg."},
+      {"ALDRIC","Find the egg, save the dragon?"},{"ELENA","Your call, bomb boy."}}},
+  castle={bg="night",act={{"aldric",-10,96,60,96,0,60},{"elena",-30,96,40,96,0,60},{"morgath",250,96,160,96,60,120}},
+    lines={{"MORGATH","Surprised? I am the royal alchemist."},{"MORGATH","Who do you think sold you those bombs?"},
+      {"ALDRIC","...Can I get a refund?"}}},
+  ending={bg="castle",act={{"king",40,96,40,96,0,0},{"elena",-30,96,90,96,0,80},{"aldric",-50,96,70,96,0,80}},
+    lines={{"KING","My heroes! The kingdom is safe."},{"ELENA","Next time I rescue you."},
+      {"ALDRIC","Deal. No more bombs."},{"","THE END"}}},
+}
+SCENE_OF_CHAPTER={"intro","swamp","tower","castle"}
+
+local scene
+local LINE_FRAMES=150
+
+function playScene(name,after)
+  local s=SCENES[name]
+  local stop=0
+  for _,a in ipairs(s.act) do stop=math.max(stop,a[7]) end
+  scene={def=s,t=0,line=1,lineT=0,start=stop+20,after=after}
+  state="scene"
+end
+
+local function drawActor(a,t)
+  local who,x0,y0,x1,y1,t0,t1=table.unpack(a)
+  if t<t0 and t0>0 then return end
+  local k=t1>t0 and math.max(0,math.min(1,(t-t0)/(t1-t0))) or 1
+  local x,y=x0+(x1-x0)*k,y0+(y1-y0)*k
+  if who=="dragon" or who=="morgath" then drawArt(who,x,y,2) return end
+  local moving=k>0 and k<1
+  drawSp(1+(moving and (t//8)%2 or 0)+((x1<x0) and 4 or 0),x,y,WHO_COL[who],x1<x0)
+end
+
+function drawScene()
+  local s=scene
+  s.t=s.t+1
+  BACKGROUNDS[s.def.bg]()
+  -- every actor is drawn with the track it is on at time t: the latest one that has started
+  local last={}
+  for i,a in ipairs(s.def.act) do
+    if s.t>=a[6] or a[6]==0 then last[a[1]]=i end
+  end
+  for i,a in ipairs(s.def.act) do if last[a[1]]==i then drawActor(a,s.t) end end
+  if s.t>=s.start then
+    local l=s.def.lines[s.line]
+    s.lineT=s.lineT+1
+    rect(4,112,232,22,0) rectb(4,112,232,22,12)
+    print(l[1],8,115,4,false,1,true)
+    print(l[2]:sub(1,s.lineT//2),8,124,12,false,1,true)
+    if s.lineT>LINE_FRAMES or (s.lineT>20 and btnp(4)) then
+      s.line,s.lineT=s.line+1,0
+      if s.line>#s.def.lines then scene=nil s.after() end
+    end
+  elseif btnp(4) then
+    s.t=s.start
+  end
+end
+
+-- ── world map between stages ──────────────────────────────────────────────────
+
+local mapAnim
+local REGION_COL={6,7,13,15}
+
+local function nodePos(n)
+  local x=14+(n-1)*14
+  return x,72+math.floor(math.sin(n*1.3)*26)
+end
+
+function showMap(n)
+  mapAnim={n=n,t=0}
+  state="map"
+end
+
+function drawWorldMap()
+  local m=mapAnim
+  m.t=m.t+1
+  cls(0)
+  for c=1,4 do rect((c-1)*56+4,24,56,100,REGION_COL[c]) end
+  for i=1,#STAGES-1 do
+    local x0,y0=nodePos(i) local x1,y1=nodePos(i+1)
+    line(x0,y0,x1,y1,12)
+  end
+  for i=1,#STAGES do
+    local x,y=nodePos(i)
+    local done=i<m.n
+    circ(x,y,STAGES[i][7] and 4 or 3,done and 4 or (i==m.n and frame%20<10) and 12 or 15)
+  end
+  local fx,fy=nodePos(math.max(1,m.n-1))
+  local tx,ty=nodePos(m.n)
+  local k=math.min(1,m.t/60)
+  drawSp(5+(m.t//8)%2*(k<1 and 1 or 0),fx+(tx-fx)*k-4,fy+(ty-fy)*k-12,12,false)
+  local st=STAGES[m.n]
+  local title=CHAPTERS[st[1]]
+  print(title,120-#title*3,4,12,false,1,false)
+  local sub="STAGE "..st[1].."-"..((m.n-1)%4+1)..": "..GOALS[st[2]]
+  print(sub,120-#sub*2,14,4,false,1,true)
+  if m.t>60 and m.t%40<28 then print("PRESS Z",104,128,13,false,1,true) end
+  if m.t>200 or (m.t>30 and btnp(4)) then mapAnim=nil startStage(m.n) end
+end
+
 -- ── main loop ────────────────────────────────────────────────────────────────
 
 function TIC()
@@ -1267,6 +1857,12 @@ function TIC()
 
   if state=="title" then
     drawTitle()
+    return
+  elseif state=="scene" then
+    drawScene()
+    return
+  elseif state=="map" then
+    drawWorldMap()
     return
   end
 
@@ -1278,15 +1874,20 @@ function TIC()
     updateInvul()
     updateShrink()
     for i,p in ipairs(players) do
-      if humans[i] then updatePlayer(p) else updateBot(p) end
+      local human=mode=="camp" and p.human or mode~="camp" and humans[i]
+      if human then updatePlayer(p) else updateBot(p) end
     end
 
-    local alive,last=countAlive()
-    if alive<=1 then
-      state="over"
-      winner=last
-      score=addRoundWin(score, winner and winner.id)
-      restartTimer=210
+    if mode=="camp" then
+      updateCampaign()
+    else
+      local alive,last=countAlive()
+      if alive<=1 then
+        state="over"
+        winner=last
+        score=addRoundWin(score, winner and winner.id)
+        restartTimer=210
+      end
     end
 
     drawMap()
@@ -1294,7 +1895,14 @@ function TIC()
     drawBombs()
     drawPowerups()
     drawPlayers()
-    drawHUD()
+    if mode=="camp" then drawCampaign() else drawHUD() end
+
+  elseif mode=="camp" then
+    drawMap()
+    drawBombs()
+    drawPowerups()
+    drawPlayers()
+    drawCampaign()
 
   elseif state=="over" then
     updateBombs()

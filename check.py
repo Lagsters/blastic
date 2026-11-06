@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Bramka "gotowe": testy logiki, symulacja botów, build carta, limit rozmiaru kodu."""
+"""Bramka "gotowe": testy minifikatora i logiki (źródło i kod z carta), build carta, limit kodu;
+z --sim także symulacja botów."""
 import shutil, subprocess, sys, os
 
 LIMIT = 65535
@@ -13,11 +14,16 @@ def run(name, cmd):
     if subprocess.run(cmd).returncode != 0:
         sys.exit(f"FAIL: {name}")
 
+MIN = os.path.join(os.environ.get("TEMP", "/tmp"), "blastic.min.lua")
+run("testy minifikatora", [sys.executable, "test_make_tic.py"])
 run("testy logiki", [lua, "test_blastic.lua"])
-run("symulacja botow", [lua, "sim_blastic.lua", "300", "1"])
+run("minifikacja", [sys.executable, "make_tic.py", "--min", "blastic.lua", MIN])
+run("testy logiki na kodzie z carta", [lua, "test_blastic.lua", MIN])
+if "--sim" in sys.argv:  # only when bot behaviour changes; it takes minutes
+    run("symulacja botow", [lua, "sim_blastic.lua", "300", "1"])
 run("build carta", [sys.executable, "make_tic.py", "blastic.lua", "blastic.tic"])
-size = os.path.getsize("blastic.lua")
-print(f"rozmiar kodu: {size}/{LIMIT} B")
+size = os.path.getsize(MIN)
+print(f"rozmiar kodu w carcie: {size}/{LIMIT} B (źródło {os.path.getsize('blastic.lua')} B)")
 if size > LIMIT:
     sys.exit("FAIL: kod przekracza limit carta")
 print("OK")

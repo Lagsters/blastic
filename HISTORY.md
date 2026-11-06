@@ -79,3 +79,14 @@ Format wpisu: **FAKT** / **DECYZJA** / **ŚLEPA ULICZKA**, data, jedno–dwa zda
   (41 Hz) na głośnikach laptopa jest niesłyszalny, dlatego riff gra od E2.
 - **FAKT** 2026-11-06: utwór z kodu ma 32 takty z 8 typów; podmiana taktów w `wav2tic.py`
   przypisuje je bezbłędnie i daje SNR 26 dB przy 60 s w 57,7 KB (ciągła pętla zmieściłaby 15,9 s).
+- **DECYZJA** 2026-11-07: kod jest minifikowany przy budowie carta (`make_tic.py`), bo kampania
+  przekroczyła 64 KB z komentarzami (60,7 KB źródła → 44,7 KB w carcie); kod w wielu bankach
+  odrzucony, bo nie wiadomo, czy obsługuje go rdzeń w Melancholy. Wpis w `DEVIATIONS.md`.
+- **FAKT** 2026-11-07: w TIC-80 slot SFX ma głośność zapisaną jako tłumienie (0 = najgłośniej);
+  zera w nieużytych tickach grają pełną głośnością do końca czasu z `sfx()`, a numer fali w
+  złym nibblu staje się arpeggio. Stąd brało się „piszczenie” i za głośne efekty.
+- **FAKT** 2026-11-07: przy zamykaniu całego obwodu do końca 71% rund z botami kończyło się
+  remisem (wszyscy ginęli w ostatnim kroku); zatrzymanie strefy na pasie 4×2 dało 1%.
+- **DECYZJA** 2026-11-07: kampania „Not Your Princess” (nowoczesna baśń w starym stylu): 4
+  rozdziały po 3 etapy i bossie, Elena dołącza od rozdziału 2; etapy to wiersze parametrów w
+  `STAGES`, mapy z generatora; plansze przewijają się w jednej osi.
