@@ -57,7 +57,7 @@ local function initMap()
     for c=0,W-1 do
       if r==0 or r==H-1 or c==0 or c==W-1 then
         map[r][c]=T_WALL
-      elseif (r<H//2 and r%2==0 or r>=H//2 and (H-1-r)%2==0)
+      elseif (r<H//2-1 and r%2==0 or r>H//2 and (H-1-r)%2==0)
          and (c<W//2 and c%2==0 or c>=W//2 and (W-1-c)%2==0) then
         map[r][c]=T_WALL
       elseif math.random()<0.4 then
@@ -222,15 +222,14 @@ local function putSfx(n,ticks,wave,octave,note)
 end
 
 -- Sweetie16 has no skin or wood tones; colours drawn nowhere else become them.
-SKIN,WOOD,WOOD_DARK,WOOD_LIGHT=10,1,8,6
+SKIN,WOOD,WOOD_DARK=10,1,8
 local function setColour(i,r,g,b)
   poke(0x03FC0+i*3,r); poke(0x03FC0+i*3+1,g); poke(0x03FC0+i*3+2,b)
 end
 local function initPalette()
   setColour(SKIN,0xFF,0xCC,0xAA)
-  setColour(WOOD,0xA0,0x6A,0x32)
+  setColour(WOOD,0xC8,0x92,0x52)
   setColour(WOOD_DARK,0x5C,0x3A,0x1A)
-  setColour(WOOD_LIGHT,0xC8,0x92,0x52)
 end
 
 local audioReady=false
@@ -256,17 +255,17 @@ local function initAudio()
   for i=0,15 do poke(WAVES+48+i,tri[i+1]) end
 
   -- SFX 1: śmierć — "aaah!" opadające od A4 do A3
-  putSfx(1,{{9,12},{9,10},{8,7},{7,5},{6,3},{5,1},{3,0},{2,0},{1,0}},SAW,3,9)
+  putSfx(1,{{13,12},{13,10},{12,7},{11,5},{10,3},{8,1},{6,0},{4,0},{2,0}},SAW,3,9)
   -- SFX 5: postawienie bomby — krótki, niski, miękki stuk
-  putSfx(5,{{8,0},{6,0},{4,0},{2,0}},TRI,2,0)
+  putSfx(5,{{12,0},{10,0},{7,0},{4,0}},TRI,2,0)
   -- SFX 6: podniesienie bonusu — rosnące arpeggio C-E-G-C
-  putSfx(6,{{7,0},{7,0},{7,4},{7,4},{7,7},{7,7},{6,12},{4,12},{2,12}},TRI,4,0)
+  putSfx(6,{{11,0},{11,0},{11,4},{11,4},{11,7},{11,7},{10,12},{7,12},{4,12}},TRI,4,0)
   -- SFX 7: pęknięcie tarczy — krótki opadający szum
-  putSfx(7,{{9,0},{7,0},{5,0},{3,0},{1,0}},NOISE,4,0)
+  putSfx(7,{{13,0},{11,0},{8,0},{5,0},{2,0}},NOISE,4,0)
 end
 
-function sndPickup() sfx(6,-1,24,3,9) end
-function sndShield() sfx(7,-1,24,3,9) end
+function sndPickup() sfx(6,-1,24,3,15) end
+function sndShield() sfx(7,-1,24,3,15) end
 
 function init()
   math.randomseed(time())
@@ -457,7 +456,7 @@ local function placeBomb(p)
     if not isBomb(bc,br) then
       bombs[#bombs+1]={c=bc,r=br,t=BOMB_TIMER,owner=p,len=p.stats.len}
       p.bombs=p.bombs+1
-      sfx(5,-1,20,3,8)
+      sfx(5,-1,20,3,15)
       return true
     end
   end
@@ -467,7 +466,7 @@ end
 local function killPlayer(p)
   p.alive=false
   p.deathT=DEATH_TIME
-  sfx(1,-1,15,1,9)
+  sfx(1,-1,15,1,15)
 end
 
 local function updateDeaths()
@@ -858,7 +857,15 @@ local function shrinkTile(c,r)
   bombs=keep
 end
 
--- open tiles the next step closes: the whole outline of the box
+-- the zone stops at this strip in the middle, so its last step never kills everyone at once
+local ZONE_MIN_W,ZONE_MIN_H=4,2
+
+-- a box only ZONE_MIN_H tall loses its two side columns per step, a taller one its outline
+local function thin(box)
+  return box.y1-box.y0+1<=ZONE_MIN_H
+end
+
+-- open tiles the next step closes
 local function stepCells(box)
   local cells={}
   local function add(c,r)
@@ -868,22 +875,26 @@ local function stepCells(box)
     add(box.x0,r)
     if box.x1>box.x0 then add(box.x1,r) end
   end
-  for c=box.x0+1,box.x1-1 do
-    add(c,box.y0)
-    if box.y1>box.y0 then add(c,box.y1) end
+  if not thin(box) then
+    for c=box.x0+1,box.x1-1 do
+      add(c,box.y0)
+      if box.y1>box.y0 then add(c,box.y1) end
+    end
   end
   return cells
 end
 
 local function advanceBox(box)
+  local sides=thin(box)
   box.x0,box.x1=box.x0+1,box.x1-1
-  box.y0,box.y1=box.y0+1,box.y1-1
+  if not sides then box.y0,box.y1=box.y0+1,box.y1-1 end
 end
 
--- the next step with open tiles, skipping steps that have none; nil when the box is gone
+-- the next step with open tiles, skipping steps that have none; nil once only the middle
+-- strip is left
 local function nextStepCells()
   local box=shrinkBox
-  while box.x0<=box.x1 and box.y0<=box.y1 do
+  while not (thin(box) and box.x1-box.x0+1<=ZONE_MIN_W) do
     local cells=stepCells(box)
     if #cells>0 then return cells end
     advanceBox(box)
@@ -931,18 +942,6 @@ local BLOCK_COL=WOOD
 local FLOOR_COL=0
 local BOMB_COL=2
 
--- crate: dark frame and seams between three boards, light grain shifted per tile so neighbours differ
-local WOOD_GRAIN={{1,1},{5,0},{3,3},{6,4},{0,6},{4,7},{2,7}}
-
-local function drawWood(c,r)
-  local x,y=gpx(c),gpy(r)
-  rectb(x,y,TILE,TILE,WOOD_DARK)
-  line(x,y+2,x+TILE-1,y+2,WOOD_DARK)
-  line(x,y+5,x+TILE-1,y+5,WOOD_DARK)
-  local k=(c*5+r*3)%TILE
-  for _,g in ipairs(WOOD_GRAIN) do pix(x+(g[1]+k)%TILE,y+g[2],WOOD_LIGHT) end
-end
-
 local function drawMap()
   local warn=shrinkWarnTiles()
   for r=1,H-2 do
@@ -956,11 +955,11 @@ local function drawMap()
       if t==T_WALL then
         rectb(gpx(c),gpy(r),TILE,TILE,15)
       elseif t==T_BLOCK and not warn[c*100+r] then
-        drawWood(c,r)
+        rectb(gpx(c),gpy(r),TILE,TILE,WOOD_DARK)
       end
     end
   end
-  rectb(0,TILE-1,(W-2)*TILE,(H-1)*TILE-(TILE-1),WALL_COL)
+  rectb(0,TILE,(W-2)*TILE,(H-2)*TILE,WALL_COL)
 end
 
 local function drawBlasts()

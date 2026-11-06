@@ -473,7 +473,7 @@ do
     if w==env.TILE and col==13 and ring then ring_walls=ring_walls+1 end
   end
   env.rectb=function(x,y,w,h,col)
-    if x==0 and y==env.TILE-1 and w==240 and h==136-(env.TILE-1) then
+    if x==0 and y==env.TILE and w==240 and h==136-env.TILE then  -- on the edge tiles, like the other sides
       frame_line=true
     end
   end
@@ -507,9 +507,20 @@ check("ring blinks faster near closing", late>early, ("early=%d late=%d"):format
 env.roundFrames=env.shrinkAt-env.SHRINK_WARN-10
 check("nothing blinks during the pause", tinted_tiles()==0)
 
+-- the zone stops at a small strip in the middle, so it never kills everyone at once
 new_game()
-for _=1,env.SHRINK_DELAY+env.SHRINK_CYCLE*(env.W//2+2) do env.updateShrink() end
-check("shrink eventually walls every tile", open_count()==0, "open="..open_count())
+for _=1,env.SHRINK_DELAY+env.SHRINK_CYCLE*(env.W+env.H) do env.updateShrink() end
+local left_open,minc,maxc,minr,maxr=0,99,0,99,0
+for r=1,env.H-2 do for c=1,env.W-2 do
+  if env.mget(c,r)~=env.T_WALL then
+    left_open=left_open+1
+    minc,maxc=math.min(minc,c),math.max(maxc,c); minr,maxr=math.min(minr,r),math.max(maxr,r)
+  end
+end end
+check("the zone stops at a small strip in the middle",
+      left_open>0 and maxc-minc+1<=4 and maxr-minr+1<=2
+      and minc+maxc==env.W-1 and minr+maxr==env.H-1,
+      ("open=%d cols %d-%d rows %d-%d"):format(left_open,minc,maxc,minr,maxr))
 
 new_game()
 env.roundFrames=env.shrinkAt-1
@@ -869,6 +880,13 @@ for r=0,env.H-1 do
   end
 end
 check("walls mirror top-bottom", asym==nil, asym and ("first mismatch at "..asym))
+local mid_pillars=0
+for c=1,env.W-2 do
+  for _,r in ipairs({env.H//2-1,env.H//2}) do
+    if env.mget(c,r)==env.T_WALL then mid_pillars=mid_pillars+1 end
+  end
+end
+check("no pillars in the two middle rows", mid_pillars==0, "pillars="..mid_pillars)
 
 -- ── TEST: tuning (one starting bomb, half walking speed) ──────────────────────
 
@@ -1059,32 +1077,19 @@ env.updateShrink()
 check("items in the closing zone disappear", #env.powerups==1 and env.powerups[1].c==5,
       "items="..#env.powerups)
 
--- a block is a wooden crate: several shades inside one tile, varying between blocks
-local function block_shades(c,r)
-  new_game()
-  env.state="game"
-  env.map[r][c]=env.T_BLOCK
-  local shades,pattern={},{}
-  local saved,saved_line=env.pix,env.line
-  env.pix=function(x,y,col)
-    if x>=env.gpx(c) and x<env.gpx(c)+8 and y>=env.gpy(r) and y<env.gpy(r)+8 then
-      shades[col]=true; pattern[#pattern+1]=(x-env.gpx(c))..","..(y-env.gpy(r))
-    end
-  end
-  env.line=function(x0,y0,x1,y1,col)
-    if x0>=env.gpx(c) and x0<env.gpx(c)+8 and y0>=env.gpy(r) and y0<env.gpy(r)+8 then shades[col]=true end
-  end
+-- a block is plain light brown with a dark brown outline
+new_game()
+env.state="game"
+env.map[3][5]=env.T_BLOCK
+local fill,edge=false,false
+do
+  local sr,sb=env.rect,env.rectb
+  env.rect=function(x,y,w,h,col) if x==env.gpx(5) and y==env.gpy(3) and col==1 then fill=true end end
+  env.rectb=function(x,y,w,h,col) if x==env.gpx(5) and y==env.gpy(3) and col==8 then edge=true end end
   env.TIC()
-  env.pix,env.line=saved,saved_line
-  local n=0
-  for _ in pairs(shades) do n=n+1 end
-  table.sort(pattern)
-  return n,table.concat(pattern,";")
+  env.rect,env.rectb=sr,sb
 end
-local shades,pat_a=block_shades(5,3)
-local _,pat_b=block_shades(7,3)
-check("blocks are textured wood", shades>=2, "shades="..shades)
-check("neighbouring blocks differ in texture", pat_a~=pat_b)
+check("blocks are plain light brown with an outline", fill and edge)
 
 -- ── TEST: player sprite ───────────────────────────────────────────────────────
 
@@ -1238,7 +1243,7 @@ local function brown(i)
   local r,g,b=pokes[0x03FC0+i*3],pokes[0x03FC0+i*3+1],pokes[0x03FC0+i*3+2]
   return r and r>g and g>b
 end
-check("blocks are wood brown", brown(1) and brown(6) and brown(8))
+check("blocks are wood brown", brown(1) and brown(8))
 check("initAudio leaves stereo volume and persistent memory alone", not stray)
 -- SFX slot format: per tick byte0 = attenuation (0 loudest) | wave<<4, byte1 = chord | pitch<<4
 local blip=0x100E4+66*5
