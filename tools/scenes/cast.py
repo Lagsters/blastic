@@ -6,7 +6,8 @@ outline. Colours stay off the four
 that backdrops redefine (1, 5, 7, 11); 11 marks transparent pixels.
 
 Busts (close-ups) come with a talking mouth and closed eyes as small patches drawn over them;
-walkers come with a second step.
+walkers with the two moments of a step (_a, _b), the dragon with its wings raised and lowered
+(_a, _b) and its jaws open (_roar).
 """
 import numpy as np
 from PIL import Image, ImageDraw
@@ -250,15 +251,32 @@ def bust_jaga(talk=False, blink=False):
     return c.outline()
 
 
-# ── full figures: about 18x34, feet on the bottom row ────────────────────────
+# ── full figures: about 20x34, feet on the bottom row ────────────────────────
+# pose 0 stands, 1 is the stride of a step (feet apart), 2 its passing moment (feet together,
+# the back foot lifted); a walk alternates 1 and 2, and blastic.lua lifts the body on 2
 
-def figure_dratewka(step=0):
-    c = Canvas(20, 34)
-    lx, rx = 7 - step, 11 + step
-    c.rect(lx, 25, lx + 3, 32, DARK, light=False)
-    c.rect(rx, 25, rx + 3, 32, DARK, light=False)
-    c.rect(lx - 1, 32, lx + 3, 34, K)
-    c.rect(rx, 32, rx + 4, 34, K)
+def legs(c, cx, hip, foot, pose, col, shoe=K, w=3):
+    """Two legs from hip down to the soles at row foot, facing right."""
+    if pose == 1:
+        c.poly([(cx - 2, hip), (cx + 1, hip), (cx - 2, foot), (cx - 5, foot)], col, light=False)
+        c.poly([(cx - 1, hip), (cx + 2, hip), (cx + 6, foot), (cx + 3, foot)], col, light=False)
+        c.rect(cx - 6, foot, cx - 1, foot + 2, shoe)
+        c.rect(cx + 3, foot, cx + 8, foot + 2, shoe)
+    elif pose == 2:
+        c.rect(cx - 2, hip, cx - 2 + w, foot - 2, col, light=False)
+        c.rect(cx - 4, foot - 2, cx + 1, foot, shoe)
+        c.rect(cx, hip, cx + w, foot, col, light=False)
+        c.rect(cx, foot, cx + 5, foot + 2, shoe)
+    else:
+        c.rect(cx - 3, hip, cx - 3 + w, foot, col, light=False)
+        c.rect(cx + 1, hip, cx + 1 + w, foot, col, light=False)
+        c.rect(cx - 4, foot, cx, foot + 2, shoe)
+        c.rect(cx + 1, foot, cx + 5, foot + 2, shoe)
+
+
+def figure_dratewka(pose=0):
+    c = Canvas(22, 34)
+    legs(c, 10, 25, 32, pose, DARK)
     c.poly([(5, 26), (6, 15), (14, 15), (15, 26)], WHITE)
     c.poly([(6, 27), (7, 18), (13, 18), (14, 27)], BROWN)
     c.ellipse(10, 10, 5, 5, SKIN)
@@ -274,10 +292,9 @@ def figure_dratewka(step=0):
     return c.outline()
 
 
-def figure_wanda(step=0):
-    c = Canvas(20, 34)
-    c.rect(7 - step, 31, 10 - step, 34, K)
-    c.rect(11 + step, 31, 14 + step, 34, K)
+def figure_wanda(pose=0):
+    c = Canvas(22, 34)
+    legs(c, 10, 30, 32, pose, K)
     c.poly([(3, 32), (7, 18), (13, 18), (17, 32)], RED)
     c.rect(4, 31, 17, 32, WHITE, shade=False)
     c.poly([(5, 20), (6, 14), (14, 14), (15, 20)], WHITE)
@@ -291,7 +308,7 @@ def figure_wanda(step=0):
     return c.outline()
 
 
-def figure_krak(step=0):
+def figure_krak(pose=0):
     c = Canvas(20, 34)
     c.poly([(2, 34), (6, 14), (14, 14), (18, 34)], RED)
     c.rect(2, 32, 18, 34, WHITE, shade=False)
@@ -303,10 +320,9 @@ def figure_krak(step=0):
     return c.outline()
 
 
-def figure_twardowski(step=0):
-    c = Canvas(20, 34)
-    c.rect(6 - step, 30, 9 - step, 34, K)
-    c.rect(11 + step, 30, 14 + step, 34, K)
+def figure_twardowski(pose=0):
+    c = Canvas(22, 34)
+    legs(c, 10, 28, 32, pose, K)
     c.poly([(3, 31), (6, 14), (14, 14), (17, 31)], BLUE)
     c.poly([(8, 15), (12, 15), (11, 31), (9, 31)], RED, light=False)
     c.rect(5, 21, 15, 23, YELLOW, light=False)
@@ -318,10 +334,9 @@ def figure_twardowski(step=0):
     return c.outline()
 
 
-def figure_devil(step=0):
-    c = Canvas(22, 34)
-    c.rect(7 - step, 30, 10 - step, 34, K)
-    c.rect(12 + step, 30, 15 + step, 34, K)
+def figure_devil(pose=0):
+    c = Canvas(24, 34)
+    legs(c, 11, 28, 32, pose, K, K)
     c.poly([(1, 26), (0, 20), (2, 18), (3, 24), (6, 27)], RED, light=False)      # tail
     c.poly([(4, 31), (7, 14), (15, 14), (18, 31)], DARK)
     c.poly([(9, 15), (13, 15), (12, 31), (10, 31)], RED, light=False)
@@ -333,7 +348,7 @@ def figure_devil(step=0):
     return c.outline()
 
 
-def figure_jaga(step=0):
+def figure_jaga(pose=0):
     c = Canvas(22, 32)
     c.rect(3, 6, 4, 32, BROWN, shade=False, light=False)                        # broom
     c.poly([(0, 32), (3, 24), (5, 24), (8, 32)], YELLOW, light=False)
@@ -345,15 +360,14 @@ def figure_jaga(step=0):
     return c.outline()
 
 
-def figure_dwarf(step=0):
-    c = Canvas(14, 22)
-    c.rect(4 - step, 19, 6 - step, 22, K)
-    c.rect(8 + step, 19, 10 + step, 22, K)
-    c.poly([(2, 20), (4, 12), (10, 12), (12, 20)], BLUE)
-    c.ellipse(7, 10, 3, 3, SKIN)
-    c.poly([(4, 11), (7, 18), (10, 11)], WHITE)
-    c.poly([(3, 8), (7, 0), (11, 8)], RED)
-    c.px([(8, 9)], K)
+def figure_dwarf(pose=0):
+    c = Canvas(16, 22)
+    legs(c, 7, 17, 20, pose, DARK, K, 2)
+    c.poly([(2, 18), (4, 11), (10, 11), (12, 18)], BLUE)
+    c.ellipse(7, 9, 3, 3, SKIN)
+    c.poly([(4, 10), (7, 17), (10, 10)], WHITE)
+    c.poly([(3, 7), (7, -1), (11, 7)], RED)
+    c.px([(8, 8)], K)
     return c.outline()
 
 
@@ -372,23 +386,68 @@ def figure_rooster(step=0):
     return c.outline()
 
 
-def figure_dragon(step=0):
-    c = Canvas(60, 46)
-    flap = [0, 6][step]
-    c.poly([(18, 22), (8, 2 + flap), (30, 14 + flap // 2), (34, 22)], DARK)     # far wing
-    c.poly([(0, 34), (12, 30), (20, 34), (8, 38)], RED)                         # tail
-    c.ellipse(24, 32, 12, 9, RED)
-    c.ellipse(26, 35, 7, 5, ORANGE)
-    c.rect(16, 38, 21, 46, RED)
-    c.rect(28, 38, 33, 46, RED)
-    c.poly([(32, 28), (38, 14), (44, 16), (38, 30)], RED)                       # neck
-    c.ellipse(46, 13, 7, 6, RED)
-    c.poly([(48, 10), (60, 12), (59, 17), (48, 18)], RED)                       # snout
-    c.poly([(42, 8), (44, 0), (46, 8)], LIGHT)                                  # horn
-    c.px([(47, 11), (48, 11)], YELLOW)
-    c.px([(48, 12)], K)
-    c.px([(57, 13)], K)
-    c.poly([(22, 24), (10, 6 + flap), (36, 18 + flap // 2), (34, 26)], RED)     # near wing
+def dragon_wing(c, sx, sy, tips, col, bone):
+    """A bat wing from the shoulder sx,sy: membrane between the finger tips, bones on top."""
+    pts = [(sx, sy)] + tips + [(sx - 6, sy + 4)]
+    c.poly(pts, col)
+    for k in range(len(tips) - 1):  # scalloped trailing edge
+        (x0, y0), (x1, y1) = tips[k], tips[k + 1]
+        c.poly([(x0, y0), (x1, y1), ((x0 + x1) // 2 + 1, (y0 + y1) // 2 + 3)], T, shade=False, light=False)
+    for tx, ty in tips:
+        n = max(abs(tx - sx), abs(ty - sy))
+        c.px([(sx + (tx - sx) * i // n, sy + (ty - sy) * i // n) for i in range(n + 1)], bone)
+
+
+# wing tips for the flap: raised, level, lowered
+WING_TIPS = [[(10, 0), (2, 8), (0, 18), (6, 26)],
+             [(4, 10), (0, 20), (4, 28), (12, 32)],
+             [(8, 40), (14, 46), (22, 48), (30, 46)]]
+
+
+def figure_dragon(pose=0, roar=False):
+    c = Canvas(76, 52)
+    tips = WING_TIPS[pose]
+    dragon_wing(c, 36, 26, [(x + 8, y - 2) for x, y in tips], BROWN, K)        # far wing
+    # tail with a spade
+    c.poly([(20, 36), (6, 40), (0, 36), (2, 33), (8, 36), (22, 31)], RED)
+    c.poly([(0, 30), (4, 33), (0, 40), (-3, 35)], RED)
+    # body, scales and belly plates
+    c.ellipse(32, 34, 15, 10, RED)
+    scales = (c.xx + c.yy * 2) % 5 == 0
+    body = c.mask_ellipse(32, 34, 15, 10)
+    c.img[body & scales & (c.img == RED)] = BROWN
+    belly = c.mask_ellipse(34, 40, 11, 5)
+    c.img[belly] = YELLOW
+    c.img[belly & (c.yy % 2 == 0)] = ORANGE
+    # legs with claws
+    c.ellipse(22, 40, 6, 7, RED)
+    c.rect(18, 44, 25, 50, RED)
+    c.px([(16, 50), (17, 51), (20, 51), (23, 51), (24, 50)], WHITE)
+    c.rect(40, 42, 46, 50, RED)
+    c.px([(39, 50), (42, 51), (45, 51), (47, 50)], WHITE)
+    # neck
+    c.poly([(40, 30), (48, 14), (56, 12), (50, 32)], RED)
+    c.px([(44 + i * 2, 28 - i * 4) for i in range(4)], YELLOW)                  # throat plates
+    # spikes along the back
+    for x, y in [(14, 27), (20, 24), (27, 23), (34, 23), (41, 22), (46, 16), (50, 10)]:
+        c.poly([(x - 2, y + 2), (x, y - 3), (x + 2, y + 2)], YELLOW, light=False)
+    # head
+    c.ellipse(57, 13, 8, 7, RED)
+    jaw = 6 if roar else 0
+    c.poly([(58, 9), (74, 11), (75, 15), (60, 17)], RED)                       # snout
+    c.poly([(58, 16), (72, 17 + jaw), (70, 20 + jaw), (57, 20)], RED)            # lower jaw
+    if roar:
+        c.poly([(60, 16), (73, 15), (71, 18 + jaw), (60, 19)], K, shade=False, light=False)
+        c.px([(62 + i * 3, 15) for i in range(4)] + [(63 + i * 3, 17 + jaw) for i in range(3)], WHITE)
+    else:
+        c.px([(63 + i * 3, 17) for i in range(4)], WHITE)                       # teeth
+    c.px([(72, 11), (73, 12)], K)                                               # nostril
+    c.poly([(52, 6), (56, 0), (50, -2), (54, 3)], LIGHT)                        # horns
+    c.poly([(57, 6), (62, 1), (58, -1), (56, 4)], LIGHT)
+    c.px([(58, 10), (59, 10), (60, 10)], K)                                     # brow
+    c.px([(59, 11), (60, 11)], YELLOW)                                          # eye
+    c.px([(60, 12)], K)
+    dragon_wing(c, 34, 28, tips, RED, K)                                       # near wing
     return c.outline()
 
 
@@ -401,9 +460,37 @@ def figure_sheep(step=0):
     return c.outline()
 
 
+def figure_poster(pose=0):
+    """The king's notice: a dragon and half a crown."""
+    c = Canvas(20, 26)
+    c.rect(0, 0, 20, 26, YELLOW, light=False)
+    c.px([(0, 0), (19, 0), (0, 25), (19, 25)], T)
+    c.poly([(3, 11), (8, 5), (13, 7), (16, 4), (17, 9), (12, 12), (7, 13)], RED, shade=False, light=False)
+    c.poly([(5, 8), (7, 3), (9, 8)], RED, shade=False, light=False)
+    c.poly([(6, 22), (6, 16), (8, 18), (10, 15), (10, 22)], ORANGE, shade=False, light=False)
+    c.poly([(11, 22), (11, 15), (13, 18), (15, 16), (15, 22)], ORANGE, shade=False, light=False)
+    c.px([(10 + d, 15 + d) for d in range(8)], K)
+    return c.outline()
+
+
+def figure_cheese(pose=0):
+    c = Canvas(14, 9)
+    c.poly([(0, 8), (0, 3), (13, 0), (13, 8)], YELLOW)
+    c.px([(3, 5), (8, 4), (10, 6), (5, 7)], ORANGE)
+    return c.outline()
+
+
+def figure_egg(pose=0):
+    c = Canvas(10, 13)
+    c.ellipse(5, 7, 4, 5, WHITE)
+    c.px([(3, 5), (6, 8), (4, 10)], GREEN)
+    return c.outline()
+
+
 BUSTS = ["dratewka", "wanda", "krak", "twardowski", "devil", "jaga"]
-FIGURES = ["dratewka", "wanda", "krak", "twardowski", "devil", "jaga", "dwarf", "rooster", "dragon", "sheep"]
-WALKERS = ["dratewka", "wanda", "twardowski", "devil", "dwarf", "dragon"]
+FIGURES = ["dratewka", "wanda", "krak", "twardowski", "devil", "jaga", "dwarf", "rooster", "dragon", "sheep",
+           "poster", "cheese", "egg"]
+WALKERS = ["dratewka", "wanda", "twardowski", "devil", "dwarf"]
 
 
 def patch(full, base):
@@ -427,5 +514,10 @@ def sprites():
         f = globals()["figure_" + n]
         out[n] = (0, 0, f())
         if n in WALKERS:
-            out[n + "_step"] = (0, 0, f(1))
+            out[n + "_a"] = (0, 0, f(1))
+            out[n + "_b"] = (0, 0, f(2))
+    out["dragon_a"] = (0, 0, figure_dragon(0))
+    out["dragon"] = (0, 0, figure_dragon(1))
+    out["dragon_b"] = (0, 0, figure_dragon(2))
+    out["dragon_roar"] = (0, 0, figure_dragon(1, roar=True))
     return out

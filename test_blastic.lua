@@ -1712,7 +1712,20 @@ do
   local function sky(row) g.BDR(row) return ("%d,%d"):format(mem[0x03FC0+33] or 0,mem[0x03FC0+34] or 0) end
   check("the sky colour changes down the screen", sky(4+20)~=sky(4+110), sky(4+20).." / "..sky(4+110))
   check("the sky starts from the backdrop's top colour",
-    sky(4+20)==blob:byte(2+11+1)..","..blob:byte(2+11+2), sky(4+20))
+    sky(4+20)==blob:byte(15+blob:byte(3))..","..blob:byte(16+blob:byte(3)), sky(4+20))
+  local painted,p={},3
+  for _=1,blob:byte(1) do
+    local n=blob:byte(p)
+    painted[blob:sub(p+1,p+n)]=true
+    p=p+1+n+20
+  end
+  local unknown={}
+  for name,shots in pairs(g.SCENES) do
+    for _,sh in ipairs(shots) do
+      if sh.bd~="black" and not painted[sh.bd] then unknown[#unknown+1]=name..":"..sh.bd end
+    end
+  end
+  check("every shot's backdrop is painted", #unknown==0, table.concat(unknown," "))
   local missing={}
   for name,shots in pairs(g.SCENES) do
     for _,sh in ipairs(shots) do

@@ -5,15 +5,16 @@ Needs numpy and Pillow. Each backdrop is 240x96 pixels (the screen between the l
 bars), painted straight in palette indices: twelve colours are shared with the cast, four
 (1, 5, 7, 11) belong to the backdrop, and 11 is the sky, which blastic.lua re-colours on
 every scanline (BDR) into a smooth gradient, as the Amiga copper did.
-Shading is ordered dithering with a horizontal period of two pixels, so every byte of a row
-repeats and the byte RLE below packs it well.
+Shading is ordered dithering with a horizontal period of two pixels, so rows repeat and LZ
+packs them well.
 
 The cast (cast.py) follows the backdrops.
 
-Layout: u8 backdrop count, u8 sprite count; per backdrop u16 offset (from the start of the
-blob), 3 RGB colours (indices 1, 5, 7) and 3 RGB sky stops (top, middle, bottom); per sprite
-u16 offset. A backdrop is its 4-bit pixels (low nibble left), rows top down, byte RLE: c<128
-copies the next c+1 bytes, c>=128 repeats the next byte c-126 times. A sprite is u8 name length,
+Layout: u8 backdrop count, u8 sprite count; per backdrop u8 name length, the name, u16 offset
+(from the start of the blob), 3 RGB colours (indices 1, 5, 7) and 3 RGB sky stops (top,
+middle, bottom); per sprite u16 offset. A backdrop is its 4-bit pixels (low nibble left), rows top down, packed by
+make_tic.lz_pack: c<128 copies the next c+1 bytes, c>=128 repeats c-125 bytes from u16
+distance back. A sprite is u8 name length,
 the name, u8 width, height, x and y offset (of a patch over its bust), then per row runs of
 colour<<4 | length-1 (11 is transparent).
 """
@@ -21,13 +22,15 @@ import sys, os
 import numpy as np
 from PIL import Image, ImageDraw
 sys.path.insert(0, os.path.dirname(__file__))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 import cast
+from make_tic import lz_pack, lz_unpack
 
 W, H = 240, 96
 SHARED = {0: "1a1c2c", 2: "b13e53", 3: "ef7d57", 4: "ffcd75", 6: "38b764", 8: "5c3a1a",
           9: "3b5dc9", 10: "ffccaa", 12: "f4f4f4", 13: "94b0c2", 14: "566c86", 15: "333c57"}
 SKY = 11
-NAMES = ["rynek", "workshop", "road", "sleza", "wawel", "hall", "cellars", "night"]
+NAMES = ["rynek", "workshop", "road", "sleza", "krakow", "wawel", "hall", "cellars", "night"]
 yy, xx = np.mgrid[0:H, 0:W]
 rng = np.random.default_rng(1957)
 
@@ -122,44 +125,108 @@ def stars(img, n, mask, seed):
 
 # ── backdrops ────────────────────────────────────────────────────────────────
 
-def rynek():
-    img = np.full((H, W), SKY)
-    # tenements: gables of the market square, each its own colour
-    x, k = -6, 0
-    cols = [1, 5, 7, 3, 1, 5]
-    while x < W:
-        w = 26 + (k * 7) % 10
-        top = 30 + (k * 13) % 14
+def gothic_window(img, x, y, w, h, col):
+    """A pointed arch window with its top at y."""
+    img[poly([(x, y + w // 2), (x + w // 2, y), (x + w, y + w // 2)]) | box(x, y + w // 2, x + w, y + h)] = col
+
+
+def stepped_gable(img, x0, x1, base, top, col, steps=4):
+    w = x1 - x0
+    for k in range(steps):
+        inset = w * k // (2 * steps)
+        img[box(x0 + inset, base - (base - top) * (k + 1) // steps, x1 - inset, base)] = col
+
+
+def volute_gable(img, x0, x1, base, top, col):
+    """A baroque gable: a tall middle with scrolls on its shoulders."""
+    w = x1 - x0
+    img[box(x0 + w // 4, top, x1 - w // 4, base)] = col
+    img[ellipse(x0, base - (base - top) // 2, x0 + w // 2, base + (base - top) // 2) & (yy < base)] = col
+    img[ellipse(x1 - w // 2, base - (base - top) // 2, x1, base + (base - top) // 2) & (yy < base)] = col
+    img[ellipse(x0 + w // 2 - 3, top - 4, x0 + w // 2 + 3, top + 2)] = col
+
+
+def tenements(img, x0, x1, top_lo, top_hi, cols, seed, ground):
+    """A row of narrow town houses with gables, windows lit here and there."""
+    r = np.random.default_rng(seed)
+    x = x0
+    k = 0
+    while x < x1:
+        w = int(r.integers(18, 26))
+        top = int(r.integers(top_lo, top_hi))
         c = cols[k % len(cols)]
-        body = box(x, top, x + w, H)
-        gable = poly([(x, top), (x + w // 2, top - 14 - k % 3 * 4), (x + w, top)])
-        ramp(img, body | gable, 0.9 - (xx - x) / w * 0.5, [15, c, c])
-        for wy in range(top + 6, 76, 11):
-            for wx in range(x + 4, x + w - 4, 8):
-                lit = (wx * 7 + wy * 3 + k) % 5 < 2
-                img[box(wx, wy, wx + 3, wy + 6)] = 4 if lit else 15
+        ramp(img, box(x, top, x + w, ground), 0.85 - (xx - x) / w * 0.45, [15, c, c])
+        if k % 2 == 0:
+            volute_gable(img, x + 1, x + w - 1, top, top - 12, c)
+        else:
+            stepped_gable(img, x + 1, x + w - 1, top, top - 14, c)
+        img[box(x, top, x + w, top + 1)] = 13                          # cornice
+        for wy in range(top + 4, ground - 10, 8):
+            for wx in range(x + 3, x + w - 4, 6):
+                lit = r.random() < 0.35
+                img[box(wx, wy, wx + 3, wy + 5)] = 4 if lit else 15
+        for ax in range(x + 2, x + w - 6, 8):                           # arcade below
+            img[ellipse(ax, ground - 10, ax + 6, ground - 2) | box(ax, ground - 6, ax + 7, ground)] = 0
         x += w
         k += 1
-    # the gothic town hall in the middle: stepped gable and a tall spire
-    hall = box(84, 30, 156, H)
-    ramp(img, hall, 0.9 - (yy - 30) / 120 - (xx - 84) / 300, [15, 14, 13])
-    for i in range(6):
-        img[box(92 + i * 10, 22 + abs(i - 2.5) * 4, 100 + i * 10, 30)] = 14
-    spire = poly([(112, 4), (120, -20), (128, 4)]) | box(112, 4, 128, 30)
-    ramp(img, spire, 0.4 + 0.3 * (xx - 112) / 16, [15, 14, 13])
-    img[ellipse(114, 10, 125, 21)] = 12
-    img[box(119, 12, 120, 17)] = 0
-    img[box(119, 16, 123, 17)] = 0
-    for wx in range(92, 150, 12):
-        img[poly([(wx, 52), (wx + 3, 46), (wx + 6, 52)]) | box(wx, 52, wx + 6, 66)] = 4
-    # cobbles, darker towards the viewer
-    street = yy >= 82
-    ramp(img, street, 0.8 - (yy - 82) / 16, [0, 15, 14])
-    # a street lamp in front
-    img[box(200, 50, 202, H)] = 0
-    glow(img, 201, 48, 16, [SKY, 4, 12], ~street & (img == SKY))
-    img[box(197, 44, 205, 50)] = 4
-    return img, ["8a6a3c", "a05a6a", "4a7a5a"], ["202a5a", "b06a5a", "f0a060"]
+
+
+def cobbles(img, top, cols):
+    street = yy >= top
+    ramp(img, street, 0.85 - (yy - top) / (H - top) * 0.9, cols)
+    img[street & ((xx + (yy // 3) * 3) % 7 == 0) & (yy % 3 == 0)] = cols[0]
+
+
+def copper_helmet(img, cx, base, col):
+    """A renaissance tower helmet: lantern, bulb, lantern, spire."""
+    img[box(cx - 5, base - 8, cx + 5, base)] = col
+    img[ellipse(cx - 6, base - 16, cx + 6, base - 6)] = col
+    img[box(cx - 3, base - 22, cx + 3, base - 14)] = col
+    img[ellipse(cx - 4, base - 27, cx + 4, base - 19)] = col
+    img[poly([(cx - 2, base - 25), (cx, base - 40), (cx + 2, base - 25)])] = col
+    img[box(cx - 2, base - 6, cx - 1, base - 2) | box(cx + 1, base - 6, cx + 2, base - 2)] = 0
+    img[box(cx, base - 44, cx + 1, base - 39)] = 4
+
+
+def rynek():
+    """Wroclaw: the gothic town hall with its gable and clock, the tower's copper helmet."""
+    img = np.full((H, W), SKY)
+    # the cathedral's twin spires on Ostrow Tumski, far away
+    for sx in (200, 212):
+        img[box(sx, 26, sx + 6, 60) | poly([(sx - 1, 26), (sx + 3, 6), (sx + 7, 26)])] = 7
+    tenements(img, -4, 76, 30, 40, [1, 5, 3], 3, 84)
+    tenements(img, 164, 244, 30, 42, [5, 13, 1], 7, 84)
+    # the tower behind the hall
+    img[box(94, 24, 108, 60)] = 14
+    img[box(94, 24, 96, 60)] = 15
+    copper_helmet(img, 101, 26, 7)
+    # the hall: brick body, steep roof, ornate gable with pinnacles and the clock
+    ramp(img, box(80, 44, 160, 84), 0.9 - (xx - 80) / 160, [8, 2, 2])
+    img[poly([(80, 44), (100, 20), (140, 20), (160, 44)])] = 15
+    img[poly([(80, 44), (100, 20), (140, 20), (160, 44)]) & ((xx + yy) % 4 == 0)] = 14
+    gable = poly([(104, 44), (120, 6), (136, 44)])
+    ramp(img, gable, 0.9 - (xx - 104) / 40, [8, 2, 3])
+    for k in range(7):                                                  # pinnacles on its edges
+        for side in (-1, 1):
+            px = 120 + side * (2 + k * 2.3)
+            py = 6 + k * 5.4
+            img[poly([(px - 1, py + 2), (px, py - 4), (px + 1, py + 2)])] = 13
+    for bx in range(108, 134, 5):                                       # blind tracery
+        img[box(bx, 30, bx + 2, 44) & gable] = 13
+    img[ellipse(112, 46, 128, 62)] = 4                                  # the astronomical clock
+    img[ellipse(114, 48, 126, 60)] = 9
+    img[ellipse(118, 52, 122, 56)] = 4
+    img[box(119, 49, 120, 54) | box(120, 53, 125, 54)] = 4
+    for wx in (86, 96, 140, 150):
+        gothic_window(img, wx, 50, 6, 16, 4)
+    img[box(84, 70, 156, 84) & ((xx - 84) % 12 < 8)] = 0                # ground floor arcade
+    img[ellipse(84, 66, 156, 76) & (yy < 70) & ((xx - 84) % 12 < 8)] = 0
+    cobbles(img, 84, [0, 15, 14])
+    for lx in (60, 182):                                                # street lamps
+        img[box(lx, 52, lx + 2, H)] = 0
+        glow(img, lx + 1, 50, 14, [SKY, 3, 4], img == SKY)
+        img[box(lx - 2, 46, lx + 4, 52)] = 4
+    return img, ["b88a4a", "b0606a", "4a8a7a"], ["1a2050", "6a4a7a", "e09a6a"]
 
 
 def workshop():
@@ -224,28 +291,82 @@ def sleza():
     return img, ["000000", "2a3a4a", "5a8aa0"], ["05081a", "10204a", "2a5a7a"]
 
 
-def wawel():
+def krakow():
+    """Krakow: the Cloth Hall with its renaissance attic and St Mary's two unequal towers."""
     img = np.full((H, W), SKY)
-    glow(img, 60, 70, 50, [SKY, 3, 4])
-    hill = ridge(74, 14, 50, 31) | ellipse(90, 56, 250, 130)
-    ramp(img, hill, 0.75 - (yy - 56) / 40, [0, 15, 5])
-    # the castle: walls, red roofs, the cathedral's golden dome
-    walls = box(110, 34, 220, 64)
-    ramp(img, walls, 0.95 - (xx - 110) / 150, [14, 13, 12])
-    for rx in range(110, 220, 22):
-        img[poly([(rx - 2, 34), (rx + 11, 22), (rx + 24, 34)])] = 2
-    img[box(150, 14, 170, 34)] = 13
-    img[ellipse(150, 4, 170, 22)] = 4
-    img[box(159, 0, 161, 6)] = 4
-    for wx in range(116, 216, 9):
-        img[box(wx, 42, wx + 3, 48)] = 4 if wx % 3 else 15
-    img[ellipse(118, 66, 146, 96) & hill] = 0  # the dragon's den
-    # the Vistula with broken reflections
-    river = yy >= 84
-    img[river] = 7
+    # St Mary's: brick nave, the tall north tower with its crowned spire, the lower one domed
+    ramp(img, box(150, 40, 236, 80), 0.9 - (xx - 150) / 120, [8, 2, 3])
+    img[poly([(150, 40), (193, 26), (236, 40)])] = 8
+    for wx in range(156, 232, 12):
+        gothic_window(img, wx, 48, 6, 20, 15)
+    ramp(img, box(160, 24, 178, 80), 0.8 - (xx - 160) / 30, [8, 2, 3])  # north tower
+    img[poly([(160, 24), (169, 2), (178, 24)])] = 7
+    for tx in (159, 177):
+        img[poly([(tx - 2, 26), (tx, 14), (tx + 2, 26)])] = 7
+    img[box(166, 9, 172, 12)] = 4                                       # the golden crown
+    img[box(168, 5, 170, 9)] = 4
+    ramp(img, box(206, 32, 222, 80), 0.8 - (xx - 206) / 26, [8, 2, 3])  # south tower
+    img[ellipse(205, 22, 223, 40) & (yy < 32)] = 7
+    img[poly([(212, 24), (214, 12), (216, 24)])] = 7
+    for x0, ys in ((163, (30, 50)), (209, (38, 54))):
+        for wy in ys:
+            gothic_window(img, x0 + 3, wy, 4, 10, 15)
+    # the Cloth Hall
+    hall = box(4, 44, 146, 84)
+    ramp(img, hall, 0.95 - (yy - 44) / 80, [14, 1, 1])
+    img[box(4, 40, 146, 44)] = 2                                        # roof
+    for ax in range(6, 144, 9):                                         # the attic's cresting
+        img[poly([(ax, 40), (ax + 3, 30), (ax + 6, 40)])] = 1
+        img[ellipse(ax + 2, 35, ax + 5, 38)] = 13
+    img[box(4, 40, 146, 41)] = 13
+    for ax in range(8, 144, 12):                                        # the arcades
+        img[ellipse(ax, 60, ax + 9, 70) | box(ax, 65, ax + 10, 84)] = 0
+        img[box(ax + 2, 70, ax + 8, 84)] = 15
+    for wx in range(10, 144, 12):
+        img[box(wx, 48, wx + 4, 56)] = 4 if wx % 3 else 15
+    cobbles(img, 84, [0, 14, 13])
+    return img, ["d0b070", "000000", "4a8a7a"], ["2a4a8a", "8a9ac0", "f0d090"]
+
+
+def wawel():
+    """Wawel hill over the Vistula: brick walls, the castle, the cathedral's golden dome and
+    green spires, the dragon's den at the foot of the hill."""
+    img = np.full((H, W), SKY)
+    glow(img, 40, 70, 46, [SKY, 3, 4])
+    hill = ridge(70, 10, 50, 31) | ellipse(70, 52, 260, 130)
+    ramp(img, hill, 0.75 - (yy - 52) / 40, [0, 15, 5])
+    # brick fortifications with bastions
+    walls = box(96, 46, 236, 66)
+    for bx in (96, 150, 206):
+        walls |= poly([(bx, 66), (bx + 4, 40), (bx + 22, 40), (bx + 26, 66)])
+    ramp(img, walls, 0.85 - (xx - 96) / 200, [8, 2, 3])
+    img[walls & ((xx // 6 + yy // 3) % 2 == 0) & (yy % 3 == 0)] = 8
+    for cx in range(98, 236, 6):
+        img[box(cx, 44, cx + 3, 46) & walls] = 2
+    # the castle and its red roofs
+    castle = box(150, 22, 232, 44)
+    ramp(img, castle, 0.95 - (xx - 150) / 120, [14, 13, 12])
+    img[poly([(148, 22), (160, 12), (222, 12), (234, 22)])] = 2
+    for wx in range(154, 230, 7):
+        img[box(wx, 28, wx + 3, 34)] = 4 if wx % 2 else 15
+    # the cathedral: golden Sigismund dome, green-helmeted towers
+    img[box(110, 20, 148, 44)] = 13
+    img[box(110, 20, 112, 44)] = 14
+    img[ellipse(118, 8, 134, 24) & (yy < 18)] = 4
+    img[ellipse(118, 8, 126, 24) & (yy < 18)] = 3
+    img[box(125, 2, 127, 9)] = 4
+    for tx, top in ((104, 0), (140, 6)):
+        img[box(tx, top + 14, tx + 10, 44)] = 14
+        copper_helmet(img, tx + 5, top + 16, 7)
+    # the dragon's den and the Vistula
+    img[ellipse(64, 62, 92, 92) & hill] = 0
+    img[ellipse(68, 66, 88, 92) & hill] = 15
+    river = yy >= 82
+    img[river] = 9
     refl = river & (noise(6, 1, 34) > 0.55) & ((yy % 3) == 0)
-    img[refl] = 4
-    return img, ["000000", "3a2a5a", "3a4a8a"], ["4a2a6a", "b05a6a", "f0b070"]
+    img[refl & (xx < 90)] = 4
+    img[refl & (xx >= 90)] = 13
+    return img, ["000000", "2a4a3a", "4a9a7a"], ["4a2a6a", "b05a6a", "f0b070"]
 
 
 def hall():
@@ -274,18 +395,44 @@ def hall():
 
 
 def cellars():
-    img = np.zeros((H, W), int)
-    ramp(img, np.ones((H, W), bool), 0.2 + yy / H * 0.6, [0, 1, 5])
-    for ax in [-20, 80, 180]:  # arches into the dark
-        img[ellipse(ax, 10, ax + 80, 130)] = 0
-        img[ellipse(ax + 8, 18, ax + 72, 130)] = SKY
-    glow(img, 120, H, 70, [SKY, 2, 3, 4], yy > 60)
-    for sx in range(5, W, 23):  # stalactites
-        img[poly([(sx, 0), (sx + 4, 8 + sx % 13), (sx + 8, 0)])] = 0
-    for cx in [40, 200]:  # chains
-        img[(xx == cx) & (yy < 50) & ((yy % 4) < 3)] = 14
-    img[yy >= 88] = 0
-    return img, ["3a1010", "6a2020", "000000"], ["000000", "400a10", "a02010"]
+    """The devil's cellars: rock arches, a lava river, cauldrons on the fire, chains, the pact."""
+    img = np.full((H, W), SKY)
+    # far cavern: hazy columns
+    for cx in (30, 90, 150, 210):
+        img[box(cx - 8, 0, cx + 8, 80) & (noise(8, 2, cx) > 0.35)] = 1
+    # rock vault with stalactites, near arches darker
+    vault = ~ellipse(-30, 10, 270, 170)
+    ramp(img, vault, 0.3 + yy / H * 0.4, [0, 1, 5])
+    for ax in (-10, 120, 250):
+        arch = ellipse(ax - 70, -10, ax + 70, 150) & ~ellipse(ax - 58, 2, ax + 58, 160)
+        ramp(img, arch, 0.25 + (yy / H) * 0.5, [0, 1, 5])
+    for sx in range(4, W, 17):
+        img[poly([(sx, 0), (sx + 3, 10 + sx % 11), (sx + 6, 0)])] = 0
+    # chains
+    for cx in (60, 178):
+        img[(xx == cx) & (yy < 44) & ((yy % 4) < 3)] = 14
+        img[(xx == cx + 1) & (yy < 44) & ((yy % 4) == 1)] = 14
+    # the lava river with a crust
+    lava = yy >= 80
+    ramp(img, lava, 1 - (yy - 80) / 20, [2, 3, 4])
+    crust = lava & (noise(5, 2, 77) > 0.68)
+    img[crust] = 0
+    # ledge, cauldron on its fire, the pact on a stone lectern
+    ledge = box(0, 72, 240, 82)
+    ramp(img, ledge, 0.5 - (yy - 72) / 30, [0, 1])
+    img[ellipse(26, 52, 62, 78) & (yy > 58)] = 0                        # the cauldron
+    img[ellipse(28, 54, 60, 76) & (yy > 60)] = 14
+    img[ellipse(26, 56, 62, 64)] = 0
+    img[ellipse(30, 57, 58, 63)] = 6                                    # bubbling brew
+    glow(img, 44, 80, 16, [0, 2, 3, 4], yy > 74)
+    img[box(186, 52, 196, 74)] = 14                                     # lectern
+    img[box(182, 48, 200, 54)] = 13
+    img[box(186, 44, 198, 50)] = 12                                     # the pact
+    img[box(188, 46, 196, 47) | box(188, 48, 194, 49)] = 2
+    for cx in (180, 202):                                               # candles
+        img[box(cx, 42, cx + 2, 52)] = 12
+        glow(img, cx + 1, 40, 6, [SKY, 3, 4], img == SKY)
+    return img, ["4a1414", "7a2a1a", "000000"], ["000000", "300808", "c03010"]
 
 
 def night():
@@ -306,46 +453,6 @@ def night():
 
 # ── packing ──────────────────────────────────────────────────────────────────
 
-def rle(data: bytes) -> bytes:
-    out, i, n = bytearray(), 0, len(data)
-    lit = bytearray()
-
-    def flush():
-        while lit:
-            part = lit[:128]
-            out.append(len(part) - 1)
-            out.extend(part)
-            del lit[:128]
-
-    while i < n:
-        j = i
-        while j < n and data[j] == data[i] and j - i < 129:
-            j += 1
-        if j - i >= 3:
-            flush()
-            out.append(j - i + 126)
-            out.append(data[i])
-            i = j
-        else:
-            lit.append(data[i])
-            i += 1
-    flush()
-    return bytes(out)
-
-
-def unrle(data: bytes) -> bytes:
-    out, i = bytearray(), 0
-    while i < len(data):
-        c = data[i]
-        if c < 128:
-            out += data[i + 1:i + 2 + c]
-            i += c + 2
-        else:
-            out += bytes([data[i + 1]]) * (c - 126)
-            i += 2
-    return bytes(out)
-
-
 def pack(img):
     img = img.astype(np.uint8)
     return bytes((img[:, 0::2] | (img[:, 1::2] << 4)).flatten())
@@ -355,14 +462,14 @@ def main():
     out = sys.argv[1]
     preview = sys.argv[sys.argv.index("--preview") + 1] if "--preview" in sys.argv else None
     sprites = cast.sprites()
-    head = 2 + len(NAMES) * 20 + len(sprites) * 2
+    head = 2 + sum(21 + len(n) for n in NAMES) + len(sprites) * 2
     table, data = bytearray([len(NAMES), len(sprites)]), bytearray()
     for name in NAMES:
         img, own, sky = globals()[name]()
         raw = pack(img)
-        packed = rle(raw)
-        assert unrle(packed) == raw
-        table += (head + len(data)).to_bytes(2, "little")
+        packed = lz_pack(raw)
+        assert lz_unpack(packed) == raw
+        table += bytes([len(name)]) + name.encode() + (head + len(data)).to_bytes(2, "little")
         for h in own + sky:
             table += bytes(hexrgb(h))
         data += packed

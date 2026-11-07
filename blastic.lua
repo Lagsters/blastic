@@ -2045,7 +2045,6 @@ local sin,cos=math.sin,math.cos
 -- scenes.bin sits in MAP RAM; a shot's backdrop is unpacked into MUSIC PATTERNS RAM (free once
 -- the story code has been loaded from it) and copied to the screen each frame
 local ART_RAM,BACKDROP_RAM,BACKDROP_BYTES=0x08000,0x11164,11520
-local BACKDROPS={"rynek","workshop","road","sleza","wawel","hall","cellars","night"}
 local BAR=20  -- letterbox bar height; the backdrop fills the 96 rows between the bars
 SUB_Y=127     -- the line being typed, in the bottom bar
 
@@ -2059,16 +2058,28 @@ end
 local function rgbAt(p) return {peek(p),peek(p+1),peek(p+2)} end
 local function word(p) return peek(p)|peek(p+1)<<8 end
 
--- the cast by name: {address of the runs, width, height, x, y}
+local function nameAt(p)
+  local s={}
+  for i=1,peek(p) do s[i]=string.char(peek(p+i)) end
+  return table.concat(s),p+peek(p)+1
+end
+
+-- backdrops by name: the address of their table entry; the cast by name: {address of the
+-- runs, width, height, x, y}
+local backdrops
 CAST=nil
 local function loadCast()
-  CAST={}
+  backdrops,CAST={},{}
+  local p=ART_RAM+2
+  for _=1,peek(ART_RAM) do
+    local name
+    name,p=nameAt(p)
+    backdrops[name]=p
+    p=p+20
+  end
   for k=0,peek(ART_RAM+1)-1 do
-    local p=ART_RAM+word(ART_RAM+2+peek(ART_RAM)*20+k*2)
-    local name={}
-    for i=1,peek(p) do name[i]=string.char(peek(p+i)) end
-    p=p+peek(p)+1
-    CAST[table.concat(name)]={p+4,peek(p),peek(p+1),peek(p+2),peek(p+3)}
+    local name,q=nameAt(ART_RAM+word(p+k*2))
+    CAST[name]={q+4,peek(q),peek(q+1),peek(q+2),peek(q+3)}
   end
 end
 
@@ -2094,20 +2105,22 @@ end
 local function loadBackdrop(name)
   palShot,sky={},nil
   for i=0,47 do palShot[i]=palBase[i] end
-  local k
-  for i,n in ipairs(BACKDROPS) do if n==name then k=i end end
-  if not k or peek(ART_RAM)<k then return false end
-  local e=ART_RAM+2+(k-1)*20
+  local e=backdrops[name]
+  if not e then return false end
   for i,c in ipairs{1,5,7} do
     for j=0,2 do palShot[c*3+j]=peek(e+2+(i-1)*3+j) end
   end
   sky={rgbAt(e+11),rgbAt(e+14),rgbAt(e+17)}
-  -- byte RLE: c<128 copies the next c+1 bytes, c>=128 repeats the next byte c-126 times
+  -- LZ: c<128 copies the next c+1 bytes, c>=128 repeats c-125 bytes from u16 distance back
   local src,dst=ART_RAM+word(e),BACKDROP_RAM
   while dst<BACKDROP_RAM+BACKDROP_BYTES do
     local c=peek(src)
     if c<128 then memcpy(dst,src+1,c+1) src,dst=src+c+2,dst+c+1
-    else memset(dst,peek(src+1),c-126) src,dst=src+2,dst+c-126 end
+    else
+      local d,n=word(src+1),c-125
+      if d>=n then memcpy(dst,dst-d,n) else for i=0,n-1 do poke(dst+i,peek(dst+i-d)) end end
+      src,dst=src+3,dst+n
+    end
   end
   return true
 end
@@ -2126,7 +2139,7 @@ local SPEAKER_WHO={DRATEWKA="dratewka",WANDA="wanda",KRAK="krak",TWARDOWSKI="twa
   DEVIL="devil",["BABA JAGA"]="jaga"}
 
 -- an actor with its feet at x,y (a close-up stands on the bottom bar); talking moves the mouth
-local function drawCast(who,x,y,s,t,left,walk,talking)
+local function drawCast(who,x,y,s,t,left,walk,talking,roar)
   if s>=4 then
     local b=CAST["bust_"..who]
     if not b then return end
@@ -2136,15 +2149,21 @@ local function drawCast(who,x,y,s,t,left,walk,talking)
     if t%170<6 then sprite("blink_"..who,bx,by,2,left,b[2]) end
     return
   end
-  local name=walk and t//8%2==1 and CAST[who.."_step"] and who.."_step" or who
+  local name,lift=who,0
+  if who=="dragon" then
+    name=roar and "dragon_roar" or ({"dragon_a","dragon","dragon_b","dragon"})[t//(walk and 5 or 9)%4+1]
+  elseif walk and CAST[who.."_a"] then
+    local b=t//7%2==1
+    name,lift=who..(b and "_b" or "_a"),b and s or 0
+  end
   local sp=CAST[name]
   if not sp then return end
-  sprite(name,x-sp[2]*s//2,y-sp[3]*s,s,left)
+  sprite(name,x-sp[2]*s//2,y-sp[3]*s-lift,s,left)
 end
 
--- the dragon's breath from its snout, flickering
+-- the dragon's breath from its open jaws, flickering
 local function dragonFire(x,y,s,t)
-  local mx,my=x+30*s,y-32*s
+  local mx,my=x+34*s,y-35*s
   for k=0,2 do
     local l=(24+k*6+t%4*2)*s
     tri(mx,my,mx+l,my-(10-k*3)*s,mx+l,my+(10-k*3)*s,({2,3,4})[k+1])
@@ -2241,80 +2260,85 @@ local function fireworks(t)
   end
 end
 
--- actors: {who, x0,y0, x1,y1, t0,t1, scale=2, faces left (default: walks left)}; standing
--- feet at y=108, close-ups at scale 4 with feet at y=126 under the bar
+-- actors: {who, x0,y0, x1,y1, t0,t1, scale=2, faces left (default: walks left)} and optional
+-- arc= (a throw's height), show= / hide= (frames it appears / goes), hop= (jumping for joy);
+-- standing feet at y=108, close-ups (scale 4) stand on the bottom bar
 -- shots: bd (backdrop), pan (camera travel in px), len (frames without lines), cap (place,
--- top bar), title (big caption), fx: flash | shake | fire (dragon breath) | fireworks;
--- lines start once every actor stands still
+-- top bar), title (chapter card), booms {{x,y,t}}, fx: flash | shake | fire | fireworks |
+-- soot | idea; lines start once every actor stands still
 local function closeUp(who,x,left) return {{who,x,126,x,126,0,0,4,left}} end
 local SPEAKER_PL={DEVIL="DIABEŁ",DRAGON="SMOK",DWARF="KRASNAL"}
 SCENES={
   wroclaw={
-    {bd="rynek",len=170,cap={"WROCLAW, THE MARKET SQUARE","WROCŁAW, RYNEK"},
-      act={{"dwarf",30,108,30,108,0,0},{"dwarf",206,108,206,108,0,0,2,true}}},
-    {bd="rynek",act={{"dwarf",-20,108,96,108,0,70,3}},
-      say={{"DWARF","News from Krakow! A dragon eats the sheep!","Wieści z Krakowa! Smok pożera owce!"},
-        {"DWARF","King Krak gives half his kingdom to a hero!","Król Krak da pół królestwa bohaterowi!"}}},
-    {bd="workshop",act=closeUp("dratewka",110),
-      say={{"DRATEWKA","Half a kingdom for one dragon?","Pół królestwa za jednego smoka?"},
-        {"DRATEWKA","Wool, sulphur, a bit of love...","Wełna, siarka, odrobina serca..."}}},
-    {bd="workshop",fx="flash",act=closeUp("dratewka",110),
-      say={{"DRATEWKA","...and less sulphur next time.","...i następnym razem mniej siarki."}}},
-    {bd="night",act={{"rooster",-40,70,280,44,0,170,1},{"twardowski",-38,62,282,36,0,170,1},{"dratewka",60,108,60,108,0,0}},
-      say={{"DRATEWKA","Master Twardowski on his rooster.","Mistrz Twardowski na swoim kogucie."},
-        {"DRATEWKA","Where he flies, trouble follows.","Gdzie on leci, tam kłopoty."}}},
-    {bd="rynek",len=150,act={{"dratewka",-10,108,250,108,0,150}}},
+    {bd="rynek",len=190,cap={"WROCLAW","WROCŁAW"},
+      act={{"dwarf",-10,108,70,108,0,180},{"dwarf",250,108,190,108,20,150,2,true}}},
+    {bd="wawel",len=170,cap={"MEANWHILE, IN KRAKOW","TYMCZASEM W KRAKOWIE"},
+      act={{"sheep",150,104,150,104,0,0,2,hide=95},{"dragon",-80,64,300,24,10,160,1},
+        {"sheep",150,104,300,40,95,160,2,show=95}}},
+    {bd="rynek",len=150,act={{"dwarf",-10,108,52,108,0,60},{"poster",64,98,64,98,0,0,1,show=75}}},
+    {bd="rynek",len=130,act={{"poster",64,98,64,98,0,0,1},{"dratewka",250,108,96,108,0,100,2,true}}},
+    {bd="rynek",len=90,act={{"poster",120,112,120,112,0,0,3}}},
+    {bd="rynek",fx="idea",len=90,act=closeUp("dratewka",110)},
+    {bd="workshop",len=130,act={{"dratewka",80,108,80,108,0,0},{"sheep",120,100,120,100,0,0,2,hide=80}},
+      booms={{122,92,80}}},
+    {bd="workshop",fx="soot",act=closeUp("dratewka",110),
+      say={{"DRATEWKA","...less sulphur next time.","...następnym razem mniej siarki."}}},
+    {bd="night",len=170,act={{"rooster",-40,70,280,44,0,170,1},{"twardowski",-38,62,282,36,0,170,1},
+      {"dratewka",60,108,60,108,0,0}}},
     {bd="black",len=120,title=1},
   },
   sleza={
-    {bd="road",len=170,cap={"THE ROAD SOUTH","DROGA NA POŁUDNIE"},act={{"dratewka",-10,108,120,108,0,170,1}}},
+    {bd="road",len=170,cap={"THE ROAD SOUTH","DROGA NA POŁUDNIE"},
+      act={{"dratewka",-10,108,140,108,0,170,1},{"sheep",-26,108,124,108,0,170,1}}},
     {bd="sleza",len=150,cap={"MOUNT SLEZA, KUPALA NIGHT","ŚLĘŻA, NOC KUPAŁY"}},
-    {bd="sleza",act={{"wanda",150,108,150,108,0,0,2,true},{"dratewka",-20,108,90,108,0,70}},
-      say={{"DRATEWKA","A princess? On a mountain? At night?","Królewna? Na górze? W nocy?"},
-        {"WANDA","I ran away. Father wants to marry me to a hero.","Uciekłam. Ojciec chce mnie wydać za bohatera."}}},
-    {bd="sleza",act=closeUp("wanda",120,true),
-      say={{"WANDA","Don't get any ideas, shoemaker.","Nawet o tym nie myśl, szewczyku."}}},
+    {bd="sleza",len=100,act={{"wanda",100,108,100,108,0,0},{"dwarf",260,108,150,108,0,80,2,true},
+      {"dwarf",290,108,180,108,10,90,2,true}}},
+    {bd="sleza",len=120,act={{"wanda",100,108,100,108,0,0},{"dwarf",150,108,150,108,0,0,2,true,hide=62},
+      {"dwarf",180,108,180,108,0,0,2,true,hide=62},{"dratewka",-20,108,40,108,0,20},
+      {"sheep",52,94,166,100,24,60,1,arc=30,hide=60},
+      {"dwarf",150,108,300,108,64,100,2,hop=5,show=64},{"dwarf",180,108,320,108,64,96,2,hop=5,show=64}},
+      booms={{166,96,60}}},
+    {bd="sleza",act=closeUp("wanda",120,true),say={{"WANDA","I had them.","Dałabym sobie radę."}}},
     {bd="sleza",fx="flash",act=closeUp("jaga",130,true),
       say={{"BABA JAGA","Twardowski sends his regards!","Pozdrowienia od Twardowskiego!"}}},
-    {bd="sleza",act=closeUp("dratewka",110),say={{"DRATEWKA","Twardowski. I knew it.","Twardowski. Wiedziałem."}}},
     {bd="black",len=120,title=2},
   },
   krakow={
-    {bd="wawel",len=170,cap={"KRAKOW, WAWEL HILL","KRAKÓW, WZGÓRZE WAWELSKIE"},act={{"dragon",-80,80,320,50,0,170,1}}},
-    {bd="wawel",act={{"dratewka",40,108,40,108,0,0},{"wanda",70,108,70,108,0,0},{"dragon",190,110,190,110,0,0,2,true}},
-      say={{"DRATEWKA","Here, dragon! Have a sheep!","Masz, smoku! Zjedz owieczkę!"}}},
-    {bd="wawel",fx="fire",act={{"dragon",70,118,70,118,0,0,2}},
-      say={{"DRAGON","*burp* Spicy. Who sent you?","*bek* Ostre. Kto was przysłał?"},
-        {"DRAGON","A gentleman with a tail took my egg.","Pan z ogonem ukradł mi jajo."}}},
-    {bd="wawel",act=closeUp("wanda",120,true),
-      say={{"WANDA","A gentleman with a tail... the devil!","Pan z ogonem... diabeł!"}}},
+    {bd="krakow",len=170,fx="shake",cap={"KRAKOW","KRAKÓW"},act={{"dragon",-80,60,320,30,20,150,1}}},
+    {bd="wawel",len=120,act={{"dragon",70,106,70,106,0,0,1},{"wanda",204,108,204,108,0,0,2,true},
+      {"dratewka",174,108,174,108,0,0,2,true},{"sheep",160,94,107,70,30,70,1,arc=26,hide=70}}},
+    {bd="wawel",fx="fire",act={{"dragon",90,124,90,124,0,0,2}},
+      say={{"DRAGON","*burp* Spicy! Who sent you?","*bek* Ostre! Kto was przysłał?"}}},
+    {bd="night",len=150,cap={"LAST NIGHT","ZESZŁEJ NOCY"},
+      act={{"devil",-20,108,260,108,0,150},{"egg",-6,94,274,94,0,150,1}}},
     {bd="night",fx="flash",act=closeUp("twardowski",120,true),
-      say={{"TWARDOWSKI","Yes. He holds my pact.","Tak. Ma mój cyrograf."},
-        {"TWARDOWSKI","He makes me send the dragon. Burn the pact!","Każe mi nasyłać smoka. Spalcie cyrograf!"}}},
+      say={{"TWARDOWSKI","The devil holds my pact. Burn it!","Diabeł ma mój cyrograf. Spalcie go!"}}},
     {bd="black",len=120,title=3},
   },
   cellars={
-    {bd="cellars",len=170,cap={"THE DEVIL'S CELLARS","PIEKIELNE LOCHY"}},
+    {bd="cellars",len=170,cap={"THE DEVIL'S CELLARS","PIEKIELNE LOCHY"},act={{"devil",214,108,214,108,0,0,2,true}}},
     {bd="cellars",fx="flash",act=closeUp("devil",120,true),
-      say={{"DEVIL","A shoemaker? Against me?","Szewczyk? Przeciwko mnie?"},
-        {"DEVIL","I own Twardowski. Soon I own Krakow.","Mam Twardowskiego. Wkrótce będę miał Kraków."}}},
+      say={{"DEVIL","A shoemaker? Against me?","Szewczyk? Przeciwko mnie?"}}},
     {bd="cellars",act=closeUp("dratewka",110),say={{"DRATEWKA","I brought sheep.","Przyniosłem owce."}}},
-    {bd="cellars",act={{"dratewka",-20,108,70,108,0,60},{"wanda",-50,108,40,108,0,60},{"twardowski",130,108,130,108,0,0,2,true}},
-      say={{"TWARDOWSKI","Three pages of the pact are hidden here.","Trzy karty cyrografu są tu ukryte."},
-        {"TWARDOWSKI","Find them and burn them!","Znajdźcie je i spalcie!"}}},
     {bd="black",len=120,title=4},
   },
   ending={
-    {bd="cellars",fx="shake",act={{"devil",120,108,300,30,10,90}},say={{"DEVIL","My pact! Noooo!","Mój cyrograf! Nieee!"}}},
+    {bd="cellars",len=150,act={{"wanda",-30,108,36,108,0,40},{"dratewka",-10,108,66,108,0,40},
+      {"twardowski",-50,108,10,108,0,40},{"devil",214,108,214,108,0,0,2,true,hide=84},
+      {"sheep",76,94,191,62,44,84,1,arc=30,hide=84},
+      {"devil",214,108,320,90,86,130,2,hop=6,show=86}},
+      booms={{191,62,84}}},
+    {bd="cellars",fx="shake",act={{"devil",200,108,300,108,10,60,2,hop=6}},
+      say={{"DEVIL","My pact! Noooo!","Mój cyrograf! Nieee!"}}},
     {bd="night",act={{"rooster",60,104,190,48,20,200,1},{"twardowski",62,96,192,40,20,200,1}},
-      say={{"TWARDOWSKI","Free at last! I'm off to the moon.","Wolny! Lecę na Księżyc."},
-        {"TWARDOWSKI","It's quieter up there.","Tam jest spokojniej."}}},
-    {bd="hall",act={{"krak",120,108,120,108,0,0},{"wanda",-30,108,68,108,0,80},{"dratewka",-60,108,174,108,0,100,2,true}},
-      say={{"KRAK","My hero! Here is your reward...","Mój bohaterze! Oto twoja nagroda..."},{"KRAK","Cheese!","Ser!"},
-        {"WANDA","Half the kingdom, father.","Pół królestwa, ojcze."},{"KRAK","Half the cheese?","Pół sera?"}}},
+      say={{"TWARDOWSKI","It's quieter up there.","Tam będzie spokojniej."}}},
+    {bd="hall",act={{"krak",120,108,120,108,0,0},{"wanda",-30,108,68,108,0,80},
+      {"dratewka",-60,108,174,108,0,100,2,true},{"cheese",128,90,166,92,110,150,1,arc=10,show=110}},
+      say={{"KRAK","Your reward!","Twoja nagroda!"},{"WANDA","Half the kingdom, father.","Pół królestwa, ojcze."},
+        {"KRAK","Half the cheese?","Pół sera?"}}},
     {bd="night",fx="fireworks",len=240},
-    {bd="rynek",act={{"dwarf",40,108,40,108,0,0},{"dwarf",206,108,206,108,0,0,2,true},{"dratewka",-10,108,120,108,0,120}},
-      say={{"DRATEWKA","Home. No more dragons.","Dom. Koniec ze smokami."}}},
+    {bd="rynek",len=200,act={{"dwarf",40,108,40,108,0,0,2,hop=4},{"dwarf",206,108,206,108,0,0,2,true,hop=5},
+      {"wanda",-40,108,96,108,0,130},{"dratewka",-10,108,126,108,0,130},{"sheep",-26,108,110,108,0,130,1}}},
     {bd="black",len=200,title="end"},
   },
 }
@@ -2357,10 +2381,27 @@ end
 
 local function drawActor(a,t)
   local who,x0,y0,x1,y1,t0,t1,sc,left=table.unpack(a)
+  if t<(a.show or 0) or t>=(a.hide or math.huge) then return end
   local k=t1>t0 and math.max(0,math.min(1,(t-t0)/(t1-t0))) or 1
-  local e=k*k*(3-2*k)
+  local e=a.arc and k or k*k*(3-2*k)
   if left==nil then left=x1<x0 end
-  return who,x0+(x1-x0)*e,y0+(y1-y0)*e,sc or 2,left,k>0 and k<1
+  local y=y0+(y1-y0)*e-(a.arc or 0)*4*e*(1-e)-math.abs(sin(t/5))*(a.hop or 0)
+  return who,x0+(x1-x0)*e,y,sc or 2,left,k>0 and k<1 or a.hop
+end
+
+-- a sheep going off: a white flash, a fireball, then smoke drifting up
+local function boom(x,y,t)
+  if t<0 or t>60 then return end
+  if t<3 then rect(0,BAR,240,136-2*BAR,12) end
+  if t<18 then
+    circ(x,y,t*2.2,2) circ(x,y,t*1.6,3) circ(x,y,t,4)
+  else
+    for k=0,7 do
+      local a=k*0.785+t/40
+      circ(x+cos(a)*(t-10),y+sin(a)*(t-10)*0.5-(t-18)/2,math.max(0,9-(t-18)//5),t<36 and 13 or 14)
+    end
+  end
+  for k=0,11 do pix(x+cos(k*0.52)*t*1.8,y+sin(k*0.52)*t*1.2+t*t/60,k%2==0 and 4 or 0) end
 end
 
 function drawScene()
@@ -2379,10 +2420,24 @@ function drawScene()
   local l=t>=s.start and sh.say and sh.say[s.line]
   local text=l and L(l[2],l[3])
   local talker=l and s.lineT//2<#text and SPEAKER_WHO[l[1]]
+  for _,b in ipairs(sh.booms or {}) do
+    if t==b[3] then sndExplosion() end
+    if t>=b[3] and t<b[3]+16 then dy=dy+sin(t*9)*2//1 end
+  end
   for _,a in ipairs(sh.act or {}) do
     local who,x,y,sc,left,moving=drawActor(a,t)
-    drawCast(who,x-cx,y+dy,sc,t,left,moving,who==talker)
-    if who=="dragon" and sh.fx=="fire" then dragonFire(x-cx,y+dy,sc,t) end
+    if who then
+      drawCast(who,x-cx,y+dy,sc,t,left,moving,who==talker,sh.fx=="fire")
+      if who=="dragon" and sh.fx=="fire" then dragonFire(x-cx,y+dy,sc,t) end
+    end
+  end
+  for _,b in ipairs(sh.booms or {}) do boom(b[1]-cx,b[2]+dy,t-b[3]) end
+  if sh.fx=="soot" then
+    for k=0,34 do rect(92+(k*37)%40,48+(k*23)%30,2,2,k%3==0 and 0 or 15) end
+  elseif sh.fx=="idea" and t>30 then
+    local r=4+t//4%2*2
+    for k=0,7 do line(176,44,176+cos(k*0.785)*r*2,44+sin(k*0.785)*r*2,4) end
+    circ(176,44,r,12)
   end
   if sh.fx=="flash" then puff(t-8) end
   if sh.title then chapterCard(sh.title,t) end
