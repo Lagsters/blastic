@@ -2052,6 +2052,111 @@ function drawCampaign()
   end
 end
 
+-- ── scene effects, kept in the main code: the story section is close to its 11520 B ──
+
+BAR=20  -- letterbox bar height; the backdrop fills the 96 rows between the bars
+do
+local sin,cos=math.sin,math.cos
+
+-- the dragon's breath from its open jaws, flickering
+function dragonFire(x,y,s,t)
+  local mx,my=x+34*s,y-35*s
+  for k=0,2 do
+    local l=(24+k*6+t%4*2)*s
+    tri(mx,my,mx+l,my-(10-k*3)*s,mx+l,my+(10-k*3)*s,({2,3,4})[k+1])
+  end
+end
+
+-- what moves on a backdrop: sparks of the bonfire, embers, the candle, the river, stars
+function rising(t,n,x,y,w,h,c1,c2)
+  for k=0,n do
+    local p=(t+k*23)%h
+    pix(x+(k*41)%w+sin(t/15+k)*3,y-p,p<h//2 and c1 or c2)
+  end
+end
+
+-- birds crossing the sky, wings up and down
+function birds(t,n,y,c)
+  for k=0,n-1 do
+    local x,by=(t*0.6+k*97)%300-30,y+k*7+sin(t/12+k)*3
+    local up=(t//6+k)%2
+    pix(x,by,c) pix(x-1,by-1+up*2,c) pix(x+1,by-1+up*2,c) pix(x-2,by-up,c) pix(x+2,by-up,c)
+  end
+end
+
+-- a puff of smoke after a flash: someone appears, or a sheep goes off
+function puff(t)
+  if t<0 or t>=70 then return end
+  for k=0,9 do
+    local a,r=k*0.628,t*0.9
+    circ(120+cos(a)*r,72+sin(a)*r*0.5-t/4,math.max(0,8-t//9),t<35 and 13 or 14)
+  end
+end
+
+-- fireworks over the castle at the end: bursts of bombs, each on its own clock
+function fireworks(t)
+  for k=0,4 do
+    local p=(t+k*29)%80
+    local n=(t+k*29)//80
+    local x,y=(k*67+n*41)%180+30,36+(k*31+n*17)%36
+    if p<10 then pix(x,y+40-p*4,13)
+    elseif p<50 then
+      for j=0,11 do
+        local a,r=j*0.5236,(p-10)*0.7
+        circ(x+cos(a)*r,y+sin(a)*r+(p-10)^2/120,1,(p<44) and (k%4)+2 or 14)
+      end
+    end
+  end
+end
+
+-- a lit fuse: sparks jumping off the top of a sulphur sheep
+function fuse(x,y,t)
+  for k=0,4 do pix(x+sin(t*2+k*2)*2,y-(t+k*3)%6,({4,3,12,4,2})[k+1]) end
+end
+
+-- a spell {from x,y, to x,y, last frame}: green lightning in bursts, a ring and sparks around
+-- the one it binds
+function magic(m,cx,t)
+  if t>=(m[5] or math.huge) then return end
+  local x0,y0,x,y=m[1]-cx,m[2],m[3]-cx,m[4]
+  if t//20%3>0 then
+    local px,py=x0,y0
+    for k=1,6 do
+      local nx,ny=x0+(x-x0)*k/6,y0+(y-y0)*k/6+(k<6 and sin(t*3+k*7)*5 or 0)
+      line(px,py,nx,ny,k%2==0 and 12 or 6)
+      px,py=nx,ny
+    end
+  end
+  circb(x,y,7+t//3%4,6)
+  for k=0,15 do
+    local p=(t*2+k*17)%48
+    pix(x+sin(t/9+k)*(8+p/5),y+16-p,k%3==0 and 12 or k%3==1 and 6 or 5)
+  end
+end
+
+-- the stair down into the devil's cellars: stone walls, torches, hell glowing below
+function glow(x,y,r,c,step)
+  for j=-r,r do for i=-r,r do
+    if (i+j)%step==0 and i*i+j*j<r*r then pix(x+i,y+j,c) end
+  end end
+end
+
+-- a sheep going off: a white flash, a fireball, then smoke drifting up
+function boom(x,y,t)
+  if t<0 or t>60 then return end
+  if t<3 then rect(0,BAR,240,136-2*BAR,12) end
+  if t<18 then
+    circ(x,y,t*2.2,2) circ(x,y,t*1.6,3) circ(x,y,t,4)
+  else
+    for k=0,7 do
+      local a=k*0.785+t/40
+      circ(x+cos(a)*(t-10),y+sin(a)*(t-10)*0.5-(t-18)/2,math.max(0,9-(t-18)//5),t<36 and 13 or 14)
+    end
+  end
+  for k=0,11 do pix(x+cos(k*0.52)*t*1.8,y+sin(k*0.52)*t*1.2+t*t/60,k%2==0 and 4 or 0) end
+end
+end
+
 -- story:begin (make_tic.py moves this section into the cart's MUSIC PATTERNS data and loads
 -- it from there, so the scenes do not count against the code limit; it may use only globals)
 ;(function()  -- own function: the main chunk is near Lua's 200-local limit
@@ -2065,7 +2170,6 @@ local sin,cos=math.sin,math.cos
 -- scenes.bin sits in MAP RAM; a shot's backdrop is unpacked into MUSIC PATTERNS RAM (free once
 -- the story code has been loaded from it) and copied to the screen each frame
 local ART_RAM,BACKDROP_RAM,BACKDROP_BYTES=0x08000,0x11164,11520
-local BAR=20  -- letterbox bar height; the backdrop fills the 96 rows between the bars
 SUB_Y=127     -- the line being typed, in the bottom bar
 
 -- fading works on the palette: TIC-80 has no transparency to darken a frame with
@@ -2208,30 +2312,6 @@ local function drawCast(who,x,y,s,t,left,walk,talking,roar,anim)
   sprite(name,x-sp[2]//2,y-sp[3]-lift,left)
 end
 
--- the dragon's breath from its open jaws, flickering
-local function dragonFire(x,y,s,t)
-  local mx,my=x+34*s,y-35*s
-  for k=0,2 do
-    local l=(24+k*6+t%4*2)*s
-    tri(mx,my,mx+l,my-(10-k*3)*s,mx+l,my+(10-k*3)*s,({2,3,4})[k+1])
-  end
-end
-
--- what moves on a backdrop: sparks of the bonfire, embers, the candle, the river, stars
-local function rising(t,n,x,y,w,h,c1,c2)
-  for k=0,n do
-    local p=(t+k*23)%h
-    pix(x+(k*41)%w+sin(t/15+k)*3,y-p,p<h//2 and c1 or c2)
-  end
-end
--- birds crossing the sky, wings up and down
-local function birds(t,n,y,c)
-  for k=0,n-1 do
-    local x,by=(t*0.6+k*97)%300-30,y+k*7+sin(t/12+k)*3
-    local up=(t//6+k)%2
-    pix(x,by,c) pix(x-1,by-1+up*2,c) pix(x+1,by-1+up*2,c) pix(x-2,by-up,c) pix(x+2,by-up,c)
-  end
-end
 local OVERLAYS={
   rynek=function(t) birds(t,3,34,0) end,
   odra=function(t)
@@ -2253,7 +2333,10 @@ local OVERLAYS={
     end
   end,
   sleza=function(t) rising(t,10,118,44,12,30,4,2) rising(t,5,0,100,240,50,4,6) end,
-  cellars=function(t) rising(t,24,0,116,240,90,4,2) end,
+  cellars=function(t)  -- embers, and the cauldron bubbling
+    rising(t,24,0,116,240,90,4,2)
+    rising(t,5,34,78,24,10,5,12)
+  end,
   workshop=function(t) rect(89,70+t//5%2,2,4,t//3%2==0 and 4 or 3) end,
   wawel=function(t)
     for k=0,14 do pix((k*53+t//4)%240,106+k%4*3,t//8%2==k%2 and 12 or 4) end
@@ -2265,15 +2348,6 @@ local OVERLAYS={
     if p<24 then line(200-p*6,26+p*2,206-p*6,24+p*2,12) end
   end,
 }
-
--- a puff of smoke after a flash: someone appears, or a sheep goes off
-local function puff(t)
-  if t<0 or t>=70 then return end
-  for k=0,9 do
-    local a,r=k*0.628,t*0.9
-    circ(120+cos(a)*r,72+sin(a)*r*0.5-t/4,math.max(0,8-t//9),t<35 and 13 or 14)
-  end
-end
 
 -- chapter cards: a gilded frame, the number, the name and the chapter's foe
 local ROMAN={"I","II","III","IV"}
@@ -2334,22 +2408,6 @@ local FOREGROUNDS={
     rect(x,20,7,96,0) circ(x+3,28,16,0) circ(x-10,44,11,0) circ(x+16,48,12,0) circ(x+4,60,9,0) end) end,
 }
 
--- fireworks over the castle at the end: bursts of bombs, each on its own clock
-local function fireworks(t)
-  for k=0,4 do
-    local p=(t+k*29)%80
-    local n=(t+k*29)//80
-    local x,y=(k*67+n*41)%180+30,36+(k*31+n*17)%36
-    if p<10 then pix(x,y+40-p*4,13)
-    elseif p<50 then
-      for j=0,11 do
-        local a,r=j*0.5236,(p-10)*0.7
-        circ(x+cos(a)*r,y+sin(a)*r+(p-10)^2/120,1,(p<44) and (k%4)+2 or 14)
-      end
-    end
-  end
-end
-
 -- actors: {who, x0,y0, x1,y1, t0,t1, scale=2, faces left (default: walks left)} and optional
 -- arc= (a throw's height), show= / hide= (frames it appears / goes), hop= (jumping for joy),
 -- anim=true (dances, flaps, runs all the time), spark= (frame its fuse is lit); scale 1 is a
@@ -2365,7 +2423,7 @@ SCENES={
   wroclaw={
     {bd="odra",len=230,pan=60,cap={"WROCLAW","WROCŁAW"}},
     {bd="rynek",len=200,pan=50,act={{"dwarf",-10,108,96,108,0,190},{"dwarf",250,108,170,108,30,160,2,true}}},
-    {bd="wawel",len=170,pan=40,cap={"MEANWHILE, IN KRAKOW","TYMCZASEM W KRAKOWIE"},
+    {bd="wawel",len=170,cap={"MEANWHILE, IN KRAKOW","TYMCZASEM W KRAKOWIE"},
       act={{"sheep",150,104,150,104,0,0,2,hide=95},{"dragon",-80,64,300,24,10,160,1},
         {"sheep",150,104,300,40,95,160,2,show=95}}},
     {bd="rynek",len=150,act={{"dwarf",-10,108,52,108,0,70},{"poster",-10,64,52,64,0,70,1,hide=72},
@@ -2418,10 +2476,16 @@ SCENES={
   cellars={
     {bd="black",fx="stairs",len=240,cap={"DOWN TO HELL","ZEJŚCIE DO PIEKŁA"},
       act={{"dratewka",-10,39,250,120,0,220},{"sheep",-28,34,232,115,10,230},{"wanda",-40,30,220,111,30,240}}},
-    {bd="cellars",len=190,pan=50,cap={"THE DEVIL'S CELLARS","PIEKIELNE LOCHY"},act={{"devil",214,108,214,108,0,0,2,true}}},
+    {bd="cellars",len=200,cap={"THE DEVIL'S CELLARS","PIEKIELNE LOCHY"},
+      act={{"devil",214,108,214,108,0,0,2,false,hide=120},{"devil",214,108,214,108,0,0,2,true,show=120,hop=3},
+        {"wanda",-30,108,96,108,20,110},{"dratewka",-10,108,128,108,10,110},{"sheep",-26,108,112,108,10,110}}},
+    {bd="cellars",len=130,shake=30,booms={{146,106,30},{126,100,52}},
+      act={{"devil",214,108,214,108,0,0,2,true,hop=2},{"wanda",96,108,96,108,0,0,2,false},
+        {"dratewka",128,108,106,108,30,44,2,false,arc=12},{"sheep",112,108,84,108,30,50}}},
     {bd="cellars",fx="flash",act=closeUp("devil",120,true),
       say={{"DEVIL","A shoemaker? Against me?","Szewczyk? Przeciwko mnie?"}}},
-    {bd="cellars",act=closeUp("dratewka",110),say={{"DRATEWKA","I brought sheep.","Przyniosłem owce."}}},
+    {bd="cellars",act={closeUp("dratewka",100)[1],{"sheep",170,112,170,112,0,0,2,true,spark=0}},
+      say={{"DRATEWKA","I brought sheep.","Przyniosłem owce."}}},
     {bd="black",len=120,title=4},
   },
   ending={
@@ -2441,7 +2505,7 @@ SCENES={
     {bd="night",fx="fireworks",len=240},
     {bd="odra",len=180,act={{"wanda",-40,76,110,76,0,170,1},{"dratewka",-10,76,140,76,0,170,1},
       {"sheep",-26,76,124,76,0,170,1}}},
-    {bd="rynek",len=200,pan=40,act={{"dwarf",40,108,40,108,0,0,2,hop=4},{"dwarf",206,108,206,108,0,0,2,true,hop=5},
+    {bd="rynek",len=200,act={{"dwarf",40,108,40,108,0,0,2,hop=4},{"dwarf",206,108,206,108,0,0,2,true,hop=5},
       {"wanda",-40,108,96,108,0,130},{"dratewka",-10,108,126,108,0,130},{"sheep",-26,108,110,108,0,130}}},
     {bd="black",len=200,title="end"},
   },
@@ -2531,37 +2595,6 @@ function actorAt(a,t)
   return who,x0+(x1-x0)*e,y,sc or 2,left,k>0 and k<1 or a.hop,a
 end
 
--- a lit fuse: sparks jumping off the top of a sulphur sheep
-local function fuse(x,y,t)
-  for k=0,4 do pix(x+sin(t*2+k*2)*2,y-(t+k*3)%6,({4,3,12,4,2})[k+1]) end
-end
-
--- a spell {from x,y, to x,y, last frame}: green lightning in bursts, a ring and sparks around
--- the one it binds
-local function magic(m,cx,t)
-  if t>=(m[5] or math.huge) then return end
-  local x0,y0,x,y=m[1]-cx,m[2],m[3]-cx,m[4]
-  if t//20%3>0 then
-    local px,py=x0,y0
-    for k=1,6 do
-      local nx,ny=x0+(x-x0)*k/6,y0+(y-y0)*k/6+(k<6 and sin(t*3+k*7)*5 or 0)
-      line(px,py,nx,ny,k%2==0 and 12 or 6)
-      px,py=nx,ny
-    end
-  end
-  circb(x,y,7+t//3%4,6)
-  for k=0,15 do
-    local p=(t*2+k*17)%48
-    pix(x+sin(t/9+k)*(8+p/5),y+16-p,k%3==0 and 12 or k%3==1 and 6 or 5)
-  end
-end
-
--- the stair down into the devil's cellars: stone walls, torches, hell glowing below
-local function glow(x,y,r,c,step)
-  for j=-r,r do for i=-r,r do
-    if (i+j)%step==0 and i*i+j*j<r*r then pix(x+i,y+j,c) end
-  end end
-end
 local function stairs(t)
   for y=BAR,116,8 do
     line(0,y,239,y,15)
@@ -2581,21 +2614,6 @@ local function stairs(t)
     line(x,y,x+15,y,13)
   end
   rising(t,24,120,116,120,70,3,2)
-end
-
--- a sheep going off: a white flash, a fireball, then smoke drifting up
-local function boom(x,y,t)
-  if t<0 or t>60 then return end
-  if t<3 then rect(0,BAR,240,136-2*BAR,12) end
-  if t<18 then
-    circ(x,y,t*2.2,2) circ(x,y,t*1.6,3) circ(x,y,t,4)
-  else
-    for k=0,7 do
-      local a=k*0.785+t/40
-      circ(x+cos(a)*(t-10),y+sin(a)*(t-10)*0.5-(t-18)/2,math.max(0,9-(t-18)//5),t<36 and 13 or 14)
-    end
-  end
-  for k=0,11 do pix(x+cos(k*0.52)*t*1.8,y+sin(k*0.52)*t*1.2+t*t/60,k%2==0 and 4 or 0) end
 end
 
 function drawScene()

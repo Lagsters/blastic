@@ -1768,6 +1768,16 @@ do
     if not (g.CAST["talk_"..who] and g.CAST["blink_"..who]) then missing[#missing+1]=who end
   end
   check("every close-up can talk and blink", #missing==0, table.concat(missing," "))
+  local sliding={}
+  for name,shots in pairs(g.SCENES) do
+    for n,sh in ipairs(shots) do
+      for _,a in ipairs(sh.pan and sh.act or {}) do
+        if a[2]==a[4] and not a.orbit then sliding[#sliding+1]=name..n..":"..a[1] end
+      end
+    end
+  end
+  -- the camera pans over actors only, the backdrop stays put
+  check("nobody stands still in a panning shot", #sliding==0, table.concat(sliding," "))
   local dancer={"witch",0,104,0,104,0,0,2,orbit={112,84,124,0}}
   local xs,turned,ok={},{},true
   for t=1,123,4 do
