@@ -98,3 +98,10 @@ Format wpisu: **FAKT** / **DECYZJA** / **ŚLEPA ULICZKA**, data, jedno–dwa zda
   do zatrzymania strefy nie przechodziły (0 przejść); bot oscylował między dwoma równie dobrymi
   celami. Poprawki: przedmioty o 1/4 mapy, iskierka na skrzyni z przedmiotem, „przetrwaj” = 5
   kroków strefy, remis celów rozstrzyga bliższa droga.
+- **FAKT** 2026-11-07: TIC-80 (1.4.1, `src/cart.c`, `src/core/core.c`) ładuje chunki danych
+  z banków 1–7 i `sync(mask, bank)` kopiuje je do RAM bez ograniczenia wersji PRO; sprawdzone
+  w prawdziwym TIC-80: tło ekranu tytułowego wczytane z MAP banku 1. Nie wiadomo, czy tak samo
+  działa rdzeń w Melancholy. TIC-80 nie ma biblioteki `utf8`, a `load()` działa.
+- **DECYZJA** 2026-11-07: scenki w stylu: postacie kreskówkowe (rysowane ręcznie, zbliżenia
+  przez Scale2x z tego samego rysunku), tła szczegółowe i realistyczne; tła, które nie mieszczą
+  się w banku 0, idą do MAP banków 1–7 (decyzja właściciela).
