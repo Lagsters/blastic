@@ -1682,7 +1682,7 @@ local shown={}
 do
   local sp=env.print
   env.print=function(t,x,y) if y==env.SUB_Y then shown[#shown+1]=t end return 0 end
-  for _=1,600 do
+  for _=1,3000 do
     if #shown>0 then break end
     env.TIC()
   end
@@ -1734,19 +1734,19 @@ do
   g.btnp=function() return false end
   g.playScene("wroclaw",function() end)
   for _=1,30 do g.TIC() end
-  check("the market backdrop opens with sky at the top left", mem[20*120]==0xBB, tostring(mem[20*120]))
-  local function sky(row) g.BDR(row) return ("%d,%d"):format(mem[0x03FC0+33] or 0,mem[0x03FC0+34] or 0) end
-  check("the sky colour changes down the screen", sky(4+20)~=sky(4+110), sky(4+20).." / "..sky(4+110))
-  check("the sky starts from the backdrop's top colour",
-    sky(4+20)==mem[0x08000+2+1+mem[0x08002]+12]..","..mem[0x08000+2+1+mem[0x08002]+13], sky(4+20))
+  check("the opening backdrop has sky at the top left", mem[20*120]==0xBB, tostring(mem[20*120]))
   local painted,p={},0x08002
   for _=1,mem[0x08000] do
     local n=mem[p]
     local name={}
     for k=1,n do name[k]=string.char(mem[p+k]) end
-    painted[table.concat(name)]=true
+    painted[table.concat(name)]=p+1+n
     p=p+1+n+21
   end
+  local function sky(row) g.BDR(row) return ("%d,%d"):format(mem[0x03FC0+33] or 0,mem[0x03FC0+34] or 0) end
+  check("the sky colour changes down the screen", sky(4+20)~=sky(4+110), sky(4+20).." / "..sky(4+110))
+  local e=painted[g.SCENES.wroclaw[1].bd]
+  check("the sky starts from the backdrop's top colour", sky(4+20)==mem[e+12]..","..mem[e+13], sky(4+20))
   local unknown={}
   for name,shots in pairs(g.SCENES) do
     for _,sh in ipairs(shots) do

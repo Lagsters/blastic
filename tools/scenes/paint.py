@@ -31,7 +31,8 @@ W, H = 240, 96
 SHARED = {0: "1a1c2c", 2: "b13e53", 3: "ef7d57", 4: "ffcd75", 6: "38b764", 8: "5c3a1a",
           9: "3b5dc9", 10: "ffccaa", 12: "f4f4f4", 13: "94b0c2", 14: "566c86", 15: "333c57"}
 SKY = 11
-NAMES = ["rynek", "workshop", "road", "sleza", "krakow", "wawel", "hall", "cellars", "night"]
+NAMES = ["rynek", "odra", "workshop", "road", "sleza_far", "forest", "sleza", "krakow", "wawel", "hall",
+         "cellars", "night"]
 yy, xx = np.mgrid[0:H, 0:W]
 rng = np.random.default_rng(1957)
 
@@ -228,6 +229,115 @@ def rynek():
         glow(img, lx + 1, 50, 14, [SKY, 3, 4], img == SKY)
         img[box(lx - 2, 46, lx + 4, 52)] = 4
     return img, ["b88a4a", "b0606a", "4a8a7a"], ["1a2050", "6a4a7a", "e09a6a"]
+
+
+def odra():
+    """Wroclaw at dawn from the Oder: the cathedral's twin spires on Ostrow Tumski, the Holy Cross
+    church, the green iron Tumski bridge with its lamps, mist on the water."""
+    img = np.full((H, W), SKY)
+    glow(img, 60, 60, 40, [SKY, 3, 4])
+    # the island: trees, the Holy Cross church, the cathedral
+    trees = ridge(62, 8, 14, 81) & (yy < 70)
+    img[trees] = 5
+    hc = box(20, 30, 64, 62) | poly([(20, 30), (42, 16), (64, 30)])
+    ramp(img, hc, 0.9 - (xx - 20) / 60, [8, 2, 3])
+    img[box(36, 18, 46, 30)] = 2
+    img[poly([(35, 18), (41, 2), (47, 18)])] = 7
+    for wx in (24, 32, 50, 58):
+        gothic_window(img, wx, 36, 4, 14, 15)
+    cat = box(120, 24, 196, 62) | poly([(120, 24), (158, 12), (196, 24)])
+    ramp(img, cat, 0.9 - (xx - 120) / 90, [8, 2, 3])
+    for tx in (128, 148):                                                       # twin towers
+        img[box(tx, 24, tx + 12, 62)] = 2
+        img[box(tx, 24, tx + 2, 62)] = 8
+        img[poly([(tx - 1, 24), (tx + 6, 0), (tx + 13, 24)])] = 7
+        img[poly([(tx + 6, 24), (tx + 6, 0), (tx + 13, 24)])] = 6
+        gothic_window(img, tx + 4, 30, 4, 12, 15)
+    for wx in range(166, 194, 8):
+        gothic_window(img, wx, 32, 4, 18, 15)
+    # the river, mist and reflections
+    river = yy >= 66
+    img[river] = SKY
+    refl = river & (noise(5, 1, 82) > 0.6) & (yy % 2 == 0)
+    img[refl & (xx > 120) & (xx < 196)] = 2
+    img[refl & (xx < 70)] = 3
+    mist = (yy > 60) & (yy < 70) & (np.sin(xx / 13) + noise(20, 2, 83) * 2 > 1.3)
+    img[mist & LEVELS[2]] = 13
+    # the Tumski bridge: two green arches, rails, lamps
+    for ax in (70, 140):
+        arch = ellipse(ax, 58, ax + 70, 98) & ~ellipse(ax + 4, 62, ax + 66, 102) & (yy < 80)
+        img[arch] = 7
+        for k in range(ax + 6, ax + 66, 6):
+            img[(xx == k) & (yy >= 58) & (yy < 66) & ellipse(ax, 58, ax + 70, 98)] = 7
+    img[box(60, 56, 216, 59)] = 7
+    img[box(60, 52, 216, 53)] = 7
+    for lx in range(66, 214, 24):
+        img[box(lx, 46, lx + 1, 56)] = 0
+        img[box(lx - 1, 43, lx + 2, 46)] = 4
+    img[yy >= 88] = 0
+    return img, ["000000", "1a3a2a", "3a8a6a"], ["2a3a6a", "c07a8a", "f0c080"]
+
+
+def sleza_far():
+    """Mount Sleza alone over the plain at dusk; a post windmill and a wayside shrine."""
+    img = np.full((H, W), SKY)
+    stars(img, 30, yy < 30, 91)
+    mount = poly([(60, 64), (110, 22), (128, 18), (150, 24), (210, 64)]) | ridge(64, 6, 40, 92)
+    ramp(img, mount, 0.6 - (yy - 18) / 80, [15, 7])
+    img[box(126, 10, 128, 18)] = 0                                              # the tower on top
+    # the plain in bands, mist between them
+    for k, (top, col) in enumerate(((60, 1), (68, 5), (78, 1), (86, 5))):
+        band = ridge(top, 3, 30 + k * 10, 93 + k) & (yy < top + 12)
+        img[band] = col
+    mist = (yy > 58) & (yy < 66) & (noise(18, 2, 97) > 0.45)
+    img[mist & LEVELS[1]] = 13
+    # the windmill on a hillock
+    img[ellipse(26, 66, 66, 90) & (yy < 80)] = 0
+    img[box(40, 46, 52, 68)] = 0
+    img[poly([(38, 46), (46, 38), (54, 46)])] = 0
+    for a in (0.5, 2.07, 3.64, 5.21):
+        dx, dy = np.cos(a), np.sin(a)
+        px_, py_ = -dy * 3, dx * 3
+        img[poly([(46, 50), (46 + dx * 22, 50 + dy * 22), (46 + dx * 22 + px_, 50 + dy * 22 + py_),
+                  (46 + dx * 6 + px_, 50 + dy * 6 + py_)])] = 0
+    # the shrine by the road
+    img[box(196, 62, 200, 84) | box(192, 56, 204, 62) | poly([(190, 56), (198, 48), (206, 56)])] = 0
+    img[box(196, 58, 200, 61)] = 4
+    img[box(197, 44, 199, 49) | box(195, 46, 201, 47)] = 0
+    img[yy >= 90] = 0
+    return img, ["3a3a2a", "2a4a3a", "3a3a6a"], ["101a40", "6a4a6a", "d0806a"]
+
+
+def forest():
+    """A night forest on the way up the mountain: rows of trunks, shafts of moonlight, ferns and
+    toadstools by the path."""
+    img = np.full((H, W), SKY)
+    r = np.random.default_rng(101)
+    for depth, col, n, wmin in ((0, 7, 18, 3), (1, 5, 12, 5), (2, 15, 8, 8)):
+        for _ in range(n):
+            x = int(r.integers(-10, W))
+            w = int(r.integers(wmin, wmin + 5))
+            img[box(x, 0, x + w, 84)] = col
+            if depth == 2:
+                img[box(x + w - 2, 0, x + w, 84)] = 0
+    # moonlight shafts through the canopy
+    for sx in (60, 150, 200):
+        shaft = poly([(sx, 0), (sx + 10, 0), (sx - 20, 90), (sx - 34, 90)])
+        img[shaft & LEVELS[1] & (img != 15)] = 13
+    # the ground, the path, ferns, toadstools
+    ground = yy >= 80
+    ramp(img, ground, 0.6 - (yy - 80) / 20, [0, 5])
+    img[poly([(96, 96), (150, 96), (130, 80), (116, 80)])] = 14
+    for fx in range(4, W, 13):
+        if 90 < fx < 156:
+            continue
+        for k in range(-2, 3):
+            img[poly([(fx, 92), (fx + k * 4, 82 + abs(k) * 2), (fx + k * 4 + 1, 84 + abs(k) * 2)])] = 6
+    for mx, my in ((40, 88), (176, 90), (196, 86)):
+        img[box(mx + 2, my, mx + 4, my + 5)] = 12
+        img[ellipse(mx, my - 3, mx + 6, my + 2) & (yy <= my)] = 2
+        img[box(mx + 1, my - 2, mx + 2, my - 1) | box(mx + 4, my - 1, mx + 5, my)] = 12
+    return img, ["000000", "1a2a2a", "2a3a4a"], ["05081a", "101a3a", "1a2a4a"]
 
 
 def workshop():

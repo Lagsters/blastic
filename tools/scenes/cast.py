@@ -407,18 +407,6 @@ def figure_devil(pose=0):
     return c.outline()
 
 
-def figure_jaga(pose=0):
-    c = Canvas(22, 32)
-    c.rect(3, 6, 4, 32, BROWN, shade=False, light=False)                        # broom
-    c.poly([(0, 32), (3, 24), (5, 24), (8, 32)], YELLOW, light=False)
-    c.poly([(5, 31), (8, 14), (16, 12), (19, 31)], GREY)
-    c.ellipse(13, 9, 6, 6, RED)
-    c.ellipse(14, 10, 4, 4, SKIN)
-    c.poly([(17, 9), (21, 13), (17, 12)], SKIN, light=False)
-    c.px([(15, 9)], K)
-    return c.outline()
-
-
 def figure_dwarf(pose=0):
     c = Canvas(16, 22)
     legs(c, 7, 17, 20, pose, DARK, K, 2)
@@ -427,21 +415,6 @@ def figure_dwarf(pose=0):
     c.poly([(4, 10), (7, 17), (10, 10)], WHITE)
     c.poly([(3, 7), (7, -1), (11, 7)], RED)
     c.px([(8, 8)], K)
-    return c.outline()
-
-
-def figure_rooster(step=0):
-    c = Canvas(24, 22)
-    c.poly([(0, 2), (6, 10), (8, 16), (2, 14)], GREEN)                          # tail
-    c.poly([(1, 4), (7, 12), (3, 9)], BLUE, light=False)
-    c.ellipse(11, 13, 7, 5, ORANGE)
-    c.ellipse(17, 7, 3, 4, ORANGE)
-    c.poly([(16, 2), (17, 0), (18, 2), (19, 0), (20, 3)], RED, light=False)
-    c.poly([(20, 7), (24, 8), (20, 9)], YELLOW, light=False)
-    c.px([(19, 11), (19, 12)], RED)
-    c.px([(18, 6)], K)
-    c.rect(10, 17, 11, 22, YELLOW, shade=False, light=False)
-    c.rect(14, 17, 15, 22, YELLOW, shade=False, light=False)
     return c.outline()
 
 
@@ -510,28 +483,6 @@ def figure_dragon(pose=0, roar=False):
     return c.outline()
 
 
-def figure_sheep(step=0):
-    c = Canvas(12, 9)
-    c.ellipse(5, 4, 5, 3, WHITE)
-    c.rect(9, 2, 12, 6, K)
-    c.rect(2, 6, 3, 9, K)
-    c.rect(7, 6, 8, 9, K)
-    return c.outline()
-
-
-def figure_poster(pose=0):
-    """The king's notice: a dragon and half a crown."""
-    c = Canvas(20, 26)
-    c.rect(0, 0, 20, 26, YELLOW, light=False)
-    c.px([(0, 0), (19, 0), (0, 25), (19, 25)], T)
-    c.poly([(3, 11), (8, 5), (13, 7), (16, 4), (17, 9), (12, 12), (7, 13)], RED, shade=False, light=False)
-    c.poly([(5, 8), (7, 3), (9, 8)], RED, shade=False, light=False)
-    c.poly([(6, 22), (6, 16), (8, 18), (10, 15), (10, 22)], ORANGE, shade=False, light=False)
-    c.poly([(11, 22), (11, 15), (13, 18), (15, 16), (15, 22)], ORANGE, shade=False, light=False)
-    c.px([(10 + d, 15 + d) for d in range(8)], K)
-    return c.outline()
-
-
 def figure_cheese(pose=0):
     c = Canvas(14, 9)
     c.poly([(0, 8), (0, 3), (13, 0), (13, 8)], YELLOW)
@@ -546,11 +497,172 @@ def figure_egg(pose=0):
     return c.outline()
 
 
+def figure_jaga(pose=0):
+    """Baba Jaga; pose 2 rides her broom through the air."""
+    if pose == 2:
+        c = Canvas(34, 22)
+        c.rect(0, 15, 30, 17, BROWN, shade=False)                                 # broomstick
+        c.poly([(0, 12), (-2, 21), (8, 18), (8, 14)], YELLOW, light=False)     # bristles
+        c.poly([(10, 16), (13, 6), (22, 5), (26, 16)], GREY)                   # hunched body
+        c.poly([(14, 16), (22, 16), (24, 22), (16, 22)], GREY, light=False)    # skirt down
+        c.ellipse(22, 5, 5, 5, RED)
+        c.ellipse(23, 6, 3, 3, SKIN)
+        c.poly([(25, 5), (30, 9), (25, 8)], SKIN, light=False)
+        c.px([(24, 5)], K)
+        c.rect(23, 9, 30, 10, GREY, shade=False, light=False)                  # arm to the stick
+        return c.outline()
+    c = Canvas(22, 32)
+    c.rect(3, 6, 4, 32, BROWN, shade=False, light=False)                        # broom
+    c.poly([(0, 32), (3, 24), (5, 24), (8, 32)], YELLOW, light=False)
+    c.poly([(5, 31), (8, 14), (16, 12), (19, 31)], GREY)
+    c.ellipse(13, 9, 6, 6, RED)
+    c.ellipse(14, 10, 4, 4, SKIN)
+    c.poly([(17, 9), (21, 13), (17, 12)], SKIN, light=False)
+    c.px([(15, 9)], K)
+    if pose == 1:                                                               # arms up, casting
+        c.poly([(15, 14), (20, 4), (22, 5), (18, 15)], GREY, light=False)
+    return c.outline()
+
+
+def figure_witch(pose=0):
+    """A witch of Sleza: long dark hair, a green dress; poses 0, 1 dance, 2 flies on a broom."""
+    if pose == 2:
+        c = Canvas(34, 22)
+        c.rect(0, 15, 30, 17, BROWN, shade=False)
+        c.poly([(0, 12), (-2, 21), (8, 18), (8, 14)], YELLOW, light=False)
+        c.poly([(11, 16), (14, 6), (22, 6), (25, 16)], GREEN)
+        c.poly([(13, 16), (24, 16), (27, 22), (14, 21)], GREEN, light=False)
+        c.poly([(16, 1), (19, -2), (23, 2), (18, 12), (14, 12)], K)             # hair flying back
+        c.ellipse(20, 4, 3, 4, SKIN)
+        c.px([(21, 3)], K)
+        return c.outline()
+    c = Canvas(22, 34)
+    up = pose == 1
+    c.rect(8, 31, 11, 34, K)
+    c.rect(12, 31, 15, 34, K)
+    c.poly([(3, 32), (7, 15), (14, 15), (18, 32)], GREEN)
+    c.poly([(6, 10), (5, 26), (9, 26), (10, 10)], K, light=False)               # long dark hair
+    c.ellipse(11, 9, 5, 6, K)
+    c.ellipse(12, 9, 4, 5, SKIN)
+    c.px([(13, 8), (15, 8)], K)
+    c.px([(13, 11), (14, 11)], RED)
+    arm = [(15, 16), (21, 4 if up else 24), (22, 6 if up else 26), (16, 19)]
+    c.poly(arm, GREEN, light=False)
+    c.ellipse(21.5, 3 if up else 26, 1.5, 1.5, SKIN, shade=False)
+    arm2 = [(6, 16), (0, 4 if not up else 24), (1, 3 if not up else 26), (8, 19)]
+    c.poly(arm2, GREEN, light=False)
+    return c.outline()
+
+
+def figure_rider(pose=0):
+    """Master Twardowski riding his giant rooster through the night; pose 1 beats the wings."""
+    c = Canvas(48, 40)
+    down = pose == 1
+    # tail: sickle feathers
+    for k, col in enumerate((GREEN, BLUE, K)):
+        c.poly([(12, 22), (0 + k * 2, 4 + k * 4), (4 + k * 2, 8 + k * 4), (14, 26)], col, light=False)
+    c.ellipse(22, 26, 13, 9, ORANGE)                                            # body
+    c.ellipse(24, 30, 9, 5, YELLOW, shade=False)
+    c.poly([(30, 22), (36, 8), (42, 10), (38, 26)], ORANGE)                     # neck
+    c.ellipse(40, 9, 5, 5, ORANGE)
+    c.poly([(37, 4), (39, 0), (41, 3), (43, 0), (45, 5)], RED, light=False)     # comb
+    c.poly([(44, 8), (48, 10), (44, 11)], YELLOW, light=False)                  # beak
+    c.poly([(42, 12), (44, 16), (41, 15)], RED, light=False)                    # wattle
+    c.px([(41, 8)], K)
+    c.poly([(18, 34), (16, 40), (19, 38)], YELLOW, light=False)                 # legs tucked
+    c.poly([(26, 34), (25, 40), (28, 38)], YELLOW, light=False)
+    # the rider
+    c.poly([(19, 21), (22, 8), (30, 8), (32, 21)], BLUE)                        # kontusz
+    c.poly([(24, 9), (27, 9), (27, 21), (24, 21)], RED, light=False)
+    c.rect(21, 15, 31, 17, YELLOW, light=False)                                 # sash
+    c.poly([(24, 20), (20, 30), (24, 31), (27, 21)], BLUE, light=False)         # leg down the side
+    c.rect(19, 29, 24, 32, K)
+    c.ellipse(27, 5, 4, 4, SKIN)
+    c.poly([(26, 7), (21, 8), (26, 6), (29, 6), (34, 8), (29, 7)], K)           # moustache
+    c.rect(23, -2, 31, 3, BROWN)                                                # kolpak
+    c.px([(30, -3), (31, -4), (32, -5)], WHITE)
+    c.px([(28, 4)], K)
+    c.poly([(31, 12), (38, 14), (38, 16), (31, 15)], BLUE, light=False)         # arm to the reins
+    # the wing over all: a fan of long feathers from the shoulder, raised or beating down
+    sx, sy = 20, 22
+    tips = [(28, 40), (22, 42), (15, 40), (9, 36)] if down else [(6, 2), (1, 8), (-2, 15), (0, 21)]
+    for k, (tx, ty) in enumerate(tips):
+        nx, ny = -(ty - sy), tx - sx
+        n = max(1.0, (nx * nx + ny * ny) ** 0.5)
+        w = 3.2
+        c.poly([(sx + nx / n * w, sy + ny / n * w), (tx, ty), (sx - nx / n * w, sy - ny / n * w)],
+               BROWN if k % 2 else ORANGE)
+    c.ellipse(sx + 2, sy + 1, 6, 4, ORANGE)                                      # its root
+    return c.outline()
+
+
+def figure_fox(pose=0):
+    """A fox running through the wood; two strides."""
+    c = Canvas(24, 12)
+    c.poly([(0, 4), (8, 3), (8, 7), (2, 8)], ORANGE)                            # brush
+    c.px([(0, 4), (1, 4), (0, 5), (1, 5)], WHITE)
+    c.ellipse(13, 6, 6, 3, ORANGE)
+    c.ellipse(20, 4, 3, 3, ORANGE)
+    c.poly([(21, 4), (24, 6), (21, 7)], ORANGE, light=False)
+    c.poly([(18, 2), (19, -1), (20, 2)], ORANGE, light=False)
+    c.px([(23, 6)], K)
+    c.px([(20, 4)], K)
+    if pose:
+        c.poly([(9, 7), (5, 11), (7, 11), (11, 8)], K, light=False)
+        c.poly([(16, 7), (21, 11), (23, 11), (17, 7)], K, light=False)
+    else:
+        c.poly([(10, 7), (11, 12), (13, 12), (12, 7)], K, light=False)
+        c.poly([(15, 7), (15, 12), (17, 12), (17, 7)], K, light=False)
+    return c.outline()
+
+
+def figure_sack(pose=0):
+    """A sack of brimstone, open, the yellow powder showing."""
+    c = Canvas(14, 16)
+    c.poly([(1, 16), (2, 4), (12, 4), (13, 16)], BROWN)
+    c.ellipse(7, 4, 6, 2, YELLOW, shade=False)
+    c.px([(4, 2), (7, 1), (10, 2), (6, 3)], YELLOW)
+    c.poly([(5, 9), (9, 9), (7, 13)], YELLOW, shade=False, light=False)         # a mark on it
+    return c.outline()
+
+
+def figure_sheep(pose=0):
+    """The sulphur sheep: woolly body, black face and legs, a fuse sticking out of its back."""
+    c = Canvas(16, 12)
+    for x, y, r in ((4, 5, 3), (7, 4, 3.5), (10, 5, 3), (6, 7, 3), (9, 7, 3)):
+        c.ellipse(x, y, r, r, WHITE)
+    c.ellipse(13.5, 6, 2.5, 2, K, shade=False, light=False)                     # face
+    c.px([(12, 4), (15, 5)], K)                                                 # ears
+    c.px([(14, 6)], WHITE)
+    c.rect(4, 9, 5, 12, K)
+    c.rect(10, 9, 11, 12, K)
+    c.poly([(6, 2), (5, -1), (6, -2), (7, 1)], GREY, shade=False, light=False)  # the fuse
+    return c.outline()
+
+
+def figure_poster(pose=0):
+    """The king's notice: a dragon, and a crown cut in half beneath it."""
+    c = Canvas(20, 26)
+    c.rect(0, 0, 20, 26, YELLOW, light=False)
+    c.px([(0, 0), (19, 0), (0, 25), (19, 25)], T)
+    c.rect(1, 1, 19, 2, ORANGE, shade=False, light=False)
+    c.poly([(3, 12), (6, 8), (12, 8), (16, 5), (18, 7), (15, 10), (10, 13), (5, 14)], RED, shade=False, light=False)
+    c.poly([(7, 8), (9, 2), (12, 8)], RED, shade=False, light=False)            # wing
+    c.px([(16, 6)], K)
+    c.poly([(4, 22), (4, 16), (6, 18), (8, 15), (10, 18), (10, 22)], ORANGE, shade=False, light=False)
+    c.poly([(11, 22), (11, 15), (13, 18), (15, 16), (16, 22)], ORANGE, shade=False, light=False)
+    c.px([(10 + d, 14 + d) for d in range(10)], K)                               # the cut
+    c.px([(9, 24), (10, 24), (11, 24)], RED)                                     # the seal
+    return c.outline()
+
+
 BUSTS = ["dratewka", "wanda", "krak", "twardowski", "devil", "jaga"]
-FIGURES = ["dratewka", "wanda", "krak", "twardowski", "devil", "jaga", "dwarf", "rooster", "dragon", "sheep",
-           "poster", "cheese", "egg"]
-WALKERS = ["dratewka", "wanda", "twardowski", "devil", "dwarf"]
-FAR = ["dratewka", "twardowski", "rooster", "sheep", "poster", "egg", "cheese", "jaga", "devil", "dwarf"]  # far shots, cards
+FIGURES = ["dratewka", "wanda", "krak", "twardowski", "devil", "jaga", "dwarf", "dragon", "sheep",
+           "poster", "cheese", "egg", "witch", "rider", "fox", "sack"]
+WALKERS = ["dratewka", "wanda", "devil", "dwarf"]
+FAR = ["dratewka", "wanda", "sheep", "poster", "egg", "jaga", "devil", "dwarf", "rider"]  # far shots, chapter cards
+# poses beyond standing: walkers step (_a, _b); these dance, beat wings or run (_a, _b) and fly (_fly)
+POSES = {"witch": (0, 1, 2), "jaga": (0, 1, 2), "rider": (0, 1, None), "fox": (0, 1, None)}
 
 
 def patch(full, base):
@@ -577,9 +689,15 @@ def sprites():
         for n in FIGURES if tag == "" else FAR:
             f = globals()["figure_" + n]
             out[n + tag] = (0, 0, f())
-            if n in WALKERS:
+            if n in WALKERS and (tag == "" or n in ("dratewka", "wanda")):
                 out[n + tag + "_a"] = (0, 0, f(1))
                 out[n + tag + "_b"] = (0, 0, f(2))
+            if n in POSES and (tag == "" or n == "rider"):
+                a, b_, fly = POSES[n]
+                out[n + tag + "_a"] = (0, 0, f(a))
+                out[n + tag + "_b"] = (0, 0, f(b_))
+                if fly is not None:
+                    out[n + tag + "_fly"] = (0, 0, f(fly))
         out["dragon" + tag + "_a"] = (0, 0, figure_dragon(0))
         out["dragon" + tag] = (0, 0, figure_dragon(1))
         out["dragon" + tag + "_b"] = (0, 0, figure_dragon(2))

@@ -2186,7 +2186,7 @@ local SPEAKER_WHO={DRATEWKA="dratewka",WANDA="wanda",KRAK="krak",TWARDOWSKI="twa
 
 -- an actor with its feet at x,y: scale 1 is a far shot (the small sprites), 4 a close-up
 -- standing on the bottom bar; talking moves the mouth
-local function drawCast(who,x,y,s,t,left,walk,talking,roar)
+local function drawCast(who,x,y,s,t,left,walk,talking,roar,anim)
   if s>=4 then
     local b=CAST["bust_"..who]
     if not b then return end
@@ -2199,9 +2199,9 @@ local function drawCast(who,x,y,s,t,left,walk,talking,roar)
   local name,lift=who..(s==1 and "_far" or ""),0
   if who=="dragon" then
     name=name..(roar and "_roar" or ({"_a","","_b",""})[t//(walk and 5 or 9)%4+1])
-  elseif walk and CAST[name.."_a"] then
+  elseif (walk or anim) and CAST[name.."_a"] then
     local b=t//7%2==1
-    name,lift=name..(b and "_b" or "_a"),b and 1 or 0
+    name,lift=name..(b and "_b" or "_a"),b and walk and not anim and 1 or 0
   end
   local sp=CAST[name]
   if not sp then return end
@@ -2234,6 +2234,24 @@ local function birds(t,n,y,c)
 end
 local OVERLAYS={
   rynek=function(t) birds(t,3,34,0) end,
+  odra=function(t)
+    birds(t,5,30,0)
+    for k=0,20 do pix((k*37+t//5)%240,88+k%8*3,(t//9+k)%4==0 and 12 or 13) end
+  end,
+  forest=function(t)  -- an owl's eyes in the dark, blinking now and then
+    for k,e in ipairs{{70,44},{196,58}} do
+      if (t//30+k)%6~=0 then pix(e[1],e[2],4) pix(e[1]+3,e[2],4) end
+    end
+    rising(t,6,0,100,240,60,5,6)
+  end,
+  sleza_far=function(t) for k=0,6 do line((k*50+t//3)%300-40,80+k%3*2,(k*50+t//3)%300-20,80+k%3*2,13) end end,
+  krakow=function(t)  -- the bugle call from St Mary's tower, pigeons over the square
+    birds(t,4,36,0)
+    if t>40 then
+      pix(171,52,t//6%2==0 and 4 or 12)
+      for k=0,3 do pix(174+k*3+sin(t/8+k)*2,50-(t+k*9)%24,12) end
+    end
+  end,
   sleza=function(t) rising(t,10,118,44,12,30,4,2) rising(t,5,0,100,240,50,4,6) end,
   cellars=function(t) rising(t,24,0,116,240,90,4,2) end,
   workshop=function(t) rect(89,70+t//5%2,2,4,t//3%2==0 and 4 or 3) end,
@@ -2333,52 +2351,60 @@ local function fireworks(t)
 end
 
 -- actors: {who, x0,y0, x1,y1, t0,t1, scale=2, faces left (default: walks left)} and optional
--- arc= (a throw's height), show= / hide= (frames it appears / goes), hop= (jumping for joy);
--- standing feet at y=108, close-ups (scale 4) stand on the bottom bar
--- shots: bd (backdrop), pan (camera travel in px), len (frames without lines), cap (place,
--- top bar), title (chapter card), booms {{x,y,t}}, fx: flash | shake | fire | fireworks |
--- soot | idea; lines start once every actor stands still
+-- arc= (a throw's height), show= / hide= (frames it appears / goes), hop= (jumping for joy),
+-- anim=true (dances, flaps, runs all the time), spark= (frame its fuse is lit); scale 1 is a
+-- far shot, 4 a close-up; standing feet at y=108
+-- shots: bd (backdrop), pan (camera travel in px), len (frames without lines), cap (place, top
+-- bar), title (chapter card), booms {{x,y,t}}, shake= (frame), magic={x,y}, label={x,y,text},
+-- fx: flash | shake | fire | fireworks | soot | idea; lines start once every actor stands still
 local function closeUp(who,x,left) return {{who,x,126,x,126,0,0,4,left}} end
 local SPEAKER_PL={DEVIL="DIABEŁ",DRAGON="SMOK",DWARF="KRASNAL"}
 SCENES={
   wroclaw={
-    {bd="rynek",len=190,pan=70,cap={"WROCLAW","WROCŁAW"},
-      act={{"dwarf",-10,108,70,108,0,180},{"dwarf",250,108,190,108,20,150,2,true}}},
+    {bd="odra",len=230,pan=60,cap={"WROCLAW","WROCŁAW"}},
+    {bd="rynek",len=200,pan=50,act={{"dwarf",-10,108,96,108,0,190},{"dwarf",250,108,170,108,30,160,2,true}}},
     {bd="wawel",len=170,pan=40,cap={"MEANWHILE, IN KRAKOW","TYMCZASEM W KRAKOWIE"},
       act={{"sheep",150,104,150,104,0,0,2,hide=95},{"dragon",-80,64,300,24,10,160,1},
         {"sheep",150,104,300,40,95,160,2,show=95}}},
-    {bd="rynek",len=150,act={{"dwarf",-10,108,52,108,0,60},{"poster",64,98,64,98,0,0,1,show=75}}},
+    {bd="rynek",len=150,act={{"dwarf",-10,108,52,108,0,70},{"poster",-10,64,52,64,0,70,1,hide=72},
+      {"poster",64,98,64,98,0,0,1,show=72}},shake=72},
+    {bd="rynek",len=120,act={{"poster",120,112,120,112,0,0,2}},label={142,92,"1/2"}},
     {bd="rynek",len=130,act={{"poster",64,98,64,98,0,0,1},{"dratewka",250,108,96,108,0,100,2,true}}},
-    {bd="rynek",len=90,act={{"poster",120,112,120,112,0,0,3}}},
     {bd="rynek",fx="idea",len=90,act=closeUp("dratewka",110)},
-    {bd="workshop",len=130,act={{"dratewka",80,108,80,108,0,0},{"sheep",120,100,120,100,0,0,2,hide=80}},
-      booms={{122,92,80}}},
+    {bd="workshop",len=140,act={{"dratewka",70,108,70,108,0,0},{"sack",100,108,100,108,0,0},
+      {"sheep",130,100,130,100,0,0,2,spark=40,hide=96}},booms={{132,90,96}}},
     {bd="workshop",fx="soot",act=closeUp("dratewka",110),
       say={{"DRATEWKA","...less sulphur next time.","...następnym razem mniej siarki."}}},
-    {bd="night",len=170,pan=30,act={{"rooster",-40,70,280,44,0,170,1},{"twardowski",-38,62,282,36,0,170,1},
-      {"dratewka",60,108,60,108,0,0}}},
+    {bd="night",len=210,pan=30,act={{"rider",-60,64,300,36,0,200,1,anim=true}}},
+    {bd="odra",len=190,act={{"dratewka",-10,76,250,76,0,190,1},{"sheep",-26,76,234,76,0,190,1}}},
     {bd="black",len=120,title=1},
   },
   sleza={
     {bd="road",len=170,pan=50,cap={"THE ROAD SOUTH","DROGA NA POŁUDNIE"},
       act={{"dratewka",-10,108,140,108,0,170,1},{"sheep",-26,108,124,108,0,170,1}}},
-    {bd="sleza",len=150,pan=60,cap={"MOUNT SLEZA, KUPALA NIGHT","ŚLĘŻA, NOC KUPAŁY"}},
-    {bd="sleza",len=100,act={{"wanda",100,108,100,108,0,0},{"dwarf",260,108,150,108,0,80,2,true},
-      {"dwarf",290,108,180,108,10,90,2,true}}},
-    {bd="sleza",len=120,act={{"wanda",100,108,100,108,0,0},{"dwarf",150,108,150,108,0,0,2,true,hide=62},
-      {"dwarf",180,108,180,108,0,0,2,true,hide=62},{"dratewka",-20,108,40,108,0,20},
-      {"sheep",52,94,166,100,24,60,1,arc=30,hide=60},
-      {"dwarf",150,108,300,108,64,100,2,hop=5,show=64},{"dwarf",180,108,320,108,64,96,2,hop=5,show=64}},
-      booms={{166,96,60}}},
+    {bd="sleza_far",len=220,pan=50,cap={"MOUNT SLEZA","ŚLĘŻA"}},
+    {bd="forest",len=210,act={{"fox",-30,106,280,106,0,70,2,anim=true},
+      {"dratewka",-10,108,130,108,80,200},{"sheep",-28,108,112,108,80,200}}},
+    {bd="sleza",len=200,cap={"KUPALA NIGHT","NOC KUPAŁY"},magic={150,84},
+      act={{"witch",56,108,56,108,0,0,2,false,anim=true},{"witch",196,108,196,108,0,0,2,true,anim=true},
+        {"jaga",112,108,112,108,0,0,2,false,anim=true},{"wanda",150,108,150,108,0,0,2,true}}},
+    {bd="sleza",len=80,act={{"sheep",120,104,120,104,0,0,2,spark=0}}},
+    {bd="sleza",len=140,magic={150,84},act={{"wanda",150,108,150,108,0,0,2,true},
+      {"witch",56,108,56,108,0,0,2,false,anim=true,hide=62},{"witch",196,108,196,108,0,0,2,true,anim=true,hide=62},
+      {"jaga",112,108,112,108,0,0,2,false,anim=true,hide=62},{"dratewka",-20,108,24,108,0,20},
+      {"sheep",36,94,112,100,24,60,2,arc=30,spark=0,hide=60},
+      {"witch_fly",56,90,-60,10,62,110,2,true,show=62},{"witch_fly",196,90,320,0,62,110,2,false,show=62},
+      {"jaga_fly",112,90,280,-20,62,120,2,false,show=62}},booms={{112,96,60}}},
     {bd="sleza",act=closeUp("wanda",120,true),say={{"WANDA","I had them.","Dałabym sobie radę."}}},
     {bd="sleza",fx="flash",act=closeUp("jaga",130,true),
       say={{"BABA JAGA","Twardowski sends his regards!","Pozdrowienia od Twardowskiego!"}}},
     {bd="black",len=120,title=2},
   },
   krakow={
-    {bd="krakow",len=170,pan=60,fx="shake",cap={"KRAKOW","KRAKÓW"},act={{"dragon",-80,60,320,30,20,150,1}}},
-    {bd="wawel",len=120,act={{"dragon",70,106,70,106,0,0,1},{"wanda",204,108,204,108,0,0,2,true},
-      {"dratewka",174,108,174,108,0,0,2,true},{"sheep",160,94,107,70,30,70,1,arc=26,hide=70}}},
+    {bd="wawel",len=210,pan=50,cap={"KRAKOW","KRAKÓW"}},
+    {bd="krakow",len=220,pan=40,shake=130,act={{"dragon",-80,50,320,30,120,210,1}}},
+    {bd="wawel",len=140,act={{"dragon",70,106,70,106,0,0,1},{"wanda",204,108,204,108,0,0,2,true},
+      {"dratewka",174,108,174,108,0,0,2,true},{"sheep",160,94,107,70,40,80,2,arc=26,spark=0,hide=80}}},
     {bd="wawel",fx="fire",act={{"dragon",90,124,90,124,0,0,2}},
       say={{"DRAGON","*burp* Spicy! Who sent you?","*bek* Ostre! Kto was przysłał?"}}},
     {bd="night",len=150,cap={"LAST NIGHT","ZESZŁEJ NOCY"},
@@ -2388,7 +2414,7 @@ SCENES={
     {bd="black",len=120,title=3},
   },
   cellars={
-    {bd="cellars",len=170,pan=50,cap={"THE DEVIL'S CELLARS","PIEKIELNE LOCHY"},act={{"devil",214,108,214,108,0,0,2,true}}},
+    {bd="cellars",len=190,pan=50,cap={"THE DEVIL'S CELLARS","PIEKIELNE LOCHY"},act={{"devil",214,108,214,108,0,0,2,true}}},
     {bd="cellars",fx="flash",act=closeUp("devil",120,true),
       say={{"DEVIL","A shoemaker? Against me?","Szewczyk? Przeciwko mnie?"}}},
     {bd="cellars",act=closeUp("dratewka",110),say={{"DRATEWKA","I brought sheep.","Przyniosłem owce."}}},
@@ -2397,20 +2423,22 @@ SCENES={
   ending={
     {bd="cellars",len=150,act={{"wanda",-30,108,36,108,0,40},{"dratewka",-10,108,66,108,0,40},
       {"twardowski",-50,108,10,108,0,40},{"devil",214,108,214,108,0,0,2,true,hide=84},
-      {"sheep",76,94,191,62,44,84,1,arc=30,hide=84},
+      {"sheep",76,94,191,62,44,84,2,arc=30,spark=0,hide=84},
       {"devil",214,108,320,90,86,130,2,hop=6,show=86}},
       booms={{191,62,84}}},
     {bd="cellars",fx="shake",act={{"devil",200,108,300,108,10,60,2,hop=6}},
       say={{"DEVIL","My pact! Noooo!","Mój cyrograf! Nieee!"}}},
-    {bd="night",act={{"rooster",60,104,190,48,20,200,1},{"twardowski",62,96,192,40,20,200,1}},
+    {bd="night",act={{"rider",40,104,200,44,20,200,1,anim=true}},
       say={{"TWARDOWSKI","It's quieter up there.","Tam będzie spokojniej."}}},
     {bd="hall",act={{"krak",120,108,120,108,0,0},{"wanda",-30,108,68,108,0,80},
-      {"dratewka",-60,108,174,108,0,100,2,true},{"cheese",128,90,166,92,110,150,1,arc=10,show=110}},
+      {"dratewka",-60,108,174,108,0,100,2,true},{"cheese",128,90,166,92,110,150,2,arc=10,show=110}},
       say={{"KRAK","Your reward!","Twoja nagroda!"},{"WANDA","Half the kingdom, father.","Pół królestwa, ojcze."},
         {"KRAK","Half the cheese?","Pół sera?"}}},
     {bd="night",fx="fireworks",len=240},
+    {bd="odra",len=180,act={{"wanda",-40,76,110,76,0,170,1},{"dratewka",-10,76,140,76,0,170,1},
+      {"sheep",-26,76,124,76,0,170,1}}},
     {bd="rynek",len=200,pan=40,act={{"dwarf",40,108,40,108,0,0,2,hop=4},{"dwarf",206,108,206,108,0,0,2,true,hop=5},
-      {"wanda",-40,108,96,108,0,130},{"dratewka",-10,108,126,108,0,130},{"sheep",-26,108,110,108,0,130,1}}},
+      {"wanda",-40,108,96,108,0,130},{"dratewka",-10,108,126,108,0,130},{"sheep",-26,108,110,108,0,130}}},
     {bd="black",len=200,title="end"},
   },
 }
@@ -2491,7 +2519,20 @@ local function drawActor(a,t)
   local e=a.arc and k or k*k*(3-2*k)
   if left==nil then left=x1<x0 end
   local y=y0+(y1-y0)*e-(a.arc or 0)*4*e*(1-e)-math.abs(sin(t/5))*(a.hop or 0)
-  return who,x0+(x1-x0)*e,y,sc or 2,left,k>0 and k<1 or a.hop
+  return who,x0+(x1-x0)*e,y,sc or 2,left,k>0 and k<1 or a.hop,a
+end
+
+-- a lit fuse: sparks jumping off the top of a sulphur sheep
+local function fuse(x,y,t)
+  for k=0,4 do pix(x+sin(t*2+k*2)*2,y-(t+k*3)%6,({4,3,12,4,2})[k+1]) end
+end
+
+-- a spell: green sparks swirling up around x,y
+local function magic(x,y,t)
+  for k=0,15 do
+    local p=(t*2+k*17)%64
+    pix(x+sin(t/9+k)*(10+p/5),y-p,k%3==0 and 12 or k%3==1 and 6 or 13)
+  end
 end
 
 -- a sheep going off: a white flash, a fireball, then smoke drifting up
@@ -2516,7 +2557,8 @@ function drawScene()
   local t=s.t
   local len=sh.len or s.start+60
   local cx=(sh.pan or 0)*math.min(1,t/len)//1
-  local dy=sh.fx=="shake" and t<60 and sin(t*7)*2//1 or 0
+  local shake=sh.shake or sh.fx=="shake" and 0
+  local dy=shake and t>=shake and t<shake+60 and sin(t*7)*2//1 or 0
   cls(0)
   if sh.fx=="flash" and t<8 then cls(12)
   elseif backdrop then memcpy((BAR+dy)*120,BACKDROP_RAM,BACKDROP_BYTES) end
@@ -2532,15 +2574,18 @@ function drawScene()
   if sh.fx=="flash" then puff(t-8) end
   local close=false
   for _,a in ipairs(sh.act or {}) do
-    local who,x,y,sc,left,moving=drawActor(a,t)
+    local who,x,y,sc,left,moving,act=drawActor(a,t)
     close=close or sc==4
     if who then
-      drawCast(who,x-cx,y+dy,sc,t,left,moving,who==talker,sh.fx=="fire")
+      drawCast(who,x-cx,y+dy,sc,t,left,moving,who==talker,sh.fx=="fire",act.anim)
+      if act.spark and t>=act.spark then fuse(x-cx+(left and 3 or -3),y+dy-(sc==1 and 13 or 26),t) end
       if who=="dragon" and sh.fx=="fire" then dragonFire(x-cx,y+dy,sc==1 and 1 or 2,t) end
     end
   end
   for _,b in ipairs(sh.booms or {}) do boom(b[1]-cx,b[2]+dy,t-b[3]) end
   if FOREGROUNDS[sh.bd] and not close then FOREGROUNDS[sh.bd](cx*16//10,t) end
+  if sh.magic then magic(sh.magic[1]-cx,sh.magic[2],t) end
+  if sh.label and t>20 then print(sh.label[3],sh.label[1],sh.label[2],2,false,2,true) end
   if sh.fx=="soot" then
     for k=0,34 do rect(92+(k*37)%40,48+(k*23)%30,2,2,k%3==0 and 0 or 15) end
   elseif sh.fx=="idea" and t>30 then
