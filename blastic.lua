@@ -418,7 +418,7 @@ function L(en,pl)
 end
 
 local audioReady=false
-local function initAudio()
+function initAudio()
   if audioReady then return end
   audioReady=true
 
@@ -445,6 +445,8 @@ local function initAudio()
   putSfx(5,{{12,0},{10,0},{7,0},{4,0}},TRI,2,0)
   -- SFX 6: podniesienie bonusu — rosnące arpeggio C-E-G-C
   putSfx(6,{{11,0},{11,0},{11,4},{11,4},{11,7},{11,7},{10,12},{7,12},{4,12}},TRI,4,0)
+  -- SFX 8: the blip of a letter typed in a story scene
+  putSfx(8,{{9,0},{6,0},{3,0}},TRI,5,0)
   -- SFX 7: pęknięcie tarczy — krótki opadający szum
   putSfx(7,{{13,0},{11,0},{8,0},{5,0},{2,0}},NOISE,4,0)
 end
@@ -2032,6 +2034,7 @@ end
 
 -- story:begin (make_tic.py moves this section into the cart's MUSIC PATTERNS data and loads
 -- it from there, so the scenes do not count against the code limit; it may use only globals)
+do  -- the scenes' locals stay inside: the main chunk is near Lua's 200-local limit
 -- ── scenes ────────────────────────────────────────────────────────────────────
 -- A scene is a film: shots with their own backdrop, camera pan, actors and lines, cut with a
 -- fade. Backdrops and the cast are painted by tools/scenes/paint.py and cast.py; the cast keeps
@@ -2127,7 +2130,7 @@ local function drawCast(who,x,y,s,t,left,walk,talking)
   if s>=4 then
     local b=CAST["bust_"..who]
     if not b then return end
-    local bx,by=x-b[2],136-BAR-b[3]*2
+    local bx,by=x-b[2],136-BAR-b[3]*2+math.max(0,14-t)*3+t//40%2
     sprite("bust_"..who,bx,by,2,left)
     if talking and t//5%2==0 then sprite("talk_"..who,bx,by,2,left,b[2]) end
     if t%170<6 then sprite("blink_"..who,bx,by,2,left,b[2]) end
@@ -2155,13 +2158,72 @@ local function rising(t,n,x,y,w,h,c1,c2)
     pix(x+(k*41)%w+sin(t/15+k)*3,y-p,p<h//2 and c1 or c2)
   end
 end
+-- birds crossing the sky, wings up and down
+local function birds(t,n,y,c)
+  for k=0,n-1 do
+    local x,by=(t*0.6+k*97)%300-30,y+k*7+sin(t/12+k)*3
+    local up=(t//6+k)%2
+    pix(x,by,c) pix(x-1,by-1+up*2,c) pix(x+1,by-1+up*2,c) pix(x-2,by-up,c) pix(x+2,by-up,c)
+  end
+end
 local OVERLAYS={
+  rynek=function(t) birds(t,3,34,0) end,
   sleza=function(t) rising(t,10,118,44,12,30,4,2) rising(t,5,0,100,240,50,4,6) end,
   cellars=function(t) rising(t,24,0,116,240,90,4,2) end,
   workshop=function(t) rect(89,70+t//5%2,2,4,t//3%2==0 and 4 or 3) end,
-  wawel=function(t) for k=0,14 do pix((k*53+t//4)%240,106+k%4*3,t//8%2==k%2 and 12 or 4) end end,
-  night=function(t) for k=0,6 do pix((k*67)%240,24+(k*29)%40,(t//20+k)%3==0 and 12 or 13) end end,
+  wawel=function(t)
+    for k=0,14 do pix((k*53+t//4)%240,106+k%4*3,t//8%2==k%2 and 12 or 4) end
+    birds(t,4,40,0)
+  end,
+  night=function(t)
+    for k=0,6 do pix((k*67)%240,24+(k*29)%40,(t//20+k)%3==0 and 12 or 13) end
+    local p=t%240
+    if p<24 then line(200-p*6,26+p*2,206-p*6,24+p*2,12) end
+  end,
 }
+
+-- a puff of smoke after a flash: someone appears, or a sheep goes off
+local function puff(t)
+  if t<0 or t>=70 then return end
+  for k=0,9 do
+    local a,r=k*0.628,t*0.9
+    circ(120+cos(a)*r,72+sin(a)*r*0.5-t/4,math.max(0,8-t//9),t<35 and 13 or 14)
+  end
+end
+
+-- chapter cards: a gilded frame, the number, the name and the chapter's foe
+local ROMAN={"I","II","III","IV"}
+local EMBLEM={"dwarf","jaga","dragon","devil"}
+local function chapterCard(n,t)
+  rectb(28,26,184,84,4) rectb(31,29,178,78,3)
+  for _,c in ipairs{{28,26},{211,26},{28,109},{211,109}} do
+    circ(c[1],c[2],3,4) circ(c[1],c[2],1,2)
+  end
+  local top,title=L("CHAPTER ","ROZDZIAŁ ")..(ROMAN[n] or ""),CHAPTERS[n] and chapterName(n)
+  if not title then top,title=L("THE","TO"),L("END","KONIEC") end
+  print(top,120-textW(top,1)//2,36,3,false,1,true)
+  print(title:sub(1,t//3),120-textW(title,2)//2+1,47,2,false,2,true)
+  print(title:sub(1,t//3),120-textW(title,2)//2,46,4,false,2,true)
+  local e=CAST and CAST[EMBLEM[n] or "dratewka"]
+  if e and t>40 then
+    local sc=e[3]>30 and 1 or 2
+    sprite(EMBLEM[n] or "dratewka",120-e[2]*sc//2,104-e[3]*sc,sc,false)
+  end
+end
+
+-- the iris closing on the last shot before a chapter card
+local IRIS=36
+local function iris(k)
+  local r=k*150
+  for y=BAR,135-BAR do
+    local d=y-68
+    if math.abs(d)>=r then rect(0,y,240,1,0)
+    else
+      local h=math.sqrt(r*r-d*d)//1
+      rect(0,y,120-h,1,0) rect(120+h,y,120-h+1,1,0)
+    end
+  end
+end
 
 -- fireworks over the castle at the end: bursts of bombs, each on its own clock
 local function fireworks(t)
@@ -2247,7 +2309,7 @@ SCENES={
     {bd="night",act={{"rooster",60,104,190,48,20,200,1},{"twardowski",62,96,192,40,20,200,1}},
       say={{"TWARDOWSKI","Free at last! I'm off to the moon.","Wolny! Lecę na Księżyc."},
         {"TWARDOWSKI","It's quieter up there.","Tam jest spokojniej."}}},
-    {bd="hall",act={{"krak",120,108,120,108,0,0},{"wanda",-30,108,80,108,0,80},{"dratewka",-60,108,164,108,0,90,2,true}},
+    {bd="hall",act={{"krak",120,108,120,108,0,0},{"wanda",-30,108,68,108,0,80},{"dratewka",-60,108,174,108,0,100,2,true}},
       say={{"KRAK","My hero! Here is your reward...","Mój bohaterze! Oto twoja nagroda..."},{"KRAK","Cheese!","Ser!"},
         {"WANDA","Half the kingdom, father.","Pół królestwa, ojcze."},{"KRAK","Half the cheese?","Pół sera?"}}},
     {bd="night",fx="fireworks",len=240},
@@ -2259,7 +2321,8 @@ SCENES={
 SCENE_OF_CHAPTER={"wroclaw","sleza","krakow","cellars"}
 
 local scene,backdrop
-local LINE_FRAMES,FADE=150,12
+local READ_FRAMES,FADE=100,12  -- frames to read a line once typed; fade between shots
+local SPEAKER_COL={DRATEWKA=3,WANDA=4,KRAK=4,TWARDOWSKI=13,DEVIL=2,["BABA JAGA"]=6,DRAGON=2,DWARF=12}
 
 local function nextShot()
   local s=scene
@@ -2286,6 +2349,7 @@ function playScene(name,after)
     for i=0,47 do palBase[i]=peek(0x03FC0+i) end
   end
   if not CAST then loadCast() end
+  initAudio()
   scene={shots=SCENES[name],n=0,after=after}
   nextShot()
   state="scene"
@@ -2313,22 +2377,16 @@ function drawScene()
   if OVERLAYS[sh.bd] then OVERLAYS[sh.bd](t) end
   if sh.fx=="fireworks" then fireworks(t) end
   local l=t>=s.start and sh.say and sh.say[s.line]
-  local talker=l and s.lineT//2<#l[2] and SPEAKER_WHO[l[1]]
+  local text=l and L(l[2],l[3])
+  local talker=l and s.lineT//2<#text and SPEAKER_WHO[l[1]]
   for _,a in ipairs(sh.act or {}) do
     local who,x,y,sc,left,moving=drawActor(a,t)
     drawCast(who,x-cx,y+dy,sc,t,left,moving,who==talker)
     if who=="dragon" and sh.fx=="fire" then dragonFire(x-cx,y+dy,sc,t) end
   end
-  local title=sh.title
-  if title then
-    title=CHAPTERS[title] and L("CHAPTER ","ROZDZIAŁ ")..title or L("THE END","KONIEC")
-    local w=textW(title,2)
-    print(title,120-w//2,56,12,false,2,true)
-    if CHAPTERS[sh.title] then
-      local name=chapterName(sh.title)
-      print(name,120-textW(name,1)//2,72,4,false,1,true)
-    end
-  end
+  if sh.fx=="flash" then puff(t-8) end
+  if sh.title then chapterCard(sh.title,t) end
+  if s.leave and s.iris then iris(s.leave/IRIS) end
   rect(0,0,240,BAR,0) rect(0,136-BAR,240,BAR,0)
   if sh.cap then
     local cap=L(sh.cap[1],sh.cap[2])
@@ -2337,7 +2395,7 @@ function drawScene()
 
   if s.leave then
     s.leave=s.leave-1
-    fadePal(s.leave/FADE)
+    if not s.iris then fadePal(s.leave/FADE) end
     if s.leave<=0 then nextShot() end
     return
   end
@@ -2345,11 +2403,11 @@ function drawScene()
   local done
   if sh.say then
     if t>=s.start then
-      local l=sh.say[s.line]
       s.lineT=s.lineT+1
-      print(L(l[1],SPEAKER_PL[l[1]]),8,119,4,false,1,true)
-      print(L(l[2],l[3]):sub(1,s.lineT//2),8,SUB_Y,12,false,1,true)
-      if s.lineT>LINE_FRAMES or (s.lineT>20 and btnp(4)) then
+      print(L(l[1],SPEAKER_PL[l[1]]),8,119,SPEAKER_COL[l[1]] or 4,false,1,true)
+      print(text:sub(1,s.lineT//2),8,SUB_Y,12,false,1,true)
+      if s.lineT%4==1 and s.lineT//2<#text then sfx(8,"C-6",4,2,5) end
+      if s.lineT>#text*2+READ_FRAMES or (s.lineT>20 and btnp(4)) then
         s.line,s.lineT=s.line+1,0
         done=s.line>#sh.say
       end
@@ -2359,9 +2417,14 @@ function drawScene()
   else
     done=t>=len or (t>20 and btnp(4))
   end
-  if done then s.leave=FADE end
+  if done then
+    local nxt=s.shots[s.n+1]
+    s.iris=nxt and nxt.title
+    s.leave=s.iris and IRIS or FADE
+  end
 end
 
+end
 -- story:end
 
 -- ── game intro: a fuse burns to a bomb, the bomb blows the logo onto the screen ──
