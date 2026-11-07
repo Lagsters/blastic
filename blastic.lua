@@ -2339,7 +2339,7 @@ local OVERLAYS={
       for k=0,3 do pix(174+k*3+sin(t/8+k)*2,50-(t+k*9)%24,12) end
     end
   end,
-  sleza=function(t) rising(t,10,118,44,12,30,4,2) rising(t,5,0,100,240,50,4,6) end,
+  sleza=function(t) rising(t,10,106,74,12,40,4,2) rising(t,5,0,100,240,50,4,6) end,
   cellars=function(t)  -- embers, and the cauldron bubbling
     rising(t,24,0,116,240,90,4,2)
     rising(t,5,34,78,24,10,5,12)
@@ -2454,16 +2454,16 @@ SCENES={
     {bd="sleza_far",len=220,pan=50,cap={"MOUNT SLEZA","ŚLĘŻA"}},
     {bd="forest",len=210,act={{"fox",-30,106,280,106,0,70,2,anim=true},
       {"dratewka",-10,108,130,108,80,200},{"sheep",-28,108,112,108,80,200}}},
-    {bd="sleza",len=200,cap={"KUPALA NIGHT","NOC KUPAŁY"},magic={124,80,150,88},
+    {bd="sleza",len=200,cap={"KUPALA NIGHT","NOC KUPAŁY"},magic={96,80,150,88},
       act={{"witch",56,104,56,104,0,0,2,anim=true,orbit=WITCH_A},{"witch",196,104,196,104,0,0,2,anim=true,orbit=WITCH_B},
-        {"jaga",112,108,112,108,0,0,2,false,anim=true},{"wanda",150,108,150,108,0,0,2,true}}},
+        {"jaga",84,108,84,108,0,0,2,false,anim=true},{"wanda",150,108,150,108,0,0,2,true}}},
     {bd="sleza",len=80,act={{"sheep",120,104,120,104,0,0,2,spark=0}}},
-    {bd="sleza",len=160,magic={124,80,150,88,80},act={{"wanda",150,108,150,108,0,0,2,true},
+    {bd="sleza",len=160,magic={96,80,150,88,80},act={{"wanda",150,108,150,108,0,0,2,true},
       {"witch",56,104,56,104,0,0,2,anim=true,hide=62,orbit=WITCH_A},{"witch",196,104,196,104,0,0,2,anim=true,hide=62,orbit=WITCH_B},
-      {"jaga",112,108,112,108,0,0,2,false,anim=true,hide=82},{"dratewka",-20,108,24,108,0,40},
+      {"jaga",84,108,84,108,0,0,2,false,anim=true,hide=82},{"dratewka",-20,108,24,108,0,40},
       {"sheep",36,94,112,100,44,80,2,arc=true,spark=0,hide=80},
       {"witch_fly",56,90,-60,10,82,130,2,true,show=82},{"witch_fly",196,90,320,0,82,130,2,false,show=82},
-      {"jaga_fly",112,90,280,-20,82,140,2,false,show=82}},booms={{112,96,80}}},
+      {"jaga_fly",84,90,280,-20,82,140,2,false,show=82}},booms={{112,96,80}}},
     {bd="sleza",act=closeUp("wanda",120,true),say={{"WANDA","I had them.","Dałabym sobie radę."}}},
     {bd="sleza",fx="flash",act=closeUp("jaga",130,true),
       say={{"BABA JAGA","Twardowski sends his regards!","Pozdrowienia od Twardowskiego!"}}},
