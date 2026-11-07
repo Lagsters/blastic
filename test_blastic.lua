@@ -1335,10 +1335,10 @@ local plain=frame_after(false)
 local mixed,bs=frame_after(true)
 local ducked=#plain==128
 for i=1,128 do
-  local want=math.max(-128,math.min(127,(plain[i]/2+bs[i])//1))
+  local want=math.max(-128,math.min(127,(plain[i]/2+bs[i]*0.6)//1))
   if math.abs(mixed[i]-want)>1 then ducked=false end
 end
-check("the music ducks to half under an explosion", ducked)
+check("the explosion plays at 0.6 over the music ducked to half", ducked)
 
 -- ── TEST: campaign ────────────────────────────────────────────────────────────
 

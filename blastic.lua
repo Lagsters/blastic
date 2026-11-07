@@ -291,7 +291,7 @@ end
 
 function sndExplosion()
   if SMP.boom then
-    playSample("boom",1,1,nil)
+    playSample("boom",1,0.6,nil)
     duck=#SMP.boom
   end
 end
