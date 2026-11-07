@@ -294,8 +294,9 @@ def bust_jaga(talk=False, blink=False):
     c.px([(10, 10), (16, 7), (22, 8), (27, 12), (8, 18), (29, 20), (12, 26)], WHITE)
     c.ellipse(20, 20, 7, 9, SKIN)
     c.poly([(13, 14), (16, 12), (14, 22)], LIGHT)                               # grey hair
-    c.poly([(26, 19), (33, 25), (31, 27), (26, 25)], SKIN)                      # nose
-    c.px([(31, 26)], ORANGE)
+    c.ellipse(28.5, 23, 4, 3.5, SKIN)                                           # a potato nose
+    c.px([(26, 25), (27, 26), (30, 26)], ORANGE)
+    c.px([(30, 21)], BROWN)                                                     # and its wart
     c.px([(18, 25), (19, 26), (20, 26), (21, 26)], ORANGE)                      # wrinkles
     for ex in (19, 24):
         c.px([(ex, 18), (ex + 1, 18)], K if blink else WHITE)
@@ -410,7 +411,10 @@ def figure_devil(pose=0):
 
 def figure_dwarf(pose=0):
     c = Canvas(16, 22)
-    legs(c, 7, 17, 20, pose, DARK, K, 2)
+    # short waddling steps: the feet stay under the coat
+    back, front = {0: (4, 7), 1: (3, 8), 2: (5, 7)}[pose]
+    c.rect(back, 19 - (pose == 2), back + 3, 21 - (pose == 2), K)
+    c.rect(front, 19, front + 3, 21, K)
     c.poly([(2, 18), (4, 11), (10, 11), (12, 18)], BLUE)
     c.ellipse(7, 9, 3, 3, SKIN)
     c.poly([(4, 10), (7, 17), (10, 10)], WHITE)
@@ -508,7 +512,7 @@ def figure_jaga(pose=0):
         c.poly([(14, 16), (22, 16), (24, 22), (16, 22)], GREY, light=False)    # skirt down
         c.ellipse(22, 5, 5, 5, RED)
         c.ellipse(23, 6, 3, 3, SKIN)
-        c.poly([(25, 5), (30, 9), (25, 8)], SKIN, light=False)
+        c.ellipse(26.5, 7.5, 2, 1.8, SKIN)
         c.px([(24, 5)], K)
         c.rect(23, 9, 30, 10, GREY, shade=False, light=False)                  # arm to the stick
         return c.outline()
@@ -518,7 +522,7 @@ def figure_jaga(pose=0):
     c.poly([(5, 31), (8, 14), (16, 12), (19, 31)], GREY)
     c.ellipse(13, 9, 6, 6, RED)
     c.ellipse(14, 10, 4, 4, SKIN)
-    c.poly([(17, 9), (21, 13), (17, 12)], SKIN, light=False)
+    c.ellipse(18, 11, 2, 1.8, SKIN)
     c.px([(15, 9)], K)
     if pose == 1:                                                               # arms up, casting
         c.poly([(15, 14), (20, 4), (22, 5), (18, 15)], GREY, light=False)

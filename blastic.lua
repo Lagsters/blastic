@@ -2394,8 +2394,6 @@ local function blades(fx,t,c)
   end)
 end
 local FOREGROUNDS={
-  rynek=function(fx) every(fx,170,20,lamp) every(fx,340,250,function(x)
-    rect(x,88,40,28,0) for k=0,4 do rect(x-2+k*9,82,9,6,k%2==0 and 2 or 12) end end) end,
   krakow=function(fx) every(fx,190,60,lamp) end,
   sleza=function(fx,t) blades(fx,t,0) every(fx,160,40,function(x) circ(x,116,12,0) circ(x+14,118,8,0) end) end,
   road=function(fx,t) blades(fx,t,0) every(fx,300,200,function(x) rect(x,70,3,46,0) rect(x-8,72,22,6,0) end) end,
