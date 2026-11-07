@@ -93,34 +93,37 @@ def make_chunk(ctype, bank, data: bytes) -> bytes:
 
 
 def ram_chunks(pieces) -> bytes:
-    """Chunks that load the pieces [(address, bytes)] into RAM; overlaps are an error."""
-    ram = {}
-    for addr, data in pieces:
-        for i, b in enumerate(data):
-            if addr + i in ram:
-                raise ValueError(f"RAM {hex(addr + i)} written twice")
-            ram[addr + i] = b
+    """Chunks that load the pieces [(bank, address, bytes)] into RAM (bank 0) or into the cart's
+    memory banks 1..7, which the code loads with sync(); overlaps are an error."""
     out = b''
-    for ctype, (base, size) in CHUNK_RAM.items():
-        used = [a for a in ram if base <= a < base + size]
-        if not used:
-            continue
-        body = bytes(ram.get(a, 0) for a in range(base, max(used) + 1))
-        out += make_chunk(ctype, 0, body)
-        for a in used:
-            del ram[a]
-    if ram:
-        raise ValueError(f"no chunk loads RAM {hex(min(ram))}")
+    for bank in sorted({p[0] for p in pieces}):
+        ram = {}
+        for _, addr, data in (p for p in pieces if p[0] == bank):
+            for i, b in enumerate(data):
+                if addr + i in ram:
+                    raise ValueError(f"RAM {hex(addr + i)} written twice in bank {bank}")
+                ram[addr + i] = b
+        for ctype, (base, size) in CHUNK_RAM.items():
+            used = [a for a in ram if base <= a < base + size]
+            if not used:
+                continue
+            body = bytes(ram.get(a, 0) for a in range(base, max(used) + 1))
+            out += make_chunk(ctype, bank, body)
+            for a in used:
+                del ram[a]
+        if ram:
+            raise ValueError(f"no chunk loads RAM {hex(min(ram))} in bank {bank}")
     return out
 
 
 def scene_pieces(blob: bytes):
+    """scenes.bin: per piece u8 bank, u24 address, u16 length, bytes."""
     pieces, i = [], 0
     while i < len(blob):
-        addr = int.from_bytes(blob[i:i + 3], 'little')
-        n = int.from_bytes(blob[i + 3:i + 5], 'little')
-        pieces.append((addr, blob[i + 5:i + 5 + n]))
-        i += 5 + n
+        addr = int.from_bytes(blob[i + 1:i + 4], 'little')
+        n = int.from_bytes(blob[i + 4:i + 6], 'little')
+        pieces.append((blob[i], addr, blob[i + 6:i + 6 + n]))
+        i += 6 + n
     return pieces
 
 
@@ -212,7 +215,7 @@ def lua_to_tic(lua_path: str, tic_path: str, extra: str = ''):
     pieces = []
     music = os.path.join(os.path.dirname(lua_path), MUSIC_BLOB)
     if os.path.exists(music):
-        pieces.append((MUSIC_RAM, open(music, 'rb').read()))
+        pieces.append((0, MUSIC_RAM, open(music, 'rb').read()))
     scenes = os.path.join(os.path.dirname(lua_path), SCENES_BLOB)
     if os.path.exists(scenes):
         pieces += scene_pieces(open(scenes, 'rb').read())

@@ -8,11 +8,12 @@ every scanline (BDR) into a smooth gradient, as the Amiga copper did.
 Shading is ordered dithering with a horizontal period of two pixels, so rows repeat and LZ
 packs them well.
 
-The cast (cast.py) comes with them. scenes.bin holds the pieces of RAM they occupy (REGIONS):
-per piece u24 address, u16 length and its bytes.
+The cast (cast.py) comes with them. scenes.bin holds the pieces of RAM they occupy (REGIONS, and
+the MAP of memory banks 1..7, which blastic.lua loads with sync): per piece u8 bank, u24 address,
+u16 length and its bytes.
 
-In RAM at 0x08000: u8 backdrop count, u8 sprite count; per backdrop u8 name length, the name,
-u24 address, 3 RGB colours (indices 1, 5, 7) and 3 RGB sky stops (top, middle, bottom); then
+In RAM at 0x08000 (bank 0): u8 backdrop count, u8 sprite count; per backdrop u8 name length, the
+name, u8 bank, u24 address, 3 RGB colours (indices 1, 5, 7) and 3 RGB sky stops (top, middle, bottom); then
 u24 address and u16 length of the cast, LZ-packed (see below). A backdrop is its 4-bit pixels (low nibble left), rows top down, packed by
 make_tic.lz_pack: c<128 copies the next c+1 bytes, c>=128 repeats c-125 bytes from u16
 distance back. A sprite is u8 name length,
@@ -578,6 +579,8 @@ def pack(img):
 # where the art may live in the cart's RAM: MAP, the SPRITES left after the music samples, and
 # the sound effect slots the game never writes (9..63)
 REGIONS = [(0x08000, 32640), (0x06400, 0x08000 - 0x06400), (0x100E4 + 9 * 66, 55 * 66)]
+# backdrops that do not fit there go to the MAP of the other memory banks
+BANKS = 8
 
 
 def preview_png(name, img, own, sky, preview):
@@ -626,35 +629,39 @@ def main():
             preview_png(name, img, own, sky, preview)
     castp = lz_pack(cast_runs(sprites))
     print(f"cast      {len(sprites)} sprites {len(castp):5d} B")
-    # the header and the cast in MAP, the backdrops wherever they fit, largest first, MAP last
-    head = 2 + sum(22 + len(n) for n, _, _ in pieces) + 5
-    used = [head + len(castp), 0, 0]
+    # the header and the cast in MAP, the backdrops wherever they fit, largest first: bank 0's
+    # regions, MAP last, then the MAP of banks 1..7; places are (bank, region)
+    places = [(0, 1), (0, 2), (0, 0)] + [(b, 0) for b in range(1, BANKS)]
+    head = 2 + sum(23 + len(n) for n, _, _ in pieces) + 5
+    used = {pl: 0 for pl in places}
+    used[(0, 0)] = head + len(castp)
     where = {}
     for name, packed, _ in sorted(pieces, key=lambda p: -len(p[1])):
-        for r in (1, 2, 0):
-            if used[r] + len(packed) <= REGIONS[r][1]:
-                where[name] = (r, used[r])
-                used[r] += len(packed)
+        for pl in places:
+            if used[pl] + len(packed) <= REGIONS[pl[1]][1]:
+                where[name] = (pl, used[pl])
+                used[pl] += len(packed)
                 break
         else:
             raise ValueError(f"no room for the backdrop {name}")
     table = bytearray([len(pieces), len(sprites)])
-    datas = [bytearray(u) for u in used]
+    datas = {pl: bytearray(u) for pl, u in used.items()}
     for name, packed, colours in pieces:
-        r, off = where[name]
-        table += bytes([len(name)]) + name.encode() + (REGIONS[r][0] + off).to_bytes(3, "little")
+        (bank, r), off = where[name]
+        table += bytes([len(name)]) + name.encode() + bytes([bank]) + (REGIONS[r][0] + off).to_bytes(3, "little")
         for h in colours:
             table += bytes(hexrgb(h))
-        datas[r][off:off + len(packed)] = packed
+        datas[(bank, r)][off:off + len(packed)] = packed
     table += (REGIONS[0][0] + head).to_bytes(3, "little") + len(castp).to_bytes(2, "little")
-    datas[0][:head + len(castp)] = table + castp
-    # the file: per region u24 address, u16 length, its bytes (make_tic.py puts them in chunks)
+    datas[(0, 0)][:head + len(castp)] = table + castp
+    # the file: per piece u8 bank, u24 address, u16 length, its bytes (make_tic.py puts them in chunks)
     blob = bytearray()
-    for (base, size), d in zip(REGIONS, datas):
+    for (bank, r), d in datas.items():
         if d:
-            blob += base.to_bytes(3, "little") + len(d).to_bytes(2, "little") + d
+            blob += bytes([bank]) + REGIONS[r][0].to_bytes(3, "little") + len(d).to_bytes(2, "little") + d
     open(out, "wb").write(blob)
-    print(f"{out}: " + ", ".join(f"{hex(b)} {u}/{s} B" for (b, s), u in zip(REGIONS, used)))
+    print(f"{out}: " + ", ".join(f"bank {b} {hex(REGIONS[r][0])} {u}/{REGIONS[r][1]} B"
+                               for (b, r), u in used.items() if u))
 
 
 if __name__ == "__main__":

@@ -1698,17 +1698,31 @@ env.mode="pvp"
 do
   local f=io.open("scenes.bin","rb")
   local blob=f:read("a") f:close()
-  local mem={}
+  local mem,banks={},{}
   local i=1
-  while i<=#blob do  -- scenes.bin: pieces of RAM, u24 address, u16 length, bytes
-    local at=blob:byte(i)|blob:byte(i+1)<<8|blob:byte(i+2)<<16
-    local n=blob:byte(i+3)|blob:byte(i+4)<<8
-    for k=1,n do mem[at+k-1]=blob:byte(i+4+k) end
-    i=i+5+n
+  while i<=#blob do  -- scenes.bin: pieces of RAM, u8 bank, u24 address, u16 length, bytes
+    local bank,at=blob:byte(i),blob:byte(i+1)|blob:byte(i+2)<<8|blob:byte(i+3)<<16
+    local n=blob:byte(i+4)|blob:byte(i+5)<<8
+    banks[bank]=banks[bank] or {}
+    table.insert(banks[bank],{at,blob:sub(i+6,i+5+n)})
+    i=i+6+n
   end
-  local outside=0
+  local function loadBank(bank,mapOnly)
+    if mapOnly then for a=0x08000,0x08000+32639 do mem[a]=nil end end
+    for _,piece in ipairs(banks[bank] or {}) do
+      if not mapOnly or piece[1]==0x08000 then
+        for k=1,#piece[2] do mem[piece[1]+k-1]=piece[2]:byte(k) end
+      end
+    end
+  end
+  loadBank(0)
+  local outside,syncs=0,0
   local g=fresh_game(function(a,v) mem[a]=v end,function() end)
   g.peek=function(a) return mem[a] or 0 end
+  g.sync=function(mask,bank)  -- the MAP of a memory bank replaces the MAP in RAM
+    syncs=syncs+1
+    if mask&4~=0 then loadBank(bank,true) end
+  end
   g.memset=function(d,v,n)
     if d<0x11164 or d+n>0x11164+11520 then outside=outside+1 end
     for i=0,n-1 do mem[d+i]=v end
@@ -1735,18 +1749,22 @@ do
   g.playScene("wroclaw",function() end)
   for _=1,30 do g.TIC() end
   check("the opening backdrop has sky at the top left", mem[20*120]==0xBB, tostring(mem[20*120]))
+  local extra=0
+  for b in pairs(banks) do if b>0 then extra=extra+1 end end
+  check("backdrops in other memory banks come in with sync", extra==0 or syncs>=extra, syncs.." syncs, "..extra.." banks")
+  loadBank(0,true)
   local painted,p={},0x08002
   for _=1,mem[0x08000] do
     local n=mem[p]
     local name={}
     for k=1,n do name[k]=string.char(mem[p+k]) end
-    painted[table.concat(name)]=p+1+n
-    p=p+1+n+21
+    painted[table.concat(name)]=p+1+n  -- its bank, address, colours 1, 5, 7, sky stops
+    p=p+1+n+22
   end
   local function sky(row) g.BDR(row) return ("%d,%d"):format(mem[0x03FC0+33] or 0,mem[0x03FC0+34] or 0) end
   check("the sky colour changes down the screen", sky(4+20)~=sky(4+110), sky(4+20).." / "..sky(4+110))
   local e=painted[g.SCENES.wroclaw[1].bd]
-  check("the sky starts from the backdrop's top colour", sky(4+20)==mem[e+12]..","..mem[e+13], sky(4+20))
+  check("the sky starts from the backdrop's top colour", sky(4+20)==mem[e+13]..","..mem[e+14], sky(4+20))
   local unknown={}
   for name,shots in pairs(g.SCENES) do
     for _,sh in ipairs(shots) do

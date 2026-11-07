@@ -4,16 +4,21 @@
 local RAM_OF={[1]=0x04000,[2]=0x06000,[4]=0x08000,[9]=0x100E4,[15]=0x11164}
 local f=assert(io.open(arg[1],"rb"))
 local cart=f:read("a") f:close()
-local mem,code={},nil
+local mem,code,banks={},nil,{}
 local p=1
 while p<=#cart do
   local b0,b1,b2=cart:byte(p,p+2)
-  local kind,size=b0&0x1f,b1|(b2<<8)
+  local kind,bank,size=b0&0x1f,b0>>5,b1|(b2<<8)
   local body=cart:sub(p+4,p+3+size)
   if kind==5 then code=body
-  elseif RAM_OF[kind] then for i=1,#body do mem[RAM_OF[kind]+i-1]=body:byte(i) end end
+  elseif RAM_OF[kind] then
+    banks[bank]=banks[bank] or {}
+    banks[bank][kind]=body
+    if bank==0 then for i=1,#body do mem[RAM_OF[kind]+i-1]=body:byte(i) end end
+  end
   p=p+4+size
 end
+local MAP_SIZE=32640
 assert(code,"no code chunk")
 
 local env={}
@@ -23,6 +28,11 @@ env.peek=function(a) return mem[a] or 0 end
 env.poke=function(a,v) mem[a]=v end
 env.memcpy=function(d,s,n) for i=0,n-1 do mem[d+i]=mem[s+i] end end
 env.memset=function(d,v,n) for i=0,n-1 do mem[d+i]=v end end
+env.sync=function(mask,bank)  -- as TIC-80 does: the whole MAP of that cart bank, zeros where none
+  if mask&4==0 then return end
+  local body=banks[bank] and banks[bank][4] or ""
+  for i=0,MAP_SIZE-1 do mem[0x08000+i]=i<#body and body:byte(i+1) or 0 end
+end
 env.btn=function() return false end
 local z=false
 env.btnp=function(b) return b==4 and z end

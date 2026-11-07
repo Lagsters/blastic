@@ -1,6 +1,6 @@
 """Tests of the cart builder's minifier: python test_make_tic.py (exit code 1 on failure)."""
 import sys
-from make_tic import minify, lz_pack, lz_unpack
+from make_tic import minify, lz_pack, lz_unpack, ram_chunks, make_chunk
 
 CASES = [
     ("comment after code", 'x=1 -- note\n', 'x=1\n'),
@@ -36,7 +36,12 @@ def main():
         ok = got == want
         failed += not ok
         print(f"  {'PASS' if ok else 'FAIL'}  {name}" + ("" if ok else f": {got!r} != {want!r}"))
-    print(f"  {len(CASES) + len(LZ_CASES) - failed} passed, {failed} failed")
+    # a piece of bank 1's MAP becomes a MAP chunk (4) of bank 1, next to bank 0's
+    chunks = ram_chunks([(0, 0x08000, b""), (1, 0x08000, b"")])
+    ok = chunks == make_chunk(4, 0, b"") + make_chunk(4, 1, b"")
+    failed += not ok
+    print(f"  {'PASS' if ok else 'FAIL'}  memory banks get chunks of their own: {chunks.hex()}")
+    print(f"  {len(CASES) + len(LZ_CASES) + 1 - failed} passed, {failed} failed")
     sys.exit(1 if failed else 0)
 
 

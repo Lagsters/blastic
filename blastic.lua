@@ -2179,7 +2179,6 @@ local function fadePal(k)
   for i=0,47 do poke(0x03FC0+i,palShot[i]*k//1) end
 end
 
-local function rgbAt(p) return {peek(p),peek(p+1),peek(p+2)} end
 local function word(p) return peek(p)|peek(p+1)<<8 end
 local function addr(p) return word(p)|peek(p+2)<<16 end
 
@@ -2194,15 +2193,19 @@ end
 -- unpacked once into castRuns, a Lua string (no RAM is left for it); CAST by name: {index of
 -- its runs in castRuns, width, height, x, y}
 local backdrops,castRuns
+local mapBank=0
 CAST=nil
 local function loadCast()
+  if mapBank~=0 then sync(4,0) mapBank=0 end
   backdrops,CAST={},{}
   local p=ART_RAM+2
   for _=1,peek(ART_RAM) do
     local name
     name,p=nameAt(p)
-    backdrops[name]=p
-    p=p+21
+    local e={peek(p),addr(p+1)}  -- bank, address, then the 18 colour bytes
+    for i=1,18 do e[2+i]=peek(p+3+i) end
+    backdrops[name]=e
+    p=p+22
   end
   local a,o,n=addr(p),{},0
   local e=a+word(p+3)
@@ -2258,11 +2261,13 @@ local function loadBackdrop(name)
   local e=backdrops[name]
   if not e then return false end
   for i,c in ipairs{1,5,7} do
-    for j=0,2 do palShot[c*3+j]=peek(e+3+(i-1)*3+j) end
+    for j=0,2 do palShot[c*3+j]=e[i*3+j] end
   end
-  sky={rgbAt(e+12),rgbAt(e+15),rgbAt(e+18)}
+  sky={{e[12],e[13],e[14]},{e[15],e[16],e[17]},{e[18],e[19],e[20]}}
+  -- the backdrops fill the MAP of several memory banks; bank 0's holds the cast and this table
+  if e[1]~=mapBank then sync(4,e[1]) mapBank=e[1] end
   -- LZ: c<128 copies the next c+1 bytes, c>=128 repeats c-125 bytes from u16 distance back
-  local src,dst=addr(e),BACKDROP_RAM
+  local src,dst=e[2],BACKDROP_RAM
   while dst<BACKDROP_RAM+BACKDROP_BYTES do
     local c=peek(src)
     if c<128 then memcpy(dst,src+1,c+1) src,dst=src+c+2,dst+c+1

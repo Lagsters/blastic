@@ -12,16 +12,29 @@ local function blob(path,at)
   for i=1,#s do mem[at+i-1]=s:byte(i) end
 end
 blob("music.bin",0x04000)
-do  -- scenes.bin: pieces of RAM, u24 address, u16 length, bytes
+-- scenes.bin: pieces of RAM, u8 bank, u24 address, u16 length, bytes; sync() swaps a bank's MAP in
+local banks={}
+do
   local f=assert(io.open("scenes.bin","rb"))
   local s=f:read("a") f:close()
   local i=1
   while i<=#s do
-    local at,n=s:byte(i)|s:byte(i+1)<<8|s:byte(i+2)<<16,s:byte(i+3)|s:byte(i+4)<<8
-    for k=1,n do mem[at+k-1]=s:byte(i+4+k) end
-    i=i+5+n
+    local bank,at=s:byte(i),s:byte(i+1)|s:byte(i+2)<<8|s:byte(i+3)<<16
+    local n=s:byte(i+4)|s:byte(i+5)<<8
+    banks[bank]=banks[bank] or {}
+    table.insert(banks[bank],{at,s:sub(i+6,i+5+n)})
+    i=i+6+n
   end
 end
+local function loadBank(bank,mapOnly)
+  if mapOnly then for a=0x08000,0x08000+32639 do mem[a]=nil end end
+  for _,piece in ipairs(banks[bank] or {}) do
+    if not mapOnly or piece[1]==0x08000 then
+      for k=1,#piece[2] do mem[piece[1]+k-1]=piece[2]:byte(k) end
+    end
+  end
+end
+loadBank(0)
 local SW="1a1c2c5d275db13e53ef7d57ffcd75a7f07038b764257179"..
   "29366f3b5dc941a6f673eff7f4f4f494b0c2566c86333c57"
 for i=0,47 do mem[0x03FC0+i]=tonumber(SW:sub(i*2+1,i*2+2),16) end
@@ -78,6 +91,7 @@ env.peek=function(a) return mem[a] or 0 end
 env.poke=function(a,v) mem[a]=math.floor(v) end
 env.memcpy=function(d,s,n) for i=0,n-1 do mem[d+i]=mem[s+i] end end
 env.memset=function(d,v,n) for i=0,n-1 do mem[d+i]=v end end
+env.sync=function(mask,bank) if mask&4~=0 then loadBank(bank,true) end end
 env.btn=function() return false end
 env.btnp=function() return false end
 env.sfx=function() end

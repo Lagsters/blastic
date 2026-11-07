@@ -48,8 +48,10 @@ Rozstrzygają każdy spór, w tej kolejności.
 | `test_make_tic.py` | testy minifikatora |
 | `music.bin` | próbki instrumentów (bas, perkusja, wybuch): IMA ADPCM, 7680 Hz, w RAM od `0x04000` |
 | `tools/music/instruments.py` | renderuje próbki (bas z GeneralUser GS, perkusja i wybuch z syntezy) do `music.bin` |
-| `scenes.bin` | malowane tła scenek fabularnych (RLE, 4 bity), w RAM od `0x08000` (MAP) |
-| `tools/scenes/paint.py` | maluje tła scenek w indeksach palety do `scenes.bin` (numpy, Pillow) |
+| `scenes.bin` | tła i postacie scenek (4 bity, LZ): w banku 0 MAP, koniec SPRITES i wolne sloty SFX, reszta teł w MAP banków 1–7, wczytywana przez `sync` |
+| `tools/scenes/paint.py` | maluje tła scenek w indeksach palety i pakuje je z postaciami do `scenes.bin` (numpy, Pillow) |
+| `tools/scenes/cast.py` | postacie scenek: zbliżenia i sylwetki w ruchu |
+| `tools/cart_run.lua` | test zbudowanego carta: chunki jak w TIC-80 (z bankami), intro, scenki w obu językach, bitwa |
 | `tools/film.lua`, `tools/film.py` | narzędzie dev: nagrywa intro i wszystkie scenki do MP4 albo arkusza klatek |
 | `tools/film_reel.lua` | doklejany przez `make_tic.py --films` do carta dev `films.tic` (scenki w pętli, nie do releasu) |
 | `sim_campaign.lua` | boty grają etapy kampanii: przejścia, czas, przyczyny śmierci |
