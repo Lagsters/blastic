@@ -226,6 +226,21 @@ def bust_wanda(talk=False, blink=False):
     return c.outline()
 
 
+def bust_witch(talk=False, blink=False):
+    """No close-up of its own: its head is the witches' head in their figures. The hair is DARK,
+    not K, which paste_head would take for the outline."""
+    c = Canvas(BW, BH)
+    hair = c.ellipse(18, 20, 12, 14, DARK)
+    hair_strands(c, hair | c.poly([(5, 20), (4, 40), (12, 40), (12, 22)], DARK), DARK)
+    c.ellipse(19, 18, 8, 10, SKIN)
+    hair_strands(c, c.poly([(10, 13), (13, 6), (24, 5), (29, 10), (22, 9), (15, 13)], DARK), DARK)
+    eyes(c, 19, 16, brow=K, lid=blink, iris=GREEN)
+    c.px([(26, 19), (27, 20)], ORANGE)
+    c.px([(17, 21), (18, 21)], ORANGE)
+    mouth(c, 20, 24, 4, talk)
+    return c.outline()
+
+
 def bust_krak(talk=False, blink=False):
     c = Canvas(BW, BH)
     c.poly([(0, 44), (3, 32), (12, 28), (24, 28), (33, 32), (36, 44)], RED)     # cloak
@@ -311,6 +326,33 @@ def bust_jaga(talk=False, blink=False):
     return c.outline()
 
 
+def paste_head(c, name, chin, cx, top):
+    """The head of a character's bust, at half size, on its figure: the same face in close-ups
+    and in walking shots. chin: the bust's row (design units) the head ends at; the bust's middle
+    (x 19) goes to the figure's x cx, its top to row top."""
+    b = globals()["bust_" + name]()[:chin * c.s]
+    h, w = b.shape[0] // 2 * 2, b.shape[1] // 2 * 2
+    small = np.full((h // 2, w // 2), T)
+    for y in range(0, h, 2):
+        for x in range(0, w, 2):
+            block = list(b[y:y + 2, x:x + 2].ravel())
+            if block.count(T) >= 3:
+                continue
+            if block.count(K) >= 2:
+                small[y // 2, x // 2] = K
+                continue
+            v = [col for col in block if col not in (T, K)] or [K]
+            small[y // 2, x // 2] = max(set(v), key=v.count)
+    # the bust's own outline goes: the figure's outline is drawn round both together
+    solid = np.pad(small != T, 1)
+    rim = (small == K) & ~(solid[:-2, 1:-1] & solid[2:, 1:-1] & solid[1:-1, :-2] & solid[1:-1, 2:])
+    small[rim] = T
+    x0, y0 = round((cx - 9.5) * c.s), round(top * c.s)
+    for y, x in zip(*np.nonzero(small != T)):
+        if 0 <= y + y0 < c.h and 0 <= x + x0 < c.w:
+            c.img[y + y0, x + x0] = small[y, x]
+
+
 # ── full figures: about 20x34, feet on the bottom row ────────────────────────
 # pose 0 stands, 1 is the stride of a step (feet apart), 2 its passing moment (feet together,
 # the back foot lifted); a walk alternates 1 and 2, and blastic.lua lifts the body on 2
@@ -339,15 +381,7 @@ def figure_dratewka(pose=0):
     legs(c, 10, 25, 32, pose, DARK)
     c.poly([(5, 26), (6, 15), (14, 15), (15, 26)], WHITE)
     c.poly([(6, 27), (7, 18), (13, 18), (14, 27)], BROWN)
-    c.ellipse(5, 11, 2, 4.5, BROWN, light=False)                               # as on his bust
-    c.ellipse(10, 10, 5, 5, SKIN)
-    c.poly([(4.5, 7), (6, 4), (11.5, 3.5), (15, 5.5), (14.5, 7), (10.5, 6), (6.5, 7.5)], BROWN)
-    c.ellipse(9, 4, 6, 2.2, RED)
-    c.poly([(11.5, 4.5), (17.5, 5), (16.5, 6), (11.5, 6)], RED, light=False)
-    c.px([(12, 2), (13, 1), (14, 0)], WHITE)
-    c.px([(11, 9), (13, 9)], K)
-    c.px([(14, 11)], ORANGE)
-    c.px([(11, 13), (12, 13)], RED)
+    paste_head(c, "dratewka", 28, 10, 1)
     c.poly([(12, 16), (14, 16), (15, 23), (13, 23)], WHITE, light=False)
     c.ellipse(14, 24, 1.5, 1.5, SKIN, shade=False)
     return c.outline()
@@ -359,13 +393,8 @@ def figure_wanda(pose=0):
     c.poly([(3, 32), (7, 18), (13, 18), (17, 32)], RED)
     c.rect(4, 31, 17, 32, WHITE, shade=False)
     c.poly([(5, 20), (6, 14), (14, 14), (15, 20)], WHITE)
-    c.ellipse(10, 9, 6, 6, YELLOW)
-    c.poly([(4, 10), (6, 24), (8, 24), (7, 10)], YELLOW, light=False)
-    c.ellipse(11, 9, 4, 5, SKIN)
-    c.rect(5, 3, 16, 5, GREEN, light=False)
-    c.px([(6, 3), (9, 2), (12, 2), (15, 3)], RED)
-    c.px([(12, 8), (14, 8)], K)
-    c.px([(12, 12), (13, 12)], RED)
+    c.poly([(3, 10), (5, 24), (8, 24), (8, 10)], YELLOW, light=False)
+    paste_head(c, "wanda", 29, 10, 0)
     return c.outline()
 
 
@@ -374,10 +403,7 @@ def figure_krak(pose=0):
     c.poly([(2, 34), (6, 14), (14, 14), (18, 34)], RED)
     c.rect(2, 32, 18, 34, WHITE, shade=False)
     c.rect(9, 15, 11, 32, WHITE, shade=False)
-    c.ellipse(10, 9, 5, 5, SKIN)
-    c.poly([(5, 10), (8, 19), (12, 20), (15, 10), (12, 13), (8, 13)], WHITE)
-    c.poly([(5, 5), (6, 0), (8, 3), (10, 0), (12, 3), (14, 0), (15, 5)], YELLOW)
-    c.px([(11, 8), (13, 8)], K)
+    paste_head(c, "krak", 30, 10, 0)
     return c.outline()
 
 
@@ -387,11 +413,7 @@ def figure_twardowski(pose=0):
     c.poly([(3, 31), (6, 14), (14, 14), (17, 31)], BLUE)
     c.poly([(8, 15), (12, 15), (11, 31), (9, 31)], RED, light=False)
     c.rect(5, 21, 15, 23, YELLOW, light=False)
-    c.ellipse(10, 9, 4, 5, SKIN)
-    c.poly([(9, 12), (4, 13), (9, 11), (13, 11), (17, 13), (13, 12)], K)
-    c.rect(6, 1, 15, 6, BROWN)
-    c.px([(14, 0), (15, -1), (16, 0)], WHITE)
-    c.px([(11, 8), (13, 8)], K)
+    paste_head(c, "twardowski", 28, 10, 0)
     return c.outline()
 
 
@@ -401,11 +423,7 @@ def figure_devil(pose=0):
     c.poly([(1, 26), (0, 20), (2, 18), (3, 24), (6, 27)], RED, light=False)      # tail
     c.poly([(4, 31), (7, 14), (15, 14), (18, 31)], DARK)
     c.poly([(9, 15), (13, 15), (12, 31), (10, 31)], RED, light=False)
-    c.ellipse(11, 9, 5, 5, RED)
-    c.poly([(7, 6), (5, 0), (8, 4)], K)
-    c.poly([(14, 4), (17, 0), (16, 6)], K)
-    c.poly([(9, 12), (4, 11), (9, 11), (14, 11), (19, 10), (14, 12)], K)
-    c.px([(12, 8), (14, 8)], YELLOW)
+    paste_head(c, "devil", 28, 11, 0)
     return c.outline()
 
 
@@ -510,22 +528,17 @@ def figure_jaga(pose=0):
         c.poly([(0, 12), (-2, 21), (8, 18), (8, 14)], YELLOW, light=False)     # bristles
         c.poly([(10, 16), (13, 6), (22, 5), (26, 16)], GREY)                   # hunched body
         c.poly([(14, 16), (22, 16), (24, 22), (16, 22)], GREY, light=False)    # skirt down
-        c.ellipse(22, 5, 5, 5, RED)
-        c.ellipse(23, 6, 3, 3, SKIN)
-        c.ellipse(26.5, 7.5, 2, 1.8, SKIN)
-        c.px([(24, 5)], K)
+        paste_head(c, "jaga", 30, 23, -4)
         c.rect(23, 9, 30, 10, GREY, shade=False, light=False)                  # arm to the stick
         return c.outline()
     c = Canvas(22, 32)
     c.rect(3, 6, 4, 32, BROWN, shade=False, light=False)                        # broom
     c.poly([(0, 32), (3, 24), (5, 24), (8, 32)], YELLOW, light=False)
     c.poly([(5, 31), (8, 14), (16, 12), (19, 31)], GREY)
-    c.ellipse(13, 9, 6, 6, RED)
-    c.ellipse(14, 10, 4, 4, SKIN)
-    c.ellipse(18, 11, 2, 1.8, SKIN)
-    c.px([(15, 9)], K)
+    paste_head(c, "jaga", 30, 13, 1)
     if pose == 1:                                                               # arms up, casting
-        c.poly([(15, 14), (20, 4), (22, 5), (18, 15)], GREY, light=False)
+        c.poly([(16, 15), (21, 7), (22, 9), (18, 16)], GREY, light=False)
+        c.ellipse(21, 7, 1.5, 1.5, SKIN, shade=False)
     return c.outline()
 
 
@@ -537,20 +550,16 @@ def figure_witch(pose=0):
         c.poly([(0, 12), (-2, 21), (8, 18), (8, 14)], YELLOW, light=False)
         c.poly([(11, 16), (14, 6), (22, 6), (25, 16)], GREEN)
         c.poly([(13, 16), (24, 16), (27, 22), (14, 21)], GREEN, light=False)
-        c.poly([(16, 1), (19, -2), (23, 2), (18, 12), (14, 12)], K)             # hair flying back
-        c.ellipse(20, 4, 3, 4, SKIN)
-        c.px([(21, 3)], K)
+        c.poly([(10, 4), (16, 0), (18, 10), (12, 12)], DARK, light=False)       # hair flying back
+        paste_head(c, "witch", 29, 20, -5)
         return c.outline()
     c = Canvas(22, 34)
     up = pose == 1
     c.rect(8, 31, 11, 34, K)
     c.rect(12, 31, 15, 34, K)
     c.poly([(3, 32), (7, 15), (14, 15), (18, 32)], GREEN)
-    c.poly([(6, 10), (5, 26), (9, 26), (10, 10)], K, light=False)               # long dark hair
-    c.ellipse(11, 9, 5, 6, K)
-    c.ellipse(12, 9, 4, 5, SKIN)
-    c.px([(13, 8), (15, 8)], K)
-    c.px([(13, 11), (14, 11)], RED)
+    c.poly([(5, 10), (4, 26), (9, 26), (10, 10)], DARK, light=False)            # long dark hair
+    paste_head(c, "witch", 29, 11, 0)
     arm = [(15, 16), (21, 4 if up else 24), (22, 6 if up else 26), (16, 19)]
     c.poly(arm, GREEN, light=False)
     c.ellipse(21.5, 3 if up else 26, 1.5, 1.5, SKIN, shade=False)
