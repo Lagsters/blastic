@@ -1699,7 +1699,13 @@ do
   local f=io.open("scenes.bin","rb")
   local blob=f:read("a") f:close()
   local mem={}
-  for i=1,#blob do mem[0x08000+i-1]=blob:byte(i) end
+  local i=1
+  while i<=#blob do  -- scenes.bin: pieces of RAM, u24 address, u16 length, bytes
+    local at=blob:byte(i)|blob:byte(i+1)<<8|blob:byte(i+2)<<16
+    local n=blob:byte(i+3)|blob:byte(i+4)<<8
+    for k=1,n do mem[at+k-1]=blob:byte(i+4+k) end
+    i=i+5+n
+  end
   local outside=0
   local g=fresh_game(function(a,v) mem[a]=v end,function() end)
   g.peek=function(a) return mem[a] or 0 end
@@ -1732,12 +1738,14 @@ do
   local function sky(row) g.BDR(row) return ("%d,%d"):format(mem[0x03FC0+33] or 0,mem[0x03FC0+34] or 0) end
   check("the sky colour changes down the screen", sky(4+20)~=sky(4+110), sky(4+20).." / "..sky(4+110))
   check("the sky starts from the backdrop's top colour",
-    sky(4+20)==blob:byte(15+blob:byte(3))..","..blob:byte(16+blob:byte(3)), sky(4+20))
-  local painted,p={},3
-  for _=1,blob:byte(1) do
-    local n=blob:byte(p)
-    painted[blob:sub(p+1,p+n)]=true
-    p=p+1+n+20
+    sky(4+20)==mem[0x08000+2+1+mem[0x08002]+12]..","..mem[0x08000+2+1+mem[0x08002]+13], sky(4+20))
+  local painted,p={},0x08002
+  for _=1,mem[0x08000] do
+    local n=mem[p]
+    local name={}
+    for k=1,n do name[k]=string.char(mem[p+k]) end
+    painted[table.concat(name)]=true
+    p=p+1+n+21
   end
   local unknown={}
   for name,shots in pairs(g.SCENES) do

@@ -8,11 +8,12 @@ every scanline (BDR) into a smooth gradient, as the Amiga copper did.
 Shading is ordered dithering with a horizontal period of two pixels, so rows repeat and LZ
 packs them well.
 
-The cast (cast.py) follows the backdrops.
+The cast (cast.py) comes with them. scenes.bin holds the pieces of RAM they occupy (REGIONS):
+per piece u24 address, u16 length and its bytes.
 
-Layout: u8 backdrop count, u8 sprite count; per backdrop u8 name length, the name, u16 offset
-(from the start of the blob), 3 RGB colours (indices 1, 5, 7) and 3 RGB sky stops (top,
-middle, bottom); then u16 offset and u16 length of the cast, LZ-packed (see below). A backdrop is its 4-bit pixels (low nibble left), rows top down, packed by
+In RAM at 0x08000: u8 backdrop count, u8 sprite count; per backdrop u8 name length, the name,
+u24 address, 3 RGB colours (indices 1, 5, 7) and 3 RGB sky stops (top, middle, bottom); then
+u24 address and u16 length of the cast, LZ-packed (see below). A backdrop is its 4-bit pixels (low nibble left), rows top down, packed by
 make_tic.lz_pack: c<128 copies the next c+1 bytes, c>=128 repeats c-125 bytes from u16
 distance back. A sprite is u8 name length,
 the name, u8 width, height, x and y offset (of a patch over its bust), then per row runs of
@@ -458,36 +459,27 @@ def pack(img):
     return bytes((img[:, 0::2] | (img[:, 1::2] << 4)).flatten())
 
 
-def main():
-    out = sys.argv[1]
-    preview = sys.argv[sys.argv.index("--preview") + 1] if "--preview" in sys.argv else None
-    sprites = cast.sprites()
-    head = 2 + sum(21 + len(n) for n in NAMES) + 4
-    table, data = bytearray([len(NAMES), len(sprites)]), bytearray()
-    for name in NAMES:
-        img, own, sky = globals()[name]()
-        raw = pack(img)
-        packed = lz_pack(raw)
-        assert lz_unpack(packed) == raw
-        table += bytes([len(name)]) + name.encode() + (head + len(data)).to_bytes(2, "little")
-        for h in own + sky:
-            table += bytes(hexrgb(h))
-        data += packed
-        print(f"{name:9s} {len(packed):5d} B")
-        if preview:
-            os.makedirs(preview, exist_ok=True)
-            pal = {**SHARED, 1: own[0], 5: own[1], 7: own[2]}
-            rgb = np.zeros((H, W, 3), np.uint8)
-            for i, h in pal.items():
-                rgb[img == i] = hexrgb(h)
-            stops = [hexrgb(h) for h in sky]
-            for y in range(H):
-                k = y / (H - 1) * 2
-                a, b = stops[int(min(k, 1.999))], stops[int(min(k, 1.999)) + 1]
-                f = k - int(min(k, 1.999))
-                rgb[y][img[y] == SKY] = [int(a[c] + (b[c] - a[c]) * f) for c in range(3)]
-            Image.fromarray(rgb).resize((W * 3, H * 3), Image.NEAREST).save(
-                os.path.join(preview, name + ".png"))
+# where the art may live in the cart's RAM: MAP, the SPRITES left after the music samples, and
+# the sound effect slots the game never writes (9..63)
+REGIONS = [(0x08000, 32640), (0x06400, 0x08000 - 0x06400), (0x100E4 + 9 * 66, 55 * 66)]
+
+
+def preview_png(name, img, own, sky, preview):
+    os.makedirs(preview, exist_ok=True)
+    pal = {**SHARED, 1: own[0], 5: own[1], 7: own[2]}
+    rgb = np.zeros((H, W, 3), np.uint8)
+    for i, h in pal.items():
+        rgb[img == i] = hexrgb(h)
+    stops = [hexrgb(h) for h in sky]
+    for y in range(H):
+        k = y / (H - 1) * 2
+        a, b = stops[int(min(k, 1.999))], stops[int(min(k, 1.999)) + 1]
+        f = k - int(min(k, 1.999))
+        rgb[y][img[y] == SKY] = [int(a[c] + (b[c] - a[c]) * f) for c in range(3)]
+    Image.fromarray(rgb).resize((W * 3, H * 3), Image.NEAREST).save(os.path.join(preview, name + ".png"))
+
+
+def cast_runs(sprites):
     raw = bytearray()
     for name, (ox, oy, px) in sprites.items():
         raw += bytes([len(name)]) + name.encode() + bytes([px.shape[1], px.shape[0], ox, oy])
@@ -499,12 +491,54 @@ def main():
                     n += 1
                 raw.append(int(row[x]) << 4 | (n - 1))
                 x += n
-    packed = lz_pack(bytes(raw))
-    print(f"cast      {len(sprites)} sprites {len(packed):5d} B")
-    table += (head + len(data)).to_bytes(2, "little") + len(packed).to_bytes(2, "little")
-    blob = table + data + packed
+    return bytes(raw)
+
+
+def main():
+    out = sys.argv[1]
+    preview = sys.argv[sys.argv.index("--preview") + 1] if "--preview" in sys.argv else None
+    sprites = cast.sprites()
+    pieces = []  # (name, packed, colours)
+    for name in NAMES:
+        img, own, sky = globals()[name]()
+        raw = pack(img)
+        packed = lz_pack(raw)
+        assert lz_unpack(packed) == raw
+        pieces.append((name, packed, own + sky))
+        print(f"{name:9s} {len(packed):5d} B")
+        if preview:
+            preview_png(name, img, own, sky, preview)
+    castp = lz_pack(cast_runs(sprites))
+    print(f"cast      {len(sprites)} sprites {len(castp):5d} B")
+    # the header and the cast in MAP, the backdrops wherever they fit, largest first, MAP last
+    head = 2 + sum(22 + len(n) for n, _, _ in pieces) + 5
+    used = [head + len(castp), 0, 0]
+    where = {}
+    for name, packed, _ in sorted(pieces, key=lambda p: -len(p[1])):
+        for r in (1, 2, 0):
+            if used[r] + len(packed) <= REGIONS[r][1]:
+                where[name] = (r, used[r])
+                used[r] += len(packed)
+                break
+        else:
+            raise ValueError(f"no room for the backdrop {name}")
+    table = bytearray([len(pieces), len(sprites)])
+    datas = [bytearray(u) for u in used]
+    for name, packed, colours in pieces:
+        r, off = where[name]
+        table += bytes([len(name)]) + name.encode() + (REGIONS[r][0] + off).to_bytes(3, "little")
+        for h in colours:
+            table += bytes(hexrgb(h))
+        datas[r][off:off + len(packed)] = packed
+    table += (REGIONS[0][0] + head).to_bytes(3, "little") + len(castp).to_bytes(2, "little")
+    datas[0][:head + len(castp)] = table + castp
+    # the file: per region u24 address, u16 length, its bytes (make_tic.py puts them in chunks)
+    blob = bytearray()
+    for (base, size), d in zip(REGIONS, datas):
+        if d:
+            blob += base.to_bytes(3, "little") + len(d).to_bytes(2, "little") + d
     open(out, "wb").write(blob)
-    print(f"{out}: {len(blob)} B")
+    print(f"{out}: " + ", ".join(f"{hex(b)} {u}/{s} B" for (b, s), u in zip(REGIONS, used)))
 
 
 if __name__ == "__main__":

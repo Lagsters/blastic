@@ -12,7 +12,16 @@ local function blob(path,at)
   for i=1,#s do mem[at+i-1]=s:byte(i) end
 end
 blob("music.bin",0x04000)
-blob("scenes.bin",0x08000)
+do  -- scenes.bin: pieces of RAM, u24 address, u16 length, bytes
+  local f=assert(io.open("scenes.bin","rb"))
+  local s=f:read("a") f:close()
+  local i=1
+  while i<=#s do
+    local at,n=s:byte(i)|s:byte(i+1)<<8|s:byte(i+2)<<16,s:byte(i+3)|s:byte(i+4)<<8
+    for k=1,n do mem[at+k-1]=s:byte(i+4+k) end
+    i=i+5+n
+  end
+end
 local SW="1a1c2c5d275db13e53ef7d57ffcd75a7f07038b764257179"..
   "29366f3b5dc941a6f673eff7f4f4f494b0c2566c86333c57"
 for i=0,47 do mem[0x03FC0+i]=tonumber(SW:sub(i*2+1,i*2+2),16) end

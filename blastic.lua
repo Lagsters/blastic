@@ -2077,6 +2077,7 @@ end
 
 local function rgbAt(p) return {peek(p),peek(p+1),peek(p+2)} end
 local function word(p) return peek(p)|peek(p+1)<<8 end
+local function addr(p) return word(p)|peek(p+2)<<16 end
 
 local function nameAt(p)
   local s={}
@@ -2084,7 +2085,8 @@ local function nameAt(p)
   return table.concat(s),p+peek(p)+1
 end
 
--- backdrops by name: the address of their table entry. The cast is LZ-packed in the cart and
+-- backdrops by name: the address of their table entry (the art is spread over MAP, the end of
+-- SPRITES and spare SFX slots; tools/scenes/paint.py). The cast is LZ-packed in the cart and
 -- unpacked once into castRuns, a Lua string (no RAM is left for it); CAST by name: {index of
 -- its runs in castRuns, width, height, x, y}
 local backdrops,castRuns
@@ -2096,10 +2098,10 @@ local function loadCast()
     local name
     name,p=nameAt(p)
     backdrops[name]=p
-    p=p+20
+    p=p+21
   end
-  local a,o,n=ART_RAM+word(p),{},0
-  local e=a+word(p+2)
+  local a,o,n=addr(p),{},0
+  local e=a+word(p+3)
   while a<e do
     local c=peek(a)
     if c<128 then
@@ -2152,11 +2154,11 @@ local function loadBackdrop(name)
   local e=backdrops[name]
   if not e then return false end
   for i,c in ipairs{1,5,7} do
-    for j=0,2 do palShot[c*3+j]=peek(e+2+(i-1)*3+j) end
+    for j=0,2 do palShot[c*3+j]=peek(e+3+(i-1)*3+j) end
   end
-  sky={rgbAt(e+11),rgbAt(e+14),rgbAt(e+17)}
+  sky={rgbAt(e+12),rgbAt(e+15),rgbAt(e+18)}
   -- LZ: c<128 copies the next c+1 bytes, c>=128 repeats c-125 bytes from u16 distance back
-  local src,dst=ART_RAM+word(e),BACKDROP_RAM
+  local src,dst=addr(e),BACKDROP_RAM
   while dst<BACKDROP_RAM+BACKDROP_BYTES do
     local c=peek(src)
     if c<128 then memcpy(dst,src+1,c+1) src,dst=src+c+2,dst+c+1

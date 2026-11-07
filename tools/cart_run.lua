@@ -1,7 +1,7 @@
 -- Smoke test of a built cart: loads its chunks into RAM the way TIC-80 does, runs its code with
 -- the drawing API mocked, plays the intro, every story scene and a battle.
 -- Usage: lua tools/cart_run.lua <cart.tic>   (exit code 1 on failure)
-local RAM_OF={[1]=0x04000,[2]=0x06000,[4]=0x08000,[15]=0x11164}
+local RAM_OF={[1]=0x04000,[2]=0x06000,[4]=0x08000,[9]=0x100E4,[15]=0x11164}
 local f=assert(io.open(arg[1],"rb"))
 local cart=f:read("a") f:close()
 local mem,code={},nil

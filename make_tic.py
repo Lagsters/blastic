@@ -12,12 +12,11 @@ CHUNK_DEFAULT = 17
 CHUNK_CODE    = 5
 CODE_LIMIT    = 65535
 MUSIC_BLOB    = 'music.bin'
-# The music samples land in RAM from 0x04000 (TILES, then SPRITES), where blastic.lua reads them.
-MUSIC_CHUNKS  = [(1, 8192), (2, 8192)]
-# The scene backdrops land in MAP RAM (0x08000).
+MUSIC_RAM     = 0x04000  # the samples, where blastic.lua reads them
+# The scene art (tools/scenes/paint.py): pieces of RAM, each u24 address, u16 length, bytes.
 SCENES_BLOB   = 'scenes.bin'
-CHUNK_MAP     = 4
-MAP_SIZE      = 32640
+# chunks that load into RAM: type -> (address, size)
+CHUNK_RAM     = {1: (0x04000, 8192), 2: (0x06000, 8192), 4: (0x08000, 32640), 9: (0x100E4, 4224)}
 FILM_REEL     = os.path.join('tools', 'film_reel.lua')
 # The story section of the code (scenes and their texts) lands LZ-packed in MUSIC PATTERNS RAM,
 # which the PCM tracker never uses, and is unpacked and loaded from there: it does not count
@@ -93,16 +92,36 @@ def make_chunk(ctype, bank, data: bytes) -> bytes:
     return struct.pack('<I', val) + data
 
 
-def music_chunks(blob: bytes) -> bytes:
-    if len(blob) > sum(size for _, size in MUSIC_CHUNKS):
-        raise ValueError(f"Music too large: {len(blob)} bytes")
-    out, pos = b'', 0
-    for ctype, size in MUSIC_CHUNKS:
-        part = blob[pos:pos + size]
-        if part:
-            out += make_chunk(ctype, 0, part)
-        pos += size
+def ram_chunks(pieces) -> bytes:
+    """Chunks that load the pieces [(address, bytes)] into RAM; overlaps are an error."""
+    ram = {}
+    for addr, data in pieces:
+        for i, b in enumerate(data):
+            if addr + i in ram:
+                raise ValueError(f"RAM {hex(addr + i)} written twice")
+            ram[addr + i] = b
+    out = b''
+    for ctype, (base, size) in CHUNK_RAM.items():
+        used = [a for a in ram if base <= a < base + size]
+        if not used:
+            continue
+        body = bytes(ram.get(a, 0) for a in range(base, max(used) + 1))
+        out += make_chunk(ctype, 0, body)
+        for a in used:
+            del ram[a]
+    if ram:
+        raise ValueError(f"no chunk loads RAM {hex(min(ram))}")
     return out
+
+
+def scene_pieces(blob: bytes):
+    pieces, i = [], 0
+    while i < len(blob):
+        addr = int.from_bytes(blob[i:i + 3], 'little')
+        n = int.from_bytes(blob[i + 3:i + 5], 'little')
+        pieces.append((addr, blob[i + 5:i + 5 + n]))
+        i += 5 + n
+    return pieces
 
 
 def long_string_end(code: str, i: int):
@@ -190,15 +209,14 @@ def lua_to_tic(lua_path: str, tic_path: str, extra: str = ''):
     if len(code_bytes) > CODE_LIMIT:
         raise ValueError(f"Code too large: {len(code_bytes)} bytes (max {CODE_LIMIT})")
     data = make_chunk(CHUNK_DEFAULT, 0, b'')
+    pieces = []
     music = os.path.join(os.path.dirname(lua_path), MUSIC_BLOB)
     if os.path.exists(music):
-        data += music_chunks(open(music, 'rb').read())
+        pieces.append((MUSIC_RAM, open(music, 'rb').read()))
     scenes = os.path.join(os.path.dirname(lua_path), SCENES_BLOB)
     if os.path.exists(scenes):
-        blob = open(scenes, 'rb').read()
-        if len(blob) > MAP_SIZE:
-            raise ValueError(f"Scenes too large: {len(blob)} bytes (max {MAP_SIZE})")
-        data += make_chunk(CHUNK_MAP, 0, blob)
+        pieces += scene_pieces(open(scenes, 'rb').read())
+    data += ram_chunks(pieces)
     if story_bytes:
         data += make_chunk(CHUNK_PATTERNS, 0, story_bytes)
     data += make_chunk(CHUNK_CODE, 0, code_bytes)
