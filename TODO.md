@@ -1,5 +1,17 @@
 # Stan prac
 
+## Sesja 2026-11-07 (gałąź `amiga-music`, scenki fabularne)
+- Zrobione: fabuła „Legenda o siarce” (Wrocław, Ślęża, Kraków, piekło) w pięciu filmach,
+  intro, menu z językiem (EN/PL), nastroje muzyki; tła szczegółowe i realistyczne; postacie
+  realistyczne ze szkieletu (`tools/scenes/body.py`): chód biomechaniczny, 8 klatek na cykl,
+  stopa się nie ślizga, rzuty i skoki z ziemską grawitacją; zbliżenia z tego samego modelu.
+- Grafika w bankach pamięci TIC-80: postacie w banku 0, tła w bankach 1–7 (`sync`, raz na
+  klatkę); sprawdzone w TIC-80 1.4.1. Nie sprawdzone w rdzeniu Melancholy.
+- Narzędzia dev: `lua tools/film.lua <dir>` + `python tools/film.py` (MP4 z dźwiękiem),
+  `python make_tic.py --films` (cart `films.tic`).
+- Do oceny przez człowieka: wygląd postaci i zbliżeń, tempo filmów, hejnał jako dźwięk.
+- NASTĘPNY KROK: ocena właściciela; issue dla scenek; sprawdzenie banków w Melancholy; PR po `audit`.
+
 ## Sesja 2026-11-06 (gałąź `amiga-music`)
 - Zrobione: 60-sekundowa piosenka w klimacie Jaguar XJ220 (bas z próbek, synth, perkusja) z
   `tools/music/compose.py`, konwerter WAV → IMA ADPCM z listą kolejności taktów
