@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Turn the frames recorded by tools/film.lua into a video or a contact sheet.
 
-python tools/film.py <dir> <out.mp4> [fps=30]     needs ffmpeg on PATH
+python tools/film.py <dir> <out.mp4> [fps=30]     needs ffmpeg on PATH; muxes audio.raw in
 python tools/film.py <dir> <out.png> --sheet N    every N-th frame on one sheet
 Text is drawn with Pillow's font, so it looks different from TIC-80's.
 """
@@ -51,9 +51,11 @@ def main():
         sheet.save(out)
         return
     fps = sys.argv[3] if len(sys.argv) > 3 else "30"
+    audio = ["-f", "u8", "-ar", "7680", "-ac", "1", "-i", f"{d}/audio.raw", "-c:a", "aac", "-b:a", "128k",
+             "-shortest"]
     ff = subprocess.Popen(["ffmpeg", "-y", "-loglevel", "error", "-f", "rawvideo", "-pix_fmt", "rgb24",
-                           "-s", f"{FW * ZOOM}x{FH * ZOOM}", "-r", fps, "-i", "-", "-pix_fmt", "yuv420p",
-                           "-c:v", "libx264", "-crf", "18", out], stdin=subprocess.PIPE)
+                           "-s", f"{FW * ZOOM}x{FH * ZOOM}", "-r", fps, "-i", "-"] + audio +
+                          ["-pix_fmt", "yuv420p", "-c:v", "libx264", "-crf", "18", out], stdin=subprocess.PIPE)
     for im in frames(d):
         ff.stdin.write(im.tobytes())
     ff.stdin.close()

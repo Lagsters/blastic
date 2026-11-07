@@ -1321,6 +1321,26 @@ local wrapped=false
 for _,s in ipairs(me.musicSeqs) do if s.n==1 then wrapped=true end end
 check("after the last song the first comes back", wrapped)
 
+-- a scene's mood: its own song fades in over the playlist, and the playlist comes back after
+do
+  local e=music_game(blob)
+  e.startMusic()
+  for _=1,10 do e.TIC() end
+  local before=e.musicSeqs[1]
+  e.musicMood("calm")
+  local mood=e.musicSeqs[#e.musicSeqs]
+  check("a mood starts its own song", mood.song==e.MOODS.calm and mood.fade>0)
+  check("a mood fades the playlist out", before.fade<0)
+  for _=1,120 do e.TIC() end
+  local alive=false
+  for _,s in ipairs(e.musicSeqs) do if s==before then alive=true end end
+  check("the faded playlist song stops", not alive)
+  e.musicMood(nil)
+  local back=e.musicSeqs[#e.musicSeqs]
+  check("after the mood the playlist plays on", back.song==e.SONGS[before.n%#e.SONGS+1] and mood.fade<0,
+    tostring(back.n))
+end
+
 -- the music ducks to half under an explosion
 local function frame_after(boom_it)
   local e,st=music_game(blob)

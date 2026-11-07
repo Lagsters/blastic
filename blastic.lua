@@ -190,11 +190,14 @@ local PROGS={
 -- o slap an octave up, B/F slap -2/-1; the last bar of every 8 plays the fill
 local RIFF_NOTE={n={0,"bass"},g={0,"ghost"},p={0,"slap"},b={-2,"bass"},f={-5,"bass"},d={-4,"bass"},
   u={3,"bass"},w={2,"bass"},o={12,"slap"},B={-2,"slap"},F={-1,"slap"}}
-local RIFFS={"n.gp.ngb.npgf.bp","n.n.gpn.b.npg.fp","n..gn.pgn..gb.op"}
+local RIFFS={"n.gp.ngb.npgf.bp","n.n.gpn.b.npg.fp","n..gn.pgn..gb.op","n.......n.......","n..n..n.n..n..ng"}
 local FILL="ngpgbdfpbfpuwnBF"
 -- drums: kick/snare line (K kick, S snare, X both) and hat line (H loud, h soft, O open)
 local DRUMS={{"K...S.K...K.S...","HhHhHhOhHhHhHhOh"},{"K...X...K...X...","..H...H...H...H."},
-  {"K.....K.S.....K.","HhHhHhHhHhHhHhHh"}}
+  {"K.....K.S.....K.","HhHhHhHhHhHhHhHh"},{"................","........h......."},
+  {"K..KS..KK..KS.KS","H.H.H.H.H.H.H.H."}}
+-- the story scenes' moods, songs of their own: a still night, a threat, a feast
+MOODS={calm={92,38,4,4,4,3},tension={140,36,1,5,5,7},joy={136,43,3,2,1,12}}
 local RHYTHMS={{{0,3},{3,3},{6,2},{8,6}},{{0,2},{2,2},{4,4},{8,8}},{{0,3},{4,2},{6,2},{8,4},{12,4}}}
 
 local voices,duck={},0
@@ -232,10 +235,11 @@ local function melody(song)
   return mel
 end
 
-function startSong(n,fadeIn)
-  local song=SONGS[n]
+-- song n of the playlist, or a mood song played in its place (it repeats until the mood ends)
+function startSong(n,fadeIn,song)
+  song=song or SONGS[n]
   local spb=RATE*60/song[1]/4
-  local seq={n=n,song=song,bar=1,step=0,cnt=0,spb=spb,mel=melody(song),
+  local seq={n=n,song=song,mood=song~=SONGS[n],bar=1,step=0,cnt=0,spb=spb,mel=melody(song),
     gain=fadeIn and 0 or 1,fade=fadeIn and 1/(32*spb) or 0}
   musicSeqs[#musicSeqs+1]=seq
   return seq
@@ -275,12 +279,20 @@ local function tickSeq(seq)
       seq.step=0
       seq.bar=seq.bar+1
       if seq.bar==SONG_BARS-1 and not seq.next then
-        seq.next=startSong(seq.n%#SONGS+1,true)
+        seq.next=seq.mood and startSong(seq.n,true,seq.song) or startSong(seq.n%#SONGS+1,true)
         seq.fade=-1/(32*seq.spb)
       end
     end
   end
   seq.gain=math.max(0,math.min(1,seq.gain+seq.fade))
+end
+
+-- the mood's song (or the playlist again for nil) fades in over whatever plays
+function musicMood(name)
+  local cur=musicSeqs[#musicSeqs]
+  if not cur or (cur.mood and MOODS[name]==cur.song) or (not name and not cur.mood) then return end
+  for _,s in ipairs(musicSeqs) do s.next,s.stop,s.fade=true,true,-1/(16*s.spb) end
+  if name then startSong(cur.n,true,MOODS[name]) else startSong(cur.n%#SONGS+1,true) end
 end
 
 function startMusic()
@@ -326,7 +338,9 @@ local function updateMusic()
   for _,v in ipairs(voices) do if not v.dead then live[#live+1]=v end end
   voices=live
   local playing={}
-  for _,s in ipairs(musicSeqs) do if s.bar<=SONG_BARS or s.gain>0 then playing[#playing+1]=s end end
+  for _,s in ipairs(musicSeqs) do
+    if s.gain>0 or (s.bar<=SONG_BARS and not s.stop) then playing[#playing+1]=s end
+  end
   musicSeqs=playing
 end
 
@@ -2400,6 +2414,7 @@ SCENES={
   },
 }
 SCENE_OF_CHAPTER={"wroclaw","sleza","krakow","cellars"}
+local SCENE_MOOD={sleza="calm",krakow="tension",cellars="tension",ending="joy"}
 
 local scene,backdrop,shown
 local READ_FRAMES,FADE=100,12  -- frames to read a line once typed; fade between shots
@@ -2412,6 +2427,7 @@ local function nextShot()
   if not sh then
     palShot,sky=palBase,nil
     fadePal(1)
+    musicMood(nil)
     scene=nil
     s.after()
     return
@@ -2438,6 +2454,14 @@ function showBackdrop(name)
   return backdrop
 end
 
+-- a sprite of the cast with its feet at x,y; false when the cart has no cast
+function castSprite(name,x,y,left)
+  local sp=CAST and CAST[name]
+  if not sp then return false end
+  sprite(name,x-sp[2]//2,y-sp[3],left)
+  return true
+end
+
 function hideBackdrop()
   if not palBase then return end
   palShot,sky,shown=palBase,nil,nil
@@ -2454,6 +2478,7 @@ function playScene(name,after)
   if not CAST then loadCast() end
   initAudio()
   scene={shots=SCENES[name],n=0,after=after}
+  musicMood(SCENE_MOOD[name])
   nextShot()
   state="scene"
 end
@@ -2588,7 +2613,7 @@ local function drawIntro()
     cls(12)
   else
     local b=t-INTRO_BOOM
-    nightSky(t)
+    if not showBackdrop("night") then nightSky(t) end
     if b<60 then
       for k=0,2 do circ(120,70,math.max(0,b*4-k*14),({2,3,4})[k+1]) end
       circ(120,70,math.max(0,b*4-48),0)
@@ -2613,13 +2638,14 @@ end
 
 local mapAnim
 local REGION_COL={6,7,13,15}
+local MAP_BACKDROP={"rynek","sleza","wawel","cellars"}
 
 -- the chapter's 25 stages as a snake of five rows
 local function nodePos(n)
   local i=(n-1)%CHAPTER_LEN
   local row,col=i//5,i%5
   if row%2==1 then col=4-col end
-  return 40+col*40,40+row*18
+  return 40+col*40,54+row*15
 end
 
 function showMap(n)
@@ -2632,25 +2658,41 @@ function drawWorldMap()
   m.t=m.t+1
   local st=STAGES[m.n]
   local first=(st[1]-1)*CHAPTER_LEN+1
-  cls(REGION_COL[st[1]])
+  cls(0)
+  if showBackdrop(MAP_BACKDROP[st[1]]) then
+    for y=20,115,2 do line(0,y,239,y,0) end  -- scanlines dim the place under the path
+  else
+    cls(REGION_COL[st[1]])
+  end
+  -- a dotted road of stages; cleared ones gilded, bosses larger
   for i=first,first+CHAPTER_LEN-2 do
     local x0,y0=nodePos(i) local x1,y1=nodePos(i+1)
-    line(x0,y0,x1,y1,12)
+    for d=0,9 do
+      local x,y=x0+(x1-x0)*d//10,y0+(y1-y0)*d//10
+      rect(x,y+1,2,1,0) rect(x,y,2,1,i<m.n and 4 or 13)
+    end
   end
   for i=first,first+CHAPTER_LEN-1 do
     local x,y=nodePos(i)
-    circ(x,y,STAGES[i][7] and 4 or 2,i<m.n and 4 or (i==m.n and frame%20<10) and 12 or 0)
+    local r=STAGES[i][7] and 4 or 2
+    circ(x,y+1,r+1,0)
+    circ(x,y,r+1,STAGES[i][7] and 2 or 0)
+    circ(x,y,r,i<m.n and 4 or (i==m.n and frame%20<10) and 12 or 14)
   end
   local fx,fy=nodePos(math.max(first,m.n-1))
   local tx,ty=nodePos(m.n)
   local k=math.min(1,m.t/60)
-  drawSp(5+(k<1 and (m.t//8)%2 or 0),fx+(tx-fx)*k-4,fy+(ty-fy)*k-11,12,tx<fx)
+  local walking=k<1
+  if not castSprite("dratewka_far"..(walking and (m.t//7%2==0 and "_a" or "_b") or ""),
+      fx+(tx-fx)*k,fy+(ty-fy)*k+2,tx<fx) then
+    drawSp(5+(walking and (m.t//8)%2 or 0),fx+(tx-fx)*k-4,fy+(ty-fy)*k-11,12,tx<fx)
+  end
   local title=chapterName(st[1])
   print(title,120-(print(title,0,-20) or 0)//2,4,12,false,1,false)
   local sub=L("STAGE ","ETAP ")..st[1].."-"..((m.n-1)%CHAPTER_LEN+1)..": "..L(table.unpack(GOALS[st[2]]))
   print(sub,120-textW(sub,1)//2,16,4,false,1,true)
   if m.t>60 and m.t%40<28 then print(L("PRESS Z","NACIŚNIJ Z"),104,128,12,false,1,true) end
-  if m.t>200 or (m.t>30 and btnp(4)) then mapAnim=nil startStage(m.n) end
+  if m.t>200 or (m.t>30 and btnp(4)) then mapAnim=nil hideBackdrop() startStage(m.n) end
 end
 
 -- ── main loop ────────────────────────────────────────────────────────────────

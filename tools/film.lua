@@ -1,7 +1,8 @@
--- Records the game intro, two seconds of the title screen and every story scene, frame by
--- frame, for tools/film.py to turn into a video: lua tools/film.lua <out-dir> [every=2]
+-- Records the game intro, two seconds of the title screen, every story scene and the map
+-- between stages, frame by frame, for tools/film.py to turn into a video: lua tools/film.lua <out-dir> [every=2]
 -- Writes frames.bin (per kept frame: 16320 B of 4-bit pixels, 48 B palette, 136x3 B colour 11
--- per row as BDR left it) and texts.txt (frame, x, y, colour, scale, text) for the print calls.
+-- per row as BDR left it), texts.txt (frame, x, y, colour, scale, text) for the print calls and
+-- audio.raw, the PCM channel of every frame (unsigned 8-bit, 7680 Hz; sfx() is not heard).
 local out=arg[1] or "."
 local every=tonumber(arg[2]) or 2
 local mem={}
@@ -72,11 +73,17 @@ local f=assert(io.open("blastic.lua")) local src=f:read("a") f:close()
 assert(load(src,"blastic","t",env))()
 
 local fb=assert(io.open(out.."/frames.bin","wb"))
+local ab=assert(io.open(out.."/audio.raw","wb"))
+local PCM=0x14E24
 local kept=0
 local function tick()
   frame=frame+1
   texts={}
+  for k=0,127 do mem[PCM+k]=128 end
   env.TIC()
+  local pcm={}
+  for k=0,127 do pcm[k+1]=string.char(mem[PCM+k]) end
+  ab:write(table.concat(pcm))
   if frame%every~=0 then return end
   local row={}
   for y=0,135 do
@@ -101,5 +108,8 @@ for _,name in ipairs{"wroclaw","sleza","krakow","cellars","ending"} do
   env.playScene(name,function() done=true end)
   while not done do tick() end
 end
+env.showMap(28)  -- the map between stages, in chapter 2
+for _=1,150 do tick() end
 fb:close()
+ab:close()
 print(("%d frames"):format(kept))
