@@ -74,17 +74,19 @@ end
 
 -- ── TEST: title screen ────────────────────────────────────────────────────────
 
-io.write("\n=== title screen ===\n")
-check("initial state is title", env.state=="title", "got: "..tostring(env.state))
+io.write("\n=== intro and title screen ===\n")
+check("the game opens with the intro", env.state=="intro", "got: "..tostring(env.state))
+run_frames(400)
+check("the intro hands over to the title", env.state=="title", "got: "..tostring(env.state))
+local t0=env.titleTimer
 run_frames(5)
-check("stays title first 5 frames", env.state=="title")
-check("titleTimer increments", env.titleTimer==5, "got: "..tostring(env.titleTimer))
-
--- ── TEST: title auto-start ────────────────────────────────────────────────────
+check("titleTimer increments", env.titleTimer==t0+5, "got: "..tostring(env.titleTimer))
 
 io.write("\n=== auto-start ===\n")
-run_frames(296)  -- total titleTimer becomes 301
-check("auto-starts at titleTimer>300", env.state=="game", "state="..tostring(env.state))
+run_frames(env.TITLE_IDLE-env.titleTimer)
+check("stays on the title until idle", env.state=="title", "state="..tostring(env.state))
+run_frames(1)
+check("auto-starts the battle demo when idle", env.state=="game", "state="..tostring(env.state))
 
 -- ── TEST: initial game state ──────────────────────────────────────────────────
 
@@ -828,7 +830,7 @@ check("death animation timer decays to 0", env.players[1].deathT==0,
       "deathT="..tostring(env.players[1].deathT))
 check("death keeps alive=false", not env.players[1].alive)
 
-for _,st in ipairs({"title","game","over"}) do
+for _,st in ipairs({"intro","title","game","over"}) do
   new_game()
   env.titleTimer=0; env.restartTimer=100
   env.bombs[#env.bombs+1]={c=3,r=3,t=10}
@@ -1609,15 +1611,18 @@ check("the ending returns to the title", skip_to("title") and env.pmem(env.SAVE_
 
 -- scenes animate: the dialogue types out letter by letter
 env.playScene("swamp",function() env.state="title" end)
-for _=1,140 do env.TIC() end
 local shown={}
 do
   local sp=env.print
-  env.print=function(t,x,y) if y==124 then shown[#shown+1]=t end return 0 end
-  for _=1,4 do env.TIC() end  -- a letter every second frame
+  env.print=function(t,x,y) if y==env.SUB_Y then shown[#shown+1]=t end return 0 end
+  for _=1,600 do
+    if #shown>0 then break end
+    env.TIC()
+  end
+  for _=1,3 do env.TIC() end  -- a letter every second frame
   env.print=sp
 end
-check("scene dialogue types out", #shown==4 and #shown[1]>0 and #shown[4]>#shown[1])
+check("scene dialogue types out", #shown==4 and #shown[4]>#shown[1])
 skip_to("title")
 env.mode="pvp"
 
