@@ -1,11 +1,12 @@
 """The cast of the story scenes as pixel art, for paint.py to pack next to the backdrops.
 
-Every sprite is drawn facing right in palette indices, from layered shapes: each layer is shaded
-by a light from the upper right, the side the face turns to, and the silhouette gets a dark
-outline. Colours stay off the four
-that backdrops redefine (1, 5, 7, 11); 11 marks transparent pixels.
+Every sprite faces right, in palette indices, and its silhouette gets a dark outline. The people
+are cartoons drawn by hand, a character a design pixel (ART); their busts (close-ups) are the same
+drawing's head and shoulders scaled up with Scale2x, so a face is one face in every shot. Animals,
+the dragon and things are built from shapes, each shaded by a light from the upper right.
+Colours stay off the four that backdrops redefine (1, 5, 7, 11); 11 marks transparent pixels.
 
-Busts (close-ups) come with a talking mouth and closed eyes as small patches drawn over them;
+Busts come with a talking mouth and closed eyes as small patches drawn over them;
 walkers with the two moments of a step (_a, _b), the dragon with its wings raised and lowered
 (_a, _b) and its jaws open (_roar).
 """
@@ -111,246 +112,332 @@ class Canvas:
         return self.img
 
 
-# ── faces ────────────────────────────────────────────────────────────────────
+# ── the cartoon cast: drawn by hand, one character a design pixel ────────────
+# k black, r red, o orange (the shadow on skin), y yellow, g green, b brown, u blue, s skin,
+# w white, l light grey, e grey, d dark; '.' is transparent. Everyone faces right.
+KEY = {'.': T, 'k': K, 'r': RED, 'o': ORANGE, 'y': YELLOW, 'g': GREEN, 'b': BROWN, 'u': BLUE,
+       's': SKIN, 'w': WHITE, 'l': LIGHT, 'e': GREY, 'd': DARK}
 
-def eyes(c, x, y, gap=5, brow=BROWN, lid=False, iris=BLUE):
-    """Two eyes looking right, x,y the left eye's top left (design units)."""
-    for ex in (x, x + gap):
-        if c.s < 2:
-            if lid:
-                c.px([(ex, y + 1), (ex + 1, y + 1), (ex + 2, y + 1)], K)
-            else:
-                c.px([(ex, y), (ex + 1, y), (ex, y + 1)], WHITE)
-                c.px([(ex + 1, y + 1), (ex + 2, y), (ex + 2, y + 1)], K)
-            if brow is not None:
-                c.px([(ex, y - 2), (ex + 1, y - 2), (ex + 2, y - 2)], brow)
-            continue
-        X, Y = ex * 2, y * 2
-        if lid:
-            c.fine([(X + i, Y + 2) for i in range(5)] + [(X + 1, Y + 3), (X + 3, Y + 3)], K)
-        else:
-            c.fine([(X + i, Y) for i in range(5)], K)                          # upper lid
-            c.fine([(X + i, Y + 1) for i in range(5)] + [(X + i, Y + 2) for i in range(5)], WHITE)
-            c.fine([(X + 2, Y + 1), (X + 3, Y + 1), (X + 2, Y + 2), (X + 3, Y + 2), (X + 2, Y + 3), (X + 3, Y + 3)], iris)
-            c.fine([(X + 3, Y + 2)], K)                                         # pupil
-            c.fine([(X + 2, Y + 1)], WHITE)                                     # glint
-            c.fine([(X + 4, Y + 1)], K)
-        if brow is not None:
-            c.fine([(X, Y - 2), (X + 1, Y - 3), (X + 2, Y - 3), (X + 3, Y - 3), (X + 4, Y - 2)], brow)
+ART = {}
+ART["dratewka"] = [
+    "...........w..........",
+    "..........ww..........",
+    "......rrrrwrrr........",
+    "....rrrrrrrrrrrr......",
+    "...rrrrrrrrrrrrrrr....",
+    "...rrrrrrrrrrrrrrrrrr.",
+    "...bbbbbbbbbbbbbbbbb..",
+    "..bbbbbbbbbbsbbsss....",
+    "..bbbbbbssssssssss....",
+    "..bbbbbsswwwssswwws...",
+    "..bbbbbsswkkssswkks...",
+    "..bboobsswkkssswkkss..",
+    "...booosssssssssssss..",
+    "...bbossssssssssssooo.",
+    "....bosssssssssssss...",
+    ".....ossskkkkkksss....",
+    "......osssrrrrsss.....",
+    ".......ooosssss.......",
+    ".........oooss........",
+    ".....wwwwwwwwwww......",
+    "....wwwwbbbbbwwww.....",
+    "....wwwwbbbbbwwwww....",
+    "....lwwwbbbbbwwwsw....",
+    "....lwwwbbbbbbwwss....",
+    "....lwwbbbbbbbb.......",
+    "....llwbbbbbbbb.......",
+]
+ART["wanda"] = [
+    "......g.r.g.r.g.......",
+    ".....ggggggggggggg....",
+    "....gyyyyyyyyyyyyg....",
+    "...yyyyyyyyyyyyyyyy...",
+    "...yyyyyyyyyyyyyyyyy..",
+    "..yyyyyyysyyyyssyyy...",
+    "..yyyyysssssssssssy...",
+    "..yyyyssskssssssks....",
+    "..yyyysswwwssssswww...",
+    "..yyyysswkkssssswkk...",
+    "..yyyosswkkssssswkks..",
+    "..yyyossssssssssssoo..",
+    "..yyyyooosssssssss....",
+    "..yyy.oossskrrkss.....",
+    "..yyy...ooosrrss......",
+    "..yyy....oosss........",
+    "..yy..wwwwwwwwwww.....",
+    "..yy.wwwwrrrrrrwww....",
+    "..yy.wwwwrrrrrrwwsw...",
+    "...y.lwwrrrrrrrrrss...",
+    ".....lwrrrrrrrrrr.....",
+    "....rrrrrrrrrrrrrr....",
+    "....rrrrrrrrrrrrrrr...",
+    "...rrrrrrrrrrrrrrrr...",
+    "...rrrrrrrrrrrrrrrrr..",
+    "..rrrrrrrrrrrrrrrrrr..",
+    "..rrrrrrrrrrrrrrrrrrr.",
+    "..rrrrrrrrrrrrrrrrrrr.",
+    ".rrrrrrrrrrrrrrrrrrrr.",
+    ".wwwwwwwwwwwwwwwwwwww.",
+]
+ART["krak"] = [
+    "...y...y...y...y....",
+    "...yy.yyy.yyy.yy....",
+    "...yyyyyyyyyyyyyy...",
+    "...yuyyyryyyuyyyy...",
+    "...yyyyyyyyyyyyyy...",
+    "..llssssssssssssl...",
+    "..lsssssssssssssss..",
+    "..lsskkkssssskkkss..",
+    "..lsswwkssssswwkss..",
+    "..losswkssssswkkss..",
+    "..loossssssssssssoo.",
+    "..lossssssssssssso..",
+    "..lwwwwsssssssswww..",
+    "..lwwwwwwkkkkwwwww..",
+    "...wwwwwwwwwwwwwww..",
+    "...wwwwwwwwwwwwwww..",
+    "....wwwwwwwwwwwww...",
+    "...rrrwwwwwwwwwrrr..",
+    "..rrrrrwwwwwwwrrrrr.",
+    "..rrrrrrwwwwwrrrrrr.",
+    "..rrrrrrrwwwrrrrrrr.",
+    "..rrrrrrrrwrrrrrrrr.",
+    "..rrrrrrrrwrrrrrrsr.",
+    "..rrrrrrrrwrrrrrrss.",
+    "..rrrrrrrrwrrrrrrr..",
+    "..rrrrrrrrwrrrrrrr..",
+    "..rrrrrrrrwrrrrrrrr.",
+    "..rrrrrrrrwrrrrrrrr.",
+    ".rrrrrrrrrwrrrrrrrrr",
+    ".rrrrrrrrrwrrrrrrrrr",
+    ".rrrrrrrrrwrrrrrrrrr",
+    ".rrrrrrrrrwrrrrrrrrr",
+    ".wwwwwwwwwwwwwwwwwww",
+    ".wlwwlwwlwwlwwlwwlww",
+]
+ART["twardowski"] = [
+    "................w.....",
+    "......bbbbbbbbbww.....",
+    ".....bbbbbbbbbbbb.....",
+    ".....bbbbbbbbbbbb.....",
+    ".....bbbbbbbbbbbb.....",
+    ".....bbbbbbbbbbbb.....",
+    "....rrrrrrrrrrrrrr....",
+    ".....ssssssssssss.....",
+    ".....sskkksssskkk.....",
+    ".....sswwkssssswk.....",
+    ".....oswkkssssswkk....",
+    ".....osssssssssssoo...",
+    "...kkkkkkksssskkkkkkk.",
+    "..kk...kkkkkkkkk....kk",
+    ".....oossssssssss.....",
+    ".......ooosssss.......",
+    "....uuuuuuuuuuuuu.....",
+    "...uuuuurrrrruuuuu....",
+    "...uuuuurrrrruuuuu....",
+    "...uuuuurrrrruuuuuu...",
+    "...uuuuurrrrruuuuss...",
+    "...yyyyyyyyyyyyyss....",
+    "...uuuuurrrrruuuu.....",
+    "...uuuuurrrrruuuu.....",
+    "..uuuuuurrrrruuuuu....",
+    "..uuuuuurrrrruuuuuu...",
+    "..uuuuuurrrrruuuuuu...",
+    "..uuuuuurrrrruuuuuuu..",
+]
+ART["devil"] = [
+    "...k............k.......",
+    "...kk..........kk.......",
+    "....kk........kk........",
+    "....kkk.kkkkkkkk........",
+    ".....kkkkkkkkkkk........",
+    "....rkkkkkkkkkkkr.......",
+    "....rrrrrrrrrrrrrr......",
+    "....rrkkkrrrrrkkkr......",
+    "....rryykrrrrryykr......",
+    "....orrykrrrrrrykrr.....",
+    "....orrrrrrrrrrrrrrr....",
+    "..kkkkkkrrrrrrkkkkkkk...",
+    ".kk...kkkkkkkkkk....kk..",
+    ".....orrwkwkwkrr........",
+    "......orrrkkkrr.........",
+    ".......ooorrrr..........",
+    "....ddddddddddddd.......",
+    "...ddddddrrrrdddddd.....",
+    "...ddddddrrrrddddddd....",
+    "...dddddddrrddddddrr....",
+    "...dddddddrrdddddrr.....",
+    "...dddddddrrdddddd......",
+    "...dddddddrrdddddd......",
+    "..ddddddddrrddddddd.....",
+    "..ddddddddrrdddddddd....",
+    "..ddddddddrrdddddddd....",
+    "..ddddddddrrddddddddd...",
+    "..ddddddddrrddddddddd...",
+]
+ART["dwarf"] = [
+    ".......r........",
+    "......rrr.......",
+    "......rrr.......",
+    ".....rrrrr......",
+    ".....rrrrr......",
+    "....rrrrrrr.....",
+    "...rrrrrrrrr....",
+    "..rrrrrrrrrrr...",
+    "...sssssssss....",
+    "...sswksswks....",
+    "...ossssssoss...",
+    "..wwwwssssswww..",
+    "..wwwwwkkwwwww..",
+    "..uwwwwwwwwwwu..",
+    "..uuwwwwwwwwuu..",
+    "..uuuwwwwwwuuu..",
+    "..uuuuwwwwuuuu..",
+    "..uuuuuwwuuuuu..",
+    ".uuuuuuuuuuuuuu.",
+]
+ART["jaga"] = [
+    ".........rrrrrr.......",
+    ".......rrrrwrrrrr.....",
+    "......rrrrrrrrrrrr....",
+    ".....rrwrrrrrrwrrrr...",
+    ".....rrrrrlllssssrr...",
+    ".....rrrrllsssssssrr..",
+    "....rrrrllskkssskksr..",
+    "....rrrrlssswksssswk..",
+    "....rrwrrssssssssssss.",
+    "....rrrrrossssssssooss",
+    "....rrrrrossssssssooss",
+    ".....rrrrosskkkksssoo.",
+    "......rrroossswssss...",
+    ".......rrrooooosss....",
+    ".......eeeeeeeeeee....",
+    "......eeeeeeeeeeeee...",
+    "......eeeeeeeeeeeeee..",
+    "......eeeeeeeeeeeess..",
+    ".....eeeeeeeeeeeeess..",
+    ".....eeeeeeeeeeeeee...",
+    ".....eeeeeeeeeeeeee...",
+    "....eeeeeeeeeeeeeeee..",
+    "....eeeeeeeeeeeeeeee..",
+    "....eeeeeeeeeeeeeeeee.",
+    "...eeeeeeeeeeeeeeeeee.",
+    "...eeeeeeeeeeeeeeeeee.",
+    "...eeeeeeeeeeeeeeeeeee",
+    "...eeeeeeeeeeeeeeeeeee",
+    "...eeeeeeeeeeeeeeeeeee",
+    "...eeeeeeeeeeeeeeeeeee",
+    "...eeeeeeeeeeeeeeeeeee",
+    "...kk..kk.........kk..",
+]
+ART["witch"] = [
+    "......ddddddddd.......",
+    ".....ddddddddddddd....",
+    "....ddddddddddddddd...",
+    "....dddddddddssssdd...",
+    "...ddddddssssssssss...",
+    "...ddddddsskkssskks...",
+    "...dddddsswgkssswgk...",
+    "...dddddsswkkssswkk...",
+    "...ddddosssssssssssss.",
+    "...dddddossssssssssoo.",
+    "...ddddddosssrrrrss...",
+    "...ddddddoosssssss....",
+    "...dddddd..ooosss.....",
+    "...ddddd..ggggggggg...",
+    "...dddd..ggggggggggg..",
+    "...dddd..gggggggggggg.",
+    "...ddd..ggggggggggggg.",
+    "....dd..ggggggggggggg.",
+    "........ggggggggggggg.",
+    ".......gggggggggggggg.",
+    ".......ggggggggggggggg",
+    "......gggggggggggggggg",
+    "......gggggggggggggggg",
+    ".....ggggggggggggggggg",
+    ".....ggggggggggggggggg",
+    "....gggggggggggggggggg",
+    "....gggggggggggggggggg",
+    "....gggggggggggggggggg",
+    "....gggggggggggggggggg",
+    "....gggggggggggggggggg",
+    "....gggggggggggggggggg",
+]
+# where the faces are: eye rows, the mouth's row (and its columns when it hides under a
+# moustache), the colour of the skin round the eyes
+FACE = {"dratewka": ((9, 10, 11), 15, None, 's'), "wanda": ((8, 9, 10), 13, None, 's'),
+        "krak": ((8, 9), 13, None, 's'), "twardowski": ((9, 10), 14, range(9, 13), 's'),
+        "devil": ((8, 9), 13, None, 'r'), "jaga": ((6, 7), 11, None, 's')}
 
 
-def mouth(c, x, y, w=4, open_=False):
-    if c.s < 2:
-        if open_:
-            c.px([(x + i, y) for i in range(w)], K)
-            c.px([(x + i, y + 1) for i in range(1, w - 1)], RED)
-            c.px([(x + i, y + 2) for i in range(1, w - 1)], K)
-        else:
-            c.px([(x + i, y) for i in range(w)], RED)
-            c.px([(x, y - 1), (x + w - 1, y - 1)], ORANGE)
-        return
-    X, Y, L = x * 2, y * 2, w * 2
-    if open_:
-        c.fine([(X + i, Y) for i in range(1, L - 1)] + [(X, Y + 1), (X + L - 1, Y + 1)], K)
-        c.fine([(X + i, Y + 1) for i in range(1, L - 1)], WHITE)                # teeth
-        c.fine([(X + i, Y + 2) for i in range(1, L - 1)] + [(X + i, Y + 3) for i in range(2, L - 2)], K)
-        c.fine([(X + i, Y + 3) for i in range(3, L - 3)], RED)                  # tongue
-        c.fine([(X + i, Y + 4) for i in range(2, L - 2)], BROWN)
-    else:
-        c.fine([(X + i, Y) for i in range(1, L - 1)], BROWN)
-        c.fine([(X, Y - 1), (X + L - 1, Y - 1)], BROWN)                        # smiling corners
-        c.fine([(X + i, Y + 1) for i in range(2, L - 2)], RED)
-        c.fine([(X + i, Y + 2) for i in range(3, L - 3)], ORANGE)
+def art(c, rows, x0=0, y0=0):
+    """Paint hand-drawn rows onto a canvas, one design pixel a character."""
+    for y, row in enumerate(rows):
+        for x, ch in enumerate(row):
+            if ch != '.':
+                c.px([(x0 + x, y0 + y)], KEY[ch])
 
 
-def hair_strands(c, mask, col):
-    """Fine strands across a hair shape, every fourth column a shade darker."""
-    if c.s < 2:
-        return
-    fx = np.arange(c.w)[None, :]
-    fy = np.arange(c.h)[:, None]
-    strand = mask & (((fx + fy // 3) % 4) == 0) & (fy % 5 != 0)
-    c.img[strand & (c.img == col)] = SHADE[col]
+def blinking(rows, eyes_at, skin):
+    """The eyes shut: whites and pupils become skin, a lid line across the middle row."""
+    rows = list(rows)
+    cols = {x for y in eyes_at for x, ch in enumerate(rows[y]) if ch in "wgy"}
+    cols = {x for x in range(min(cols) - 1, max(cols) + 2)} if cols else set()
+    for y in eyes_at:
+        rows[y] = "".join(skin if x in cols and ch in "wkgy" else ch for x, ch in enumerate(rows[y]))
+    mid = eyes_at[len(eyes_at) // 2]
+    rows[mid] = "".join('k' if x in cols and rows[mid][x] == skin else ch for x, ch in enumerate(rows[mid]))
+    return rows
 
 
-# ── busts: 36x44, the face turned slightly right ─────────────────────────────
+def talking(rows, m, cols=None):
+    """The mouth open: its row goes dark, the row under it too, the tongue below."""
+    rows = list(rows)
+    cols = list(cols) if cols else [x for x, ch in enumerate(rows[m]) if ch in "kr"]
 
-BW, BH = 36, 44
-
-
-def bust_dratewka(talk=False, blink=False):
-    c = Canvas(BW, BH)
-    c.poly([(2, 44), (5, 33), (12, 30), (24, 30), (31, 33), (34, 44)], WHITE)  # shirt
-    c.poly([(11, 44), (12, 34), (24, 34), (25, 44)], BROWN)                    # apron
-    c.rect(13, 30, 15, 35, BROWN, light=False)
-    c.rect(22, 30, 24, 35, BROWN, light=False)
-    c.rect(15, 25, 22, 31, SKIN, light=False)                                   # neck
-    back = c.ellipse(9, 18, 4, 9, BROWN)                                        # hair at the back
-    hair_strands(c, back, BROWN)
-    c.ellipse(19, 17, 9, 10, SKIN)                                              # head
-    c.ellipse(10, 18, 2, 3, SKIN)                                               # ear
-    c.fine([(19, 34), (20, 35), (19, 36)], ORANGE)
-    fringe = c.poly([(9, 12), (12, 6), (22, 5), (28, 9), (27, 12), (20, 10), (13, 13)], BROWN)  # fringe
-    hair_strands(c, fringe, BROWN)
-    c.ellipse(17, 6, 11, 4, RED)                                                # cap
-    c.poly([(22, 7), (33, 8), (31, 10), (22, 10)], RED)                         # its peak
-    c.px([(23, 3), (24, 2), (25, 1), (26, 0)], WHITE)                           # feather
-    eyes(c, 19, 16, lid=blink)
-    c.px([(27, 19), (28, 20), (27, 21)], ORANGE)                                # nose
-    c.px([(17, 21), (18, 21)], ORANGE)                                          # cheek
-    mouth(c, 21, 24, 4, talk)
-    return c.outline()
+    def put(y, xs, ch):
+        rows[y] = "".join(ch if x in xs else c for x, c in enumerate(rows[y]))
+    put(m, cols, 'k')
+    put(m + 1, cols, 'k')
+    put(m + 2, cols[1:-1], 'r')
+    return rows
 
 
-def bust_wanda(talk=False, blink=False):
-    c = Canvas(BW, BH)
-    c.poly([(1, 44), (4, 34), (12, 31), (24, 31), (32, 34), (35, 44)], WHITE)  # blouse sleeves
-    c.poly([(9, 44), (11, 35), (25, 35), (27, 44)], RED)                        # bodice
-    c.px([(14 + i * 2, 33) for i in range(5)], RED)                             # corals
-    c.px([(15 + i * 2, 34) for i in range(4)], RED)
-    hair = c.ellipse(18, 20, 12, 14, YELLOW)                                    # hair
-    braid = c.poly([(6, 22), (10, 40), (14, 40), (12, 22)], YELLOW)             # braid behind
-    hair_strands(c, hair | braid, YELLOW)
-    c.rect(15, 26, 22, 32, SKIN, light=False)
-    c.ellipse(19, 18, 8, 10, SKIN)
-    hair_strands(c, c.poly([(10, 12), (14, 7), (24, 6), (28, 11), (24, 10), (16, 12)], YELLOW), YELLOW)  # fringe
-    c.poly([(7, 8), (11, 4), (26, 3), (30, 7), (26, 7), (11, 9)], GREEN)        # wreath
-    c.px([(10, 6), (15, 4), (20, 3), (25, 4), (29, 6)], RED)
-    c.px([(12, 5), (18, 3), (23, 3), (27, 5)], WHITE)
-    c.px([(14, 5), (22, 4)], BLUE)
-    eyes(c, 19, 16, brow=ORANGE, lid=blink)
-    c.px([(19, 15), (24, 15)], K)                                               # lashes
-    c.px([(26, 19), (27, 20)], ORANGE)
-    c.px([(17, 21), (18, 21), (25, 22)], ORANGE)
-    mouth(c, 20, 24, 4, talk)
-    return c.outline()
+def scale2x(rows):
+    """Scale2x (EPX): twice the size, with the staircase of diagonals smoothed."""
+    h, w = len(rows), len(rows[0])
+    g = lambda y, x: rows[y][x] if 0 <= y < h and 0 <= x < w else '.'
+    out = [[None] * (w * 2) for _ in range(h * 2)]
+    for y in range(h):
+        for x in range(w):
+            p, a, b, c, d = g(y, x), g(y - 1, x), g(y, x + 1), g(y, x - 1), g(y + 1, x)
+            out[2 * y][2 * x] = a if c == a and c != d and a != b else p
+            out[2 * y][2 * x + 1] = b if a == b and a != c and b != d else p
+            out[2 * y + 1][2 * x] = c if d == c and d != b and c != a else p
+            out[2 * y + 1][2 * x + 1] = d if b == d and b != a and d != c else p
+    return ["".join(r) for r in out]
 
 
-def bust_witch(talk=False, blink=False):
-    """No close-up of its own: its head is the witches' head in their figures. The hair is DARK,
-    not K, which paste_head would take for the outline."""
-    c = Canvas(BW, BH)
-    hair = c.ellipse(18, 20, 12, 14, DARK)
-    hair_strands(c, hair | c.poly([(5, 20), (4, 40), (12, 40), (12, 22)], DARK), DARK)
-    c.ellipse(19, 18, 8, 10, SKIN)
-    hair_strands(c, c.poly([(10, 13), (13, 6), (24, 5), (29, 10), (22, 9), (15, 13)], DARK), DARK)
-    eyes(c, 19, 16, brow=K, lid=blink, iris=GREEN)
-    c.px([(26, 19), (27, 20)], ORANGE)
-    c.px([(17, 21), (18, 21)], ORANGE)
-    mouth(c, 20, 24, 4, talk)
-    return c.outline()
+# ── busts: the figure's head and shoulders at twice the size ─────────────────
+
+BUST_ROWS = 22
 
 
-def bust_krak(talk=False, blink=False):
-    c = Canvas(BW, BH)
-    c.poly([(0, 44), (3, 32), (12, 28), (24, 28), (33, 32), (36, 44)], RED)     # cloak
-    c.poly([(3, 34), (10, 29), (26, 29), (33, 34), (26, 35), (10, 35)], WHITE)  # ermine
-    c.px([(8, 32), (14, 33), (20, 32), (26, 33), (30, 32)], K)
-    c.ellipse(19, 17, 9, 10, SKIN)
-    hair_strands(c, c.poly([(10, 20), (14, 33), (19, 38), (25, 33), (28, 21), (24, 25), (14, 25)], WHITE), WHITE)  # beard
-    c.poly([(13, 22), (24, 22), (26, 25), (11, 25)], WHITE)                     # moustache
-    c.poly([(9, 11), (11, 2), (14, 6), (17, 0), (20, 6), (23, 1), (26, 6), (29, 2), (29, 11)], YELLOW)  # crown
-    c.px([(13, 8), (19, 8), (25, 8)], RED)
-    c.px([(16, 9), (22, 9)], BLUE)
-    eyes(c, 18, 15, brow=WHITE, lid=blink)
-    c.px([(27, 18), (28, 19), (27, 20)], ORANGE)
+def bust(name, talk=False, blink=False):
+    rows = ART[name][:BUST_ROWS]
+    eyes_at, m, mcols, skin = FACE[name]
+    if blink:
+        rows = blinking(rows, eyes_at, skin)
     if talk:
-        mouth(c, 17, 25, 4, True)
+        rows = talking(rows, m, mcols)
+    big = scale2x(rows)
+    c = Canvas(len(big[0]), len(big))
+    art(c, big)
     return c.outline()
 
 
-def bust_twardowski(talk=False, blink=False):
-    c = Canvas(BW, BH)
-    c.poly([(0, 44), (3, 32), (12, 29), (24, 29), (33, 32), (36, 44)], BLUE)    # kontusz
-    c.poly([(13, 29), (23, 29), (21, 44), (15, 44)], RED)                      # zupan
-    c.px([(18, 33), (18, 36), (18, 39), (18, 42)], YELLOW)                      # buttons
-    c.rect(15, 25, 22, 31, SKIN, light=False)
-    c.ellipse(19, 18, 8, 10, SKIN)
-    c.poly([(17, 23), (8, 27), (11, 24), (17, 21), (24, 21), (30, 24), (32, 28), (24, 23)], K)  # moustache
-    c.poly([(19, 26), (23, 26), (21, 32)], K)                                   # goatee
-    c.poly([(9, 13), (10, 1), (28, 1), (29, 13)], BROWN)                        # fur kolpak
-    c.poly([(11, 3), (14, -2), (26, -2), (27, 3)], RED)                         # its crown
-    c.px([(26, 1), (27, 0), (28, -1)], YELLOW)
-    c.px([(25, 4), (26, 3), (27, 2), (28, 1), (29, 0)], WHITE)                  # heron feather
-    eyes(c, 18, 16, brow=K, lid=blink, iris=BROWN)
-    c.px([(17, 14), (23, 14)], K)                                               # sly brows
-    c.px([(27, 19), (28, 20), (27, 21)], ORANGE)
-    if talk:
-        c.px([(19, 24), (20, 24), (21, 24), (22, 24)], RED)
-    return c.outline()
-
-
-def bust_devil(talk=False, blink=False):
-    c = Canvas(BW, BH)
-    c.poly([(0, 44), (3, 32), (12, 29), (24, 29), (33, 32), (36, 44)], DARK)    # black kontusz
-    c.poly([(12, 29), (24, 29), (22, 44), (14, 44)], RED)                      # red lining
-    c.rect(15, 25, 22, 31, RED, light=False)
-    c.ellipse(19, 18, 9, 10, RED)                                               # red face
-    c.poly([(10, 11), (6, 2), (8, 0), (13, 8)], DARK)                           # horns
-    c.poly([(24, 9), (28, 0), (30, 2), (28, 11)], DARK)
-    c.ellipse(19, 9, 9, 3, K, shade=False, light=False)                         # slick hair
-    c.poly([(16, 23), (6, 21), (9, 24), (16, 25), (24, 25), (32, 23), (33, 19), (25, 23)], K)  # moustache
-    for ex in (18, 24):
-        c.px([(ex, 16), (ex + 1, 16), (ex + 2, 16)], YELLOW if not blink else K)
-        if not blink:
-            c.px([(ex + 1, 17)], K)
-        c.px([(ex - 1, 14), (ex, 13), (ex + 2, 14)], K)
-    c.px([(28, 19), (29, 20)], BROWN)
-    if talk:
-        c.px([(19, 26), (20, 26), (21, 26), (22, 26)], K)
-        c.px([(20, 27), (21, 27)], WHITE)
-    return c.outline()
-
-
-def bust_jaga(talk=False, blink=False):
-    c = Canvas(BW, BH)
-    c.poly([(0, 44), (4, 30), (14, 26), (26, 27), (34, 33), (36, 44)], GREY)    # shawl
-    c.ellipse(18, 18, 13, 14, RED)                                              # headscarf
-    c.px([(10, 10), (16, 7), (22, 8), (27, 12), (8, 18), (29, 20), (12, 26)], WHITE)
-    c.ellipse(20, 20, 7, 9, SKIN)
-    c.poly([(13, 14), (16, 12), (14, 22)], LIGHT)                               # grey hair
-    c.ellipse(26.5, 22, 2, 1.8, SKIN)                                           # a round nose
-    c.px([(25, 23), (27, 23)], ORANGE)
-    c.fine([(55, 41)], BROWN)                                                   # and its wart
-    c.px([(18, 25), (19, 26), (20, 26), (21, 26)], ORANGE)                      # wrinkles
-    for ex in (19, 24):
-        c.px([(ex, 18), (ex + 1, 18)], K if blink else WHITE)
-        if not blink:
-            c.px([(ex + 1, 18)], K)
-        c.px([(ex - 1, 16), (ex, 16), (ex + 1, 16)], LIGHT)
-    if talk:
-        c.px([(21, 28), (22, 28), (23, 28), (24, 28)], K)
-        c.px([(22, 29)], WHITE)
-    else:
-        c.px([(21, 28), (22, 28), (23, 28)], BROWN)
-    return c.outline()
-
-
-def paste_head(c, name, chin, cx, top, k=2):
-    """The head of a character's bust, shrunk k times, on its figure: the same face in close-ups
-    and in walking shots. chin: the bust's row (design units) the head ends at; the bust's middle
-    (x 19) goes to the figure's x cx, its top to row top."""
-    b = globals()["bust_" + name]()[:chin * c.s]
-    h, w = b.shape[0] // k * k, b.shape[1] // k * k
-    small = np.full((h // k, w // k), T)
-    for y in range(0, h, k):
-        for x in range(0, w, k):
-            block = list(b[y:y + k, x:x + k].ravel())
-            if block.count(T) * 4 >= 3 * k * k:
-                continue
-            if block.count(K) * 3 >= k * k:
-                small[y // k, x // k] = K
-                continue
-            v = [col for col in block if col not in (T, K)] or [K]
-            small[y // k, x // k] = max(set(v), key=v.count)
-    # the bust's own outline goes: the figure's outline is drawn round both together
-    solid = np.pad(small != T, 1)
-    rim = (small == K) & ~(solid[:-2, 1:-1] & solid[2:, 1:-1] & solid[1:-1, :-2] & solid[1:-1, 2:])
-    small[rim] = T
-    x0, y0 = round((cx - 19 / k) * c.s), round(top * c.s)
-    for y, x in zip(*np.nonzero(small != T)):
-        if 0 <= y + y0 < c.h and 0 <= x + x0 < c.w:
-            c.img[y + y0, x + x0] = small[y, x]
+for _n in FACE:
+    globals()["bust_" + _n] = lambda talk=False, blink=False, _n=_n: bust(_n, talk, blink)
 
 
 # ── full figures: about 20x34, feet on the bottom row ────────────────────────
@@ -379,41 +466,27 @@ def legs(c, cx, hip, foot, pose, col, shoe=K, w=3):
 def figure_dratewka(pose=0):
     c = Canvas(22, 34)
     legs(c, 10, 25, 32, pose, DARK)
-    c.poly([(5, 26), (6, 15), (14, 15), (15, 26)], WHITE)
-    c.poly([(6, 27), (7, 18), (13, 18), (14, 27)], BROWN)
-    paste_head(c, "dratewka", 28, 10, 1)
-    c.poly([(12, 16), (14, 16), (15, 23), (13, 23)], WHITE, light=False)
-    c.ellipse(14, 24, 1.5, 1.5, SKIN, shade=False)
+    art(c, ART["dratewka"])
     return c.outline()
 
 
 def figure_wanda(pose=0):
     c = Canvas(22, 34)
     legs(c, 10, 30, 32, pose, K)
-    c.poly([(3, 32), (7, 18), (13, 18), (17, 32)], RED)
-    c.rect(4, 31, 17, 32, WHITE, shade=False)
-    c.poly([(5, 20), (6, 14), (14, 14), (15, 20)], WHITE)
-    c.poly([(3, 10), (5, 24), (8, 24), (8, 10)], YELLOW, light=False)
-    paste_head(c, "wanda", 29, 10, 0)
+    art(c, ART["wanda"])
     return c.outline()
 
 
 def figure_krak(pose=0):
     c = Canvas(20, 34)
-    c.poly([(2, 34), (6, 14), (14, 14), (18, 34)], RED)
-    c.rect(2, 32, 18, 34, WHITE, shade=False)
-    c.rect(9, 15, 11, 32, WHITE, shade=False)
-    paste_head(c, "krak", 30, 10, 0)
+    art(c, ART["krak"])
     return c.outline()
 
 
 def figure_twardowski(pose=0):
     c = Canvas(22, 34)
     legs(c, 10, 28, 32, pose, K)
-    c.poly([(3, 31), (6, 14), (14, 14), (17, 31)], BLUE)
-    c.poly([(8, 15), (12, 15), (11, 31), (9, 31)], RED, light=False)
-    c.rect(5, 21, 15, 23, YELLOW, light=False)
-    paste_head(c, "twardowski", 28, 10, 0)
+    art(c, ART["twardowski"])
     return c.outline()
 
 
@@ -421,9 +494,7 @@ def figure_devil(pose=0):
     c = Canvas(24, 34)
     legs(c, 11, 28, 32, pose, K, K)
     c.poly([(1, 26), (0, 20), (2, 18), (3, 24), (6, 27)], RED, light=False)      # tail
-    c.poly([(4, 31), (7, 14), (15, 14), (18, 31)], DARK)
-    c.poly([(9, 15), (13, 15), (12, 31), (10, 31)], RED, light=False)
-    paste_head(c, "devil", 28, 11, 0)
+    art(c, ART["devil"])
     return c.outline()
 
 
@@ -433,11 +504,7 @@ def figure_dwarf(pose=0):
     back, front = {0: (4, 7), 1: (3, 8), 2: (5, 7)}[pose]
     c.rect(back, 19 - (pose == 2), back + 3, 21 - (pose == 2), K)
     c.rect(front, 19, front + 3, 21, K)
-    c.poly([(2, 18), (4, 11), (10, 11), (12, 18)], BLUE)
-    c.ellipse(7, 9, 3, 3, SKIN)
-    c.poly([(4, 10), (7, 17), (10, 10)], WHITE)
-    c.poly([(3, 7), (7, -1), (11, 7)], RED)
-    c.px([(8, 8)], K)
+    art(c, ART["dwarf"])
     return c.outline()
 
 
@@ -520,57 +587,76 @@ def figure_egg(pose=0):
     return c.outline()
 
 
+def broom_ride(head, body_col, cloak=None):
+    """Riding a broom through the air: the head (the art's first 14 rows) over a body bent
+    forward, the broomstick under it, bristles trailing."""
+    c = Canvas(36, 24)
+    c.rect(0, 18, 34, 20, BROWN, shade=False)
+    c.poly([(0, 15), (-2, 23), (8, 21), (8, 16)], YELLOW, light=False)
+    if cloak:
+        c.poly([(8, 8), (14, 4), (16, 16), (6, 14)], cloak, light=False)          # hair in the wind
+    c.poly([(12, 19), (14, 11), (26, 11), (28, 19)], body_col)
+    c.poly([(14, 19), (26, 19), (28, 24), (16, 24)], body_col, light=False)
+    c.rect(26, 15, 33, 17, body_col, shade=False, light=False)                   # arm to the stick
+    c.rect(32, 15, 34, 18, SKIN, shade=False, light=False)
+    art(c, head, 12, -2)
+    return c.outline()
+
+
 def figure_jaga(pose=0):
-    """Baba Jaga; pose 2 rides her broom through the air."""
+    """Baba Jaga with her broom; pose 1 casts a spell, 2 rides the broom."""
     if pose == 2:
-        c = Canvas(34, 22)
-        c.rect(0, 15, 30, 17, BROWN, shade=False)                                 # broomstick
-        c.poly([(0, 12), (-2, 21), (8, 18), (8, 14)], YELLOW, light=False)     # bristles
-        c.poly([(10, 16), (13, 6), (22, 5), (26, 16)], GREY)                   # hunched body
-        c.poly([(14, 16), (22, 16), (24, 22), (16, 22)], GREY, light=False)    # skirt down
-        paste_head(c, "jaga", 30, 23, -4)
-        c.rect(23, 9, 30, 10, GREY, shade=False, light=False)                  # arm to the stick
-        return c.outline()
-    c = Canvas(22, 32)
-    c.rect(3, 6, 4, 32, BROWN, shade=False, light=False)                        # broom
-    c.poly([(0, 32), (3, 24), (5, 24), (8, 32)], YELLOW, light=False)
-    c.poly([(5, 31), (8, 14), (16, 12), (19, 31)], GREY)
-    paste_head(c, "jaga", 30, 13, 1)
-    if pose == 1:                                                               # arms up, casting
-        c.poly([(16, 15), (21, 7), (22, 9), (18, 16)], GREY, light=False)
-        c.ellipse(21, 7, 1.5, 1.5, SKIN, shade=False)
+        return broom_ride(ART["jaga"][:14], GREY)
+    c = Canvas(24, 32)
+    c.rect(1, 4, 3, 30, BROWN, shade=False, light=False)                         # the broom
+    c.poly([(-1, 32), (1, 25), (3, 25), (5, 32)], YELLOW, light=False)
+    art(c, ART["jaga"], 1, 0)
+    if pose == 1:                                                                # an arm raised
+        c.poly([(16, 16), (21, 7), (23, 8), (19, 17)], GREY, light=False)
+        c.rect(21, 4, 24, 7, SKIN, shade=False, light=False)
+    else:
+        c.rect(3, 16, 7, 18, GREY, shade=False, light=False)                     # a hand on the broom
+        c.rect(2, 15, 4, 17, SKIN, shade=False, light=False)
     return c.outline()
 
 
 def figure_witch(pose=0):
-    """A witch of Sleza: long dark hair, a green dress; poses 0, 1 dance, 2 flies on a broom."""
+    """A witch of Sleza: long dark hair, a green dress; poses 0, 1 dance, 2 rides a broom."""
     if pose == 2:
-        c = Canvas(34, 22)
-        c.rect(0, 15, 30, 17, BROWN, shade=False)
-        c.poly([(0, 12), (-2, 21), (8, 18), (8, 14)], YELLOW, light=False)
-        c.poly([(11, 16), (14, 6), (22, 6), (25, 16)], GREEN)
-        c.poly([(13, 16), (24, 16), (27, 22), (14, 21)], GREEN, light=False)
-        c.poly([(10, 4), (16, 0), (18, 10), (12, 12)], DARK, light=False)       # hair flying back
-        paste_head(c, "witch", 29, 20, -5)
-        return c.outline()
-    c = Canvas(22, 34)
+        return broom_ride(ART["witch"][:13], GREEN, DARK)
+    c = Canvas(24, 34)
+    legs(c, 12, 31, 32, 0, K)
+    art(c, ART["witch"], 1, 0)
     up = pose == 1
-    c.rect(8, 31, 11, 34, K)
-    c.rect(12, 31, 15, 34, K)
-    c.poly([(3, 32), (7, 15), (14, 15), (18, 32)], GREEN)
-    c.poly([(5, 10), (4, 26), (9, 26), (10, 10)], DARK, light=False)            # long dark hair
-    paste_head(c, "witch", 29, 11, 0)
-    arm = [(15, 16), (21, 4 if up else 24), (22, 6 if up else 26), (16, 19)]
-    c.poly(arm, GREEN, light=False)
-    c.ellipse(21.5, 3 if up else 26, 1.5, 1.5, SKIN, shade=False)
-    arm2 = [(6, 16), (0, 4 if not up else 24), (1, 3 if not up else 26), (8, 19)]
-    c.poly(arm2, GREEN, light=False)
+    for side, (sx, hx) in ((1, (17, 22)), (-1, (10, 3))):                        # both arms
+        hy = 4 if (up == (side > 0)) else 24
+        c.poly([(sx, 15), (hx, hy), (hx + side, hy + 2), (sx + side, 18)], GREEN, light=False)
+        c.rect(hx - 1, hy - 2, hx + 2, hy + 1, SKIN, shade=False, light=False)
     return c.outline()
+
+
+class Lowered:
+    """A canvas whose drawing calls land dy design pixels lower."""
+    def __init__(self, c, dy):
+        self.c, self.dy = c, dy
+
+    def poly(self, pts, col, **kw):
+        return self.c.poly([(x, y + self.dy) for x, y in pts], col, **kw)
+
+    def ellipse(self, cx, cy, rx, ry, col, **kw):
+        return self.c.ellipse(cx, cy + self.dy, rx, ry, col, **kw)
+
+    def rect(self, x0, y0, x1, y1, col, **kw):
+        return self.c.rect(x0, y0 + self.dy, x1, y1 + self.dy, col, **kw)
+
+    def px(self, pts, col):
+        self.c.px([(x, y + self.dy) for x, y in pts], col)
 
 
 def figure_rider(pose=0):
     """Master Twardowski riding his giant rooster through the night; pose 1 beats the wings."""
-    c = Canvas(48, 40)
+    whole = Canvas(48, 48)
+    c = Lowered(whole, 8)
     down = pose == 1
     # tail: sickle feathers
     for k, col in enumerate((GREEN, BLUE, K)):
@@ -591,12 +677,8 @@ def figure_rider(pose=0):
     c.rect(21, 15, 31, 17, YELLOW, light=False)                                 # sash
     c.poly([(24, 20), (20, 30), (24, 31), (27, 21)], BLUE, light=False)         # leg down the side
     c.rect(19, 29, 24, 32, K)
-    c.ellipse(27, 5, 4, 4, SKIN)
-    c.poly([(26, 7), (21, 8), (26, 6), (29, 6), (34, 8), (29, 7)], K)           # moustache
-    c.rect(23, -2, 31, 3, BROWN)                                                # kolpak
-    c.px([(30, -3), (31, -4), (32, -5)], WHITE)
-    c.px([(28, 4)], K)
     c.poly([(31, 12), (38, 14), (38, 16), (31, 15)], BLUE, light=False)         # arm to the reins
+    art(whole, ART["twardowski"][:16], 15, 0)
     # the wing over all: a fan of long feathers from the shoulder, raised or beating down
     sx, sy = 20, 22
     tips = [(28, 40), (22, 42), (15, 40), (9, 36)] if down else [(6, 2), (1, 8), (-2, 15), (0, 21)]
@@ -607,7 +689,7 @@ def figure_rider(pose=0):
         c.poly([(sx + nx / n * w, sy + ny / n * w), (tx, ty), (sx - nx / n * w, sy - ny / n * w)],
                BROWN if k % 2 else ORANGE)
     c.ellipse(sx + 2, sy + 1, 6, 4, ORANGE)                                      # its root
-    return c.outline()
+    return whole.outline()
 
 
 def figure_fox(pose=0):
