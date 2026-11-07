@@ -1778,6 +1778,38 @@ do
   end
   -- the camera pans over actors only, the backdrop stays put
   check("nobody stands still in a panning shot", #sliding==0, table.concat(sliding," "))
+  local unreal={}
+  for name,shots in pairs(g.SCENES) do
+    for n,sh in ipairs(shots) do
+      for _,a in ipairs(sh.act or {}) do
+        local who,x0,_,x1,_,t0,t1,sc=table.unpack(a)
+        sc=sc or 2
+        if a.arc then  -- a throw falls with the one gravity, whatever its length
+          local t=(t0+t1)//2
+          local y=function(f) return select(3,g.actorAt(a,f)) end
+          local fall=y(t+1)-2*y(t)+y(t-1)
+          if math.abs(fall-g.GRAVITY*sc/2)>1e-6 then unreal[#unreal+1]=name..n..":"..who.." falls "..fall end
+        elseif t1>t0 and not a.hop and not a.anim and who~="dragon" and g.CAST[who..(sc==1 and "_far" or "").."_a"] then
+          local pace=math.abs(x1-x0)/(t1-t0)
+          if pace>1.3*sc/2 then unreal[#unreal+1]=("%s%d:%s walks %.2f px/frame"):format(name,n,who,pace) end
+        end
+      end
+    end
+  end
+  check("thrown things fall with earth's gravity and nobody walks faster than a brisk pace",
+    #unreal==0, table.concat(unreal,", "))
+  local jumper={"devil",100,108,100,108,0,0,2,hop=6}
+  local ground,top={},108
+  for t=0,200 do
+    local _,_,y=g.actorAt(jumper,t)
+    top=math.min(top,y)
+    if t>5 and y>107.5 then ground[#ground+1]=t end
+  end
+  local flight=2*math.sqrt(2*6/g.GRAVITY)
+  check("a jump lasts as long as a fall from its height takes there and back",
+    math.abs(top-102)<0.2 and math.abs(ground[1]-flight)<1.5, ("top %.1f, lands at %s, should %.1f"):format(top,ground[1],flight))
+  local _,x,_,_,_,walked=g.actorAt({"dratewka",0,108,100,108,0,100},40)
+  check("a walker's steps follow the ground it covers", walked==x and x==40, tostring(walked))
   local dancer={"witch",0,104,0,104,0,0,2,orbit={112,84,124,0}}
   local xs,turned,ok={},{},true
   for t=1,123,4 do
