@@ -1557,6 +1557,36 @@ env.shrinkAt=env.roundFrames+1
 env.updateShrink()
 check("the closing zone crushes monsters on it", #env.monsters==1 and env.monsters[1].c==5)
 
+-- friendly fire: in the campaign a fellow hero's blast spares you, your own does not
+env.startStage(find_stage(function(st) return st[1]==2 and st[2]=="exit" end))
+env.monsters={}
+local ha,he=env.players[1],env.players[2]
+ha.shield,ha.invul=false,0
+env.blasts={{c=ha.c,r=ha.r,t=10,owner=he}}
+env.TIC()
+check("a fellow hero's blast spares Aldric", ha.alive)
+env.blasts={{c=ha.c,r=ha.r,t=10,owner=ha}}
+env.TIC()
+check("his own blast still kills him", not ha.alive)
+
+-- bosses are not hurt by their own fire
+env.startStage(find_stage(function(st) return st[7]=="witch" end))
+local wb=env.boss
+env.blasts={{c=wb.c,r=wb.r,t=20,owner=env.BOSS_FIRE}}
+env.TIC()
+check("a boss's own blast does not hurt it", wb.hp==wb.max)
+
+-- a hero bot keeps out of the row the dragon is about to burn
+env.startStage(find_stage(function(st) return st[7]=="dragon" end))
+local dk=env.players[1]
+for r=1,env.H-2 do for c=1,env.W-2 do if env.map[r][c]~=env.T_WALL then env.map[r][c]=env.T_EMPTY end end end
+env.monsters,env.bombs,env.powerups,env.hidden={},{},{},{}
+env.boss.warn={row=true,c=dk.c,r=dk.r,t=60}
+dk.human=false
+for _=1,50 do env.TIC() end
+check("a hero bot leaves the row the dragon warns about", dk.alive and dk.r~=env.boss.warn.r or not env.boss.warn,
+      ("hero row %d"):format(dk.r))
+
 -- a hero bot keeps away from monsters
 env.camp.coop=false
 env.startStage(ch2)

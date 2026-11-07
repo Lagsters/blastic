@@ -425,8 +425,11 @@ local function removePowerupAt(c,r)
   end
 end
 
-local function addBlast(c,r)
-  blasts[#blasts+1]={c=c,r=r,t=BLAST_TIME}
+-- owner: the player whose bomb it was, BOSS_FIRE for a boss's bombs and breath
+BOSS_FIRE={bombs=0}
+
+local function addBlast(c,r,owner)
+  blasts[#blasts+1]={c=c,r=r,t=BLAST_TIME,owner=owner}
   removePowerupAt(c,r)
 end
 
@@ -445,7 +448,7 @@ local function explode(b)
   local bc,br=b.c,b.r
   local len=b.len or BLAST_LEN
   local hit={}
-  addBlast(bc,br)
+  addBlast(bc,br,b.owner)
   hit[bc*100+br]=true
   local dirs={{0,-1},{0,1},{-1,0},{1,0}}
   for _,d in ipairs(dirs) do
@@ -453,7 +456,7 @@ local function explode(b)
       local nc,nr=bc+d[1]*i,br+d[2]*i
       local t=mget(nc,nr)
       if t==T_WALL then break end
-      addBlast(nc,nr)
+      addBlast(nc,nr,b.owner)
       hit[nc*100+nr]=true
       if t==T_BLOCK then mset(nc,nr,T_EMPTY) dropPowerup(nc,nr) break end
     end
@@ -496,6 +499,17 @@ end
 local function isBlast(c,r)
   for _,bl in ipairs(blasts) do
     if bl.c==c and bl.r==r then return true end
+  end
+  return false
+end
+
+-- a blast on p's cell hurts p, except in the campaign one made by a fellow hero's bomb
+local function blastHurts(p)
+  for _,bl in ipairs(blasts) do
+    local o=bl.owner
+    if bl.c==p.c and bl.r==p.r and not (mode=="camp" and o and o~=p and o.team==p.team) then
+      return true
+    end
   end
   return false
 end
@@ -642,7 +656,7 @@ local function updatePlayer(p)
   end
   if p.x~=ox or p.y~=oy then p.walkAnim=p.walkAnim+1 end
   if btnp(off+B_BOMB) then placeBomb(p) end
-  if isBlast(p.c,p.r) then blastHit(p) end
+  if blastHurts(p) then blastHit(p) end
 end
 
 -- ── bot AI ────────────────────────────────────────────────────────────────────
@@ -968,14 +982,24 @@ local function updateBot(p)
       danger[m.r*W+m.c]=true
       for _,d in ipairs(BOT_DIRS) do danger[(m.r+d[2])*W+m.c+d[1]]=true end
     end
+    -- and out of the line the dragon is about to breathe fire along
+    local wn=boss and boss.warn
+    if wn then
+      for k=1,(wn.row and W or H)-2 do danger[(wn.row and wn.r or k)*W+(wn.row and k or wn.c)]=true end
+    end
   end
   local dir
   local pickup=not danger[p.r*W+p.c] and botPickupDir(p,danger)
   if danger[p.r*W+p.c] then
     -- flee: timed path to a cell that is safe on arrival; any path out when none is
     local from,to=botFireTimes()
-    local path=botEscapePath(p.c,p.r,from,to) or botPath(p.c,p.r,botPassable,
-      function(c,r) return not danger[r*W+c] end)
+    local path=botEscapePath(p.c,p.r,from,to)
+    -- the timed escape knows only bombs: if it ends next to a monster or in dragon fire,
+    -- head for a cell outside all danger instead
+    local stop=path and path[#path]
+    if not path or (stop and danger[stop.r*W+stop.c]) then
+      path=botPath(p.c,p.r,botPassable,function(c,r) return not danger[r*W+c] end) or path
+    end
     if path then dir={path[1].c-p.c, path[1].r-p.r} else dir=BOT_DIRS[math.random(4)] end
   elseif botTryBomb(p) then
     dir={0,0}
@@ -1015,7 +1039,7 @@ local function updateBot(p)
     end
   end
 
-  if isBlast(p.c,p.r) then blastHit(p) end
+  if blastHurts(p) then blastHit(p) end
 end
 
 -- ── arena shrink ──────────────────────────────────────────────────────────────
@@ -1711,7 +1735,7 @@ local function bossFire(b)
     if b.warn.t<=0 then
       for k=1,(b.warn.row and W or H)-2 do
         local c,r=b.warn.row and k or b.warn.c,b.warn.row and b.warn.r or k
-        if mget(c,r)==T_EMPTY and not bossCovers(b,c,r) then addBlast(c,r) end
+        if mget(c,r)==T_EMPTY and not bossCovers(b,c,r) then addBlast(c,r,BOSS_FIRE) end
       end
       b.warn=nil
     end
@@ -1724,7 +1748,12 @@ local function updateBoss()
   b.t=b.t+1
   if b.inv>0 then b.inv=b.inv-1 end
   for dc=0,1 do for dr=0,1 do
-    if b.inv==0 and isBlast(b.c+dc,b.r+dr) then b.hp=b.hp-1 b.inv=60 sndShield() end
+    for _,bl in ipairs(blasts) do
+      if b.inv==0 and bl.owner~=BOSS_FIRE and bl.c==b.c+dc and bl.r==b.r+dr then
+        b.hp,b.inv=b.hp-1,60
+        sndShield()
+      end
+    end
   end end
   local kind=b.kind
   if kind=="morgath" then kind=b.hp>4 and "witch" or b.hp>2 and "summon" or "dragon" end
@@ -1742,7 +1771,7 @@ local function updateBoss()
   elseif (kind=="witch" or kind=="summon") and b.t%150==0 then
     if kind=="summon" then spawnMonster("g",b.c,b.r) end
     bossTeleport(b)
-    if kind=="witch" then bombs[#bombs+1]={c=b.c,r=b.r,t=BOMB_TIMER,len=3} end
+    if kind=="witch" then bombs[#bombs+1]={c=b.c,r=b.r,t=BOMB_TIMER,len=3,owner=BOSS_FIRE} end
   elseif kind=="dragon" and (b.warn or b.t%120==0) then
     bossFire(b)
   end
