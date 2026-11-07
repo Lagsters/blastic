@@ -19,6 +19,14 @@ SCENES_BLOB   = 'scenes.bin'
 CHUNK_MAP     = 4
 MAP_SIZE      = 32640
 FILM_REEL     = os.path.join('tools', 'film_reel.lua')
+# The story section of the code (scenes and their texts) lands in MUSIC PATTERNS RAM, which the
+# PCM tracker never uses, and is loaded from there: it does not count against CODE_LIMIT.
+CHUNK_PATTERNS = 15
+STORY_RAM, STORY_SIZE = 0x11164, 11520
+STORY = re.compile(r'^-- story:begin.*?^-- story:end[^\n]*\n', re.S | re.M)
+STORY_LOADER = ('do local s={} for i=0,%d do local b=peek(%d+i) if b==0 then break end '
+                's[#s+1]=string.char(b) end assert(load(table.concat(s),"story"))() end\n'
+                % (STORY_SIZE - 1, STORY_RAM))
 # TIC-80 reads the cart's metadata from these header comments, so they stay.
 METADATA = re.compile(r'--\s*(title|author|desc|script|input|saveid|site|license|version):')
 LONG_OPEN = re.compile(r'\[(=*)\[')
@@ -50,8 +58,21 @@ def long_string_end(code: str, i: int):
     return code.index(closer, m.end()) + len(closer)
 
 
+WORD = re.compile(r'\w')
+# pairs that lex differently once joined: comments, concatenation into numbers, long brackets,
+# two-character operators
+GLUE = {'--', '..', '[[', '[=', '==', '<=', '>=', '~=', '<<', '>>', '//', '::'}
+
+
+def needs_space(a: str, b: str) -> bool:
+    if WORD.match(a) and WORD.match(b):
+        return True
+    return a + b in GLUE or (a == '.' and b.isdigit()) or (a.isdigit() and b == '.')
+
+
 def minify(code: str) -> str:
-    """Drop comments, indentation and blank lines; keep strings and line breaks intact."""
+    """Drop comments, indentation, blank lines and spaces the lexer does not need; keep strings
+    and line breaks intact."""
     out, i, n = [], 0, len(code)
     while i < n:
         ch = code[i]
@@ -77,6 +98,14 @@ def minify(code: str) -> str:
             else:
                 j = code.find('\n', i)
                 i = n if j < 0 else j
+        elif ch in ' \t':
+            j = i
+            while j < n and code[j] in ' \t':
+                j += 1
+            prev = out[-1][-1] if out else '\n'
+            if j < n and needs_space(prev, code[j]):
+                out.append(' ')
+            i = j
         else:
             out.append(ch)
             i += 1
@@ -84,9 +113,21 @@ def minify(code: str) -> str:
     return '\n'.join(line for line in lines if line) + '\n'
 
 
+def split_story(src: str):
+    """The code with the story section replaced by its loader, and the story section."""
+    m = STORY.search(src)
+    if not m:
+        return src, ''
+    return src[:m.start()] + STORY_LOADER + src[m.end():], m.group(0)
+
+
 def lua_to_tic(lua_path: str, tic_path: str, extra: str = ''):
-    code = minify(open(lua_path, 'r', encoding='utf-8').read() + extra)
+    src, story = split_story(open(lua_path, 'r', encoding='utf-8').read() + extra)
+    code = minify(src)
     code_bytes = code.encode('utf-8')
+    story_bytes = minify(story).encode('utf-8') if story else b''
+    if len(story_bytes) >= STORY_SIZE:
+        raise ValueError(f"Story too large: {len(story_bytes)} bytes (max {STORY_SIZE - 1})")
     if len(code_bytes) > CODE_LIMIT:
         raise ValueError(f"Code too large: {len(code_bytes)} bytes (max {CODE_LIMIT})")
     data = make_chunk(CHUNK_DEFAULT, 0, b'')
@@ -99,10 +140,13 @@ def lua_to_tic(lua_path: str, tic_path: str, extra: str = ''):
         if len(blob) > MAP_SIZE:
             raise ValueError(f"Scenes too large: {len(blob)} bytes (max {MAP_SIZE})")
         data += make_chunk(CHUNK_MAP, 0, blob)
+    if story_bytes:
+        data += make_chunk(CHUNK_PATTERNS, 0, story_bytes)
     data += make_chunk(CHUNK_CODE, 0, code_bytes)
     with open(tic_path, 'wb') as f:
         f.write(data)
-    print(f"Written {len(data)} bytes to {tic_path} (code {len(code_bytes)}/{CODE_LIMIT} B)")
+    print(f"Written {len(data)} bytes to {tic_path} (code {len(code_bytes)}/{CODE_LIMIT} B, "
+          f"story {len(story_bytes)}/{STORY_SIZE - 1} B)")
 
 
 if __name__ == '__main__':

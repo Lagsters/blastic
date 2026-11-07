@@ -353,7 +353,7 @@ SKIN,WOOD,WOOD_DARK=10,1,8
 local function setColour(i,r,g,b)
   poke(0x03FC0+i*3,r); poke(0x03FC0+i*3+1,g); poke(0x03FC0+i*3+2,b)
 end
-local function initPalette()
+function initPalette()
   setColour(SKIN,0xFF,0xCC,0xAA)
   setColour(WOOD,0xC8,0x92,0x52)
   setColour(WOOD_DARK,0x5C,0x3A,0x1A)
@@ -1428,7 +1428,7 @@ local LOGO,LOGO_X,LOGO_Y="BLASTIC",57,22
 local SUBTITLE="THE SULPHUR LEGEND"
 
 -- print returns the width of the text; drawn off-screen, it only measures
-local function textW(s,scale) return print(s,0,-20,0,false,scale,true) or 0 end
+function textW(s,scale) return print(s,0,-20,0,false,scale,true) or 0 end
 
 -- the logo letter by letter, so the intro can drop each one in; dy(i) lifts letter i
 local function drawLogo(dy)
@@ -1966,6 +1966,8 @@ function drawCampaign()
   end
 end
 
+-- story:begin (make_tic.py moves this section into the cart's MUSIC PATTERNS data and loads
+-- it from there, so the scenes do not count against the code limit; it may use only globals)
 -- ── scenes ────────────────────────────────────────────────────────────────────
 -- A scene is a film: shots with their own backdrop, camera pan, actors and lines, cut with a
 -- fade. Backdrops are painted by tools/scenes/paint.py; the cast is drawn from shapes, larger
@@ -2277,7 +2279,11 @@ function drawScene()
   if done then s.leave=FADE end
 end
 
+-- story:end
+
 -- ── game intro: a fuse burns to a bomb, the bomb blows the logo onto the screen ──
+
+local sin,cos=math.sin,math.cos
 
 introT=0
 local INTRO_BOOM,INTRO_END=110,330
