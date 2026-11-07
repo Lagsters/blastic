@@ -309,7 +309,7 @@ def bust_jaga(talk=False, blink=False):
     c.px([(10, 10), (16, 7), (22, 8), (27, 12), (8, 18), (29, 20), (12, 26)], WHITE)
     c.ellipse(20, 20, 7, 9, SKIN)
     c.poly([(13, 14), (16, 12), (14, 22)], LIGHT)                               # grey hair
-    c.ellipse(28.5, 23, 4, 3.5, SKIN)                                           # a potato nose
+    c.ellipse(28, 23, 3, 2.5, SKIN)                                             # a potato nose
     c.px([(26, 25), (27, 26), (30, 26)], ORANGE)
     c.px([(30, 21)], BROWN)                                                     # and its wart
     c.px([(18, 25), (19, 26), (20, 26), (21, 26)], ORANGE)                      # wrinkles
@@ -326,28 +326,28 @@ def bust_jaga(talk=False, blink=False):
     return c.outline()
 
 
-def paste_head(c, name, chin, cx, top):
-    """The head of a character's bust, at half size, on its figure: the same face in close-ups
+def paste_head(c, name, chin, cx, top, k=2):
+    """The head of a character's bust, shrunk k times, on its figure: the same face in close-ups
     and in walking shots. chin: the bust's row (design units) the head ends at; the bust's middle
     (x 19) goes to the figure's x cx, its top to row top."""
     b = globals()["bust_" + name]()[:chin * c.s]
-    h, w = b.shape[0] // 2 * 2, b.shape[1] // 2 * 2
-    small = np.full((h // 2, w // 2), T)
-    for y in range(0, h, 2):
-        for x in range(0, w, 2):
-            block = list(b[y:y + 2, x:x + 2].ravel())
-            if block.count(T) >= 3:
+    h, w = b.shape[0] // k * k, b.shape[1] // k * k
+    small = np.full((h // k, w // k), T)
+    for y in range(0, h, k):
+        for x in range(0, w, k):
+            block = list(b[y:y + k, x:x + k].ravel())
+            if block.count(T) * 4 >= 3 * k * k:
                 continue
-            if block.count(K) >= 2:
-                small[y // 2, x // 2] = K
+            if block.count(K) * 3 >= k * k:
+                small[y // k, x // k] = K
                 continue
             v = [col for col in block if col not in (T, K)] or [K]
-            small[y // 2, x // 2] = max(set(v), key=v.count)
+            small[y // k, x // k] = max(set(v), key=v.count)
     # the bust's own outline goes: the figure's outline is drawn round both together
     solid = np.pad(small != T, 1)
     rim = (small == K) & ~(solid[:-2, 1:-1] & solid[2:, 1:-1] & solid[1:-1, :-2] & solid[1:-1, 2:])
     small[rim] = T
-    x0, y0 = round((cx - 9.5) * c.s), round(top * c.s)
+    x0, y0 = round((cx - 19 / k) * c.s), round(top * c.s)
     for y, x in zip(*np.nonzero(small != T)):
         if 0 <= y + y0 < c.h and 0 <= x + x0 < c.w:
             c.img[y + y0, x + x0] = small[y, x]
@@ -528,14 +528,14 @@ def figure_jaga(pose=0):
         c.poly([(0, 12), (-2, 21), (8, 18), (8, 14)], YELLOW, light=False)     # bristles
         c.poly([(10, 16), (13, 6), (22, 5), (26, 16)], GREY)                   # hunched body
         c.poly([(14, 16), (22, 16), (24, 22), (16, 22)], GREY, light=False)    # skirt down
-        paste_head(c, "jaga", 30, 23, -4)
+        paste_head(c, "jaga", 30, 23, -1, 3)
         c.rect(23, 9, 30, 10, GREY, shade=False, light=False)                  # arm to the stick
         return c.outline()
     c = Canvas(22, 32)
     c.rect(3, 6, 4, 32, BROWN, shade=False, light=False)                        # broom
     c.poly([(0, 32), (3, 24), (5, 24), (8, 32)], YELLOW, light=False)
     c.poly([(5, 31), (8, 14), (16, 12), (19, 31)], GREY)
-    paste_head(c, "jaga", 30, 13, 1)
+    paste_head(c, "jaga", 30, 13, 4, 3)
     if pose == 1:                                                               # arms up, casting
         c.poly([(16, 15), (21, 7), (22, 9), (18, 16)], GREY, light=False)
         c.ellipse(21, 7, 1.5, 1.5, SKIN, shade=False)
