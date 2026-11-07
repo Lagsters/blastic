@@ -309,9 +309,9 @@ def bust_jaga(talk=False, blink=False):
     c.px([(10, 10), (16, 7), (22, 8), (27, 12), (8, 18), (29, 20), (12, 26)], WHITE)
     c.ellipse(20, 20, 7, 9, SKIN)
     c.poly([(13, 14), (16, 12), (14, 22)], LIGHT)                               # grey hair
-    c.ellipse(28, 23, 3, 2.5, SKIN)                                             # a potato nose
-    c.px([(26, 25), (27, 26), (30, 26)], ORANGE)
-    c.px([(30, 21)], BROWN)                                                     # and its wart
+    c.ellipse(26.5, 22, 2, 1.8, SKIN)                                           # a round nose
+    c.px([(25, 23), (27, 23)], ORANGE)
+    c.fine([(55, 41)], BROWN)                                                   # and its wart
     c.px([(18, 25), (19, 26), (20, 26), (21, 26)], ORANGE)                      # wrinkles
     for ex in (19, 24):
         c.px([(ex, 18), (ex + 1, 18)], K if blink else WHITE)
@@ -528,14 +528,14 @@ def figure_jaga(pose=0):
         c.poly([(0, 12), (-2, 21), (8, 18), (8, 14)], YELLOW, light=False)     # bristles
         c.poly([(10, 16), (13, 6), (22, 5), (26, 16)], GREY)                   # hunched body
         c.poly([(14, 16), (22, 16), (24, 22), (16, 22)], GREY, light=False)    # skirt down
-        paste_head(c, "jaga", 30, 23, -1, 3)
+        paste_head(c, "jaga", 30, 23, -4)
         c.rect(23, 9, 30, 10, GREY, shade=False, light=False)                  # arm to the stick
         return c.outline()
     c = Canvas(22, 32)
     c.rect(3, 6, 4, 32, BROWN, shade=False, light=False)                        # broom
     c.poly([(0, 32), (3, 24), (5, 24), (8, 32)], YELLOW, light=False)
     c.poly([(5, 31), (8, 14), (16, 12), (19, 31)], GREY)
-    paste_head(c, "jaga", 30, 13, 4, 3)
+    paste_head(c, "jaga", 30, 13, 1)
     if pose == 1:                                                               # arms up, casting
         c.poly([(16, 15), (21, 7), (22, 9), (18, 16)], GREY, light=False)
         c.ellipse(21, 7, 1.5, 1.5, SKIN, shade=False)
