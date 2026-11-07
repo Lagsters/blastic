@@ -338,15 +338,17 @@ def figure_dratewka(pose=0):
     legs(c, 10, 25, 32, pose, DARK)
     c.poly([(5, 26), (6, 15), (14, 15), (15, 26)], WHITE)
     c.poly([(6, 27), (7, 18), (13, 18), (14, 27)], BROWN)
+    c.ellipse(5, 11, 2, 4.5, BROWN, light=False)                               # as on his bust
     c.ellipse(10, 10, 5, 5, SKIN)
-    c.ellipse(6, 10, 2, 4, BROWN, light=False)
-    c.ellipse(9, 5, 6, 2, RED)
-    c.poly([(12, 5), (18, 6), (12, 7)], RED, light=False)
+    c.poly([(4.5, 7), (6, 4), (11.5, 3.5), (15, 5.5), (14.5, 7), (10.5, 6), (6.5, 7.5)], BROWN)
+    c.ellipse(9, 4, 6, 2.2, RED)
+    c.poly([(11.5, 4.5), (17.5, 5), (16.5, 6), (11.5, 6)], RED, light=False)
+    c.px([(12, 2), (13, 1), (14, 0)], WHITE)
     c.px([(11, 9), (13, 9)], K)
     c.px([(14, 11)], ORANGE)
     c.px([(11, 13), (12, 13)], RED)
-    c.poly([(13, 16), (16, 23), (14, 24), (12, 18)], WHITE, light=False)
-    c.ellipse(15, 24, 1.5, 1.5, SKIN, shade=False)
+    c.poly([(12, 16), (14, 16), (15, 23), (13, 23)], WHITE, light=False)
+    c.ellipse(14, 24, 1.5, 1.5, SKIN, shade=False)
     return c.outline()
 
 

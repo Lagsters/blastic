@@ -263,14 +263,20 @@ def odra():
     img[refl & (xx < 70)] = 3
     mist = (yy > 60) & (yy < 70) & (np.sin(xx / 13) + noise(20, 2, 83) * 2 > 1.3)
     img[mist & LEVELS[2]] = 13
-    # the Tumski bridge: two green arches, rails, lamps
+    # the Tumski bridge: two low iron spans arching up to the deck from stone piers, lamps
     for ax in (70, 140):
-        arch = ellipse(ax, 58, ax + 70, 98) & ~ellipse(ax + 4, 62, ax + 66, 102) & (yy < 80)
-        img[arch] = 7
-        for k in range(ax + 6, ax + 66, 6):
-            img[(xx == k) & (yy >= 58) & (yy < 66) & ellipse(ax, 58, ax + 70, 98)] = 7
-    img[box(60, 56, 216, 59)] = 7
+        under = ellipse(ax - 1, 60, ax + 71, 88)
+        img[under & ~ellipse(ax + 1, 62, ax + 69, 90) & (yy >= 59)] = 7
+        for k in range(ax + 4, ax + 68, 4):
+            img[(xx == k) & (yy >= 59) & under & ~ellipse(ax + 1, 62, ax + 69, 90)] = 7
+            img[(xx == k) & (yy >= 59) & (yy < 74) & ~under] = 7
+    for px0 in (64, 138, 208):
+        img[box(px0, 59, px0 + 6, 76)] = 15
+        img[box(px0 - 1, 74, px0 + 7, 78)] = 15
+    img[box(60, 56, 216, 60)] = 7
     img[box(60, 52, 216, 53)] = 7
+    for k in range(62, 214, 3):
+        img[box(k, 53, k + 1, 56)] = 7
     for lx in range(66, 214, 24):
         img[box(lx, 46, lx + 1, 56)] = 0
         img[box(lx - 1, 43, lx + 2, 46)] = 4
