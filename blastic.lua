@@ -2310,7 +2310,6 @@ local FOREGROUNDS={
     line(x,116,x+sin(t/25+x)*2,116-h,0) rect(x-1+sin(t/25+x)*2,114-h,3,5,0) end) end,
   cellars=function(fx) every(fx,120,30,function(x) tri(x,116,x+22,116,x+9,70,0) tri(x+30,116,x+44,116,x+38,90,0) end)
     every(fx,200,90,function(x) for y=20,60,4 do rect(x,y,2,3,0) end end) end,
-  hall=function(fx) every(fx,260,10,function(x) rect(x,20,26,96,0) rect(x+26,20,2,96,15) end) end,
   night=function(fx) every(fx,420,0,function(x)
     rect(x,20,7,96,0) circ(x+3,28,16,0) circ(x-10,44,11,0) circ(x+16,48,12,0) circ(x+4,60,9,0) end) end,
 }
