@@ -48,6 +48,10 @@ Rozstrzygają każdy spór, w tej kolejności.
 | `test_make_tic.py` | testy minifikatora |
 | `music.bin` | próbki instrumentów (bas, perkusja, wybuch): IMA ADPCM, 7680 Hz, w RAM od `0x04000` |
 | `tools/music/instruments.py` | renderuje próbki (bas z GeneralUser GS, perkusja i wybuch z syntezy) do `music.bin` |
+| `scenes.bin` | malowane tła scenek fabularnych (RLE, 4 bity), w RAM od `0x08000` (MAP) |
+| `tools/scenes/paint.py` | maluje tła scenek w indeksach palety do `scenes.bin` (numpy, Pillow) |
+| `tools/film.lua`, `tools/film.py` | narzędzie dev: nagrywa intro i wszystkie scenki do MP4 albo arkusza klatek |
+| `tools/film_reel.lua` | doklejany przez `make_tic.py --films` do carta dev `films.tic` (scenki w pętli, nie do releasu) |
 | `sim_campaign.lua` | boty grają etapy kampanii: przejścia, czas, przyczyny śmierci |
 | `check.py` | bramka „gotowe” |
 
@@ -66,6 +70,9 @@ Rozstrzygają każdy spór, w tej kolejności.
 | `python make_tic.py` | build `blastic.tic` |
 | `python tools/music/instruments.py GeneralUser-GS.sf2 music.bin` | próbki muzyki (numpy, scipy, soundfile, tinysoundfont; SoundFont spoza repo) |
 | `lua sim_campaign.lua [od] [do] [prób] [limit klatek]` | symulacja kampanii (długa: kilka minut na etap) |
+| `python tools/scenes/paint.py scenes.bin [--preview dir]` | tła scenek |
+| `lua tools/film.lua <dir>` + `python tools/film.py <dir> <out.mp4>` (albo `<out.png> --sheet N`) | filmy do oceny (ffmpeg) |
+| `python make_tic.py --films` | cart dev `films.tic` ze scenkami w pętli |
 | `lua tools/shot.lua <dir>` + `python tools/shot.py <dir> <out>` | screeny tytułu i rozgrywki z kodu gry (napisy dorysowuje Pillow, więc krój pisma różni się od TIC-80) |
 
 Lua 5.4, jak `lua5.4` w CI na Ubuntu 24.04. Windows: `winget install DEVCOM.Lua`.

@@ -3,7 +3,8 @@
 
 The code is minified on the way (see DEVIATIONS.md): comments, indentation and blank lines
 go, strings stay byte for byte. `python make_tic.py --min <src.lua> <out.lua>` writes only the
-minified code, which check.py runs the tests against.
+minified code, which check.py runs the tests against. `python make_tic.py --films` builds
+films.tic, a developer cart that plays every story scene in a loop (never released).
 """
 import re, struct, sys, os
 
@@ -13,6 +14,11 @@ CODE_LIMIT    = 65535
 MUSIC_BLOB    = 'music.bin'
 # The music samples land in RAM from 0x04000 (TILES, then SPRITES), where blastic.lua reads them.
 MUSIC_CHUNKS  = [(1, 8192), (2, 8192)]
+# The scene backdrops land in MAP RAM (0x08000).
+SCENES_BLOB   = 'scenes.bin'
+CHUNK_MAP     = 4
+MAP_SIZE      = 32640
+FILM_REEL     = os.path.join('tools', 'film_reel.lua')
 # TIC-80 reads the cart's metadata from these header comments, so they stay.
 METADATA = re.compile(r'--\s*(title|author|desc|script|input|saveid|site|license|version):')
 LONG_OPEN = re.compile(r'\[(=*)\[')
@@ -78,8 +84,8 @@ def minify(code: str) -> str:
     return '\n'.join(line for line in lines if line) + '\n'
 
 
-def lua_to_tic(lua_path: str, tic_path: str):
-    code = minify(open(lua_path, 'r', encoding='utf-8').read())
+def lua_to_tic(lua_path: str, tic_path: str, extra: str = ''):
+    code = minify(open(lua_path, 'r', encoding='utf-8').read() + extra)
     code_bytes = code.encode('utf-8')
     if len(code_bytes) > CODE_LIMIT:
         raise ValueError(f"Code too large: {len(code_bytes)} bytes (max {CODE_LIMIT})")
@@ -87,6 +93,12 @@ def lua_to_tic(lua_path: str, tic_path: str):
     music = os.path.join(os.path.dirname(lua_path), MUSIC_BLOB)
     if os.path.exists(music):
         data += music_chunks(open(music, 'rb').read())
+    scenes = os.path.join(os.path.dirname(lua_path), SCENES_BLOB)
+    if os.path.exists(scenes):
+        blob = open(scenes, 'rb').read()
+        if len(blob) > MAP_SIZE:
+            raise ValueError(f"Scenes too large: {len(blob)} bytes (max {MAP_SIZE})")
+        data += make_chunk(CHUNK_MAP, 0, blob)
     data += make_chunk(CHUNK_CODE, 0, code_bytes)
     with open(tic_path, 'wb') as f:
         f.write(data)
@@ -97,6 +109,9 @@ if __name__ == '__main__':
     if sys.argv[1:2] == ['--min']:
         with open(sys.argv[3], 'w', encoding='utf-8', newline='\n') as f:
             f.write(minify(open(sys.argv[2], encoding='utf-8').read()))
+        sys.exit(0)
+    if sys.argv[1:2] == ['--films']:
+        lua_to_tic('blastic.lua', 'films.tic', chr(10) + open(FILM_REEL, encoding='utf-8').read())
         sys.exit(0)
     src = sys.argv[1] if len(sys.argv) > 1 else 'blastic.lua'
     dst = sys.argv[2] if len(sys.argv) > 2 else os.path.splitext(src)[0] + '.tic'

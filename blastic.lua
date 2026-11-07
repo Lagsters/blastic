@@ -1425,6 +1425,7 @@ end
 menuSel=1
 TITLE_IDLE=900  -- frames on the menu before the battle demo starts
 local LOGO,LOGO_X,LOGO_Y="BLASTIC",57,22
+local SUBTITLE="THE SULPHUR LEGEND"
 
 -- print returns the width of the text; drawn off-screen, it only measures
 local function textW(s,scale) return print(s,0,-20,0,false,scale,true) or 0 end
@@ -1460,7 +1461,7 @@ local function drawTitle()
   castle(80,104,15,4)
   rect(0,126,240,10,15)
   drawLogo()
-  print("NOT YOUR PRINCESS",86,48,13,false,1,true)
+  print(SUBTITLE,84,48,13,false,1,true)
 
   local menu=titleMenu()
   for i,item in ipairs(menu) do
@@ -1562,17 +1563,18 @@ local function drawHUD()
   end
 end
 
--- ── campaign: "Not Your Princess" ────────────────────────────────────────────
--- Sir Aldric chases the wizard Morgath, who took Princess Elena; from chapter 2 Elena
--- fights along (P2 in Story 2P, a bot ally otherwise).
+-- ── campaign: "The Sulphur Legend" ───────────────────────────────────────────
+-- Kuba, a Wroclaw shoemaker with sulphur bombs, goes after the dragon of Krakow and finds
+-- the devil behind it; from chapter 2 Princess Wanda fights along (P2 in Story 2P, a bot
+-- ally otherwise).
 
-BOSS_HP={troll=3,witch=3,dragon=4,morgath=6}
-local CH_BOSS={"troll","witch","dragon","morgath"}
+BOSS_HP={utopek=3,jaga=3,dragon=4,devil=6}
+local CH_BOSS={"utopek","jaga","dragon","devil"}
 local GOAL_CYCLE={"exit","enemies","keys","survive"}
 local SCROLLS={"h","v",false}
 STAGE_COUNT,CHAPTER_LEN=100,25
 
--- stage n: chapter, goal, crate density, goblins, bats, skeletons, boss, scroll ("h" wide,
+-- stage n: chapter, goal, crate density, dwarves, bats, skeletons, boss, scroll ("h" wide,
 -- "v" tall), boss hp. Every 5th stage is a boss fight: earlier bosses come back in between,
 -- the chapter's own boss ends it. Monsters grow with n; bats from chapter 2, skeletons from 3.
 function stageDef(n)
@@ -1588,7 +1590,7 @@ end
 
 STAGES={}
 for n=1,STAGE_COUNT do STAGES[n]=stageDef(n) end
-CHAPTERS={"ENCHANTED FOREST","WITCH'S SWAMP","DRAGON'S TOWER","THE KING'S CASTLE"}
+CHAPTERS={"WROCLAW","MOUNT SLEZA","KRAKOW","THE DEVIL'S CELLARS"}
 local GOALS={exit="FIND THE EXIT",enemies="DEFEAT ALL MONSTERS",keys="FIND 3 KEYS",
   survive="SURVIVE THE WALLS",boss="DEFEAT THE BOSS"}
 local SKELETON_COL=13
@@ -1783,8 +1785,8 @@ local function updateBoss()
     end
   end end
   local kind=b.kind
-  if kind=="morgath" then kind=b.hp>4 and "witch" or b.hp>2 and "summon" or "dragon" end
-  if kind=="troll" and b.t%3==0 then
+  if kind=="devil" then kind=b.hp>4 and "jaga" or b.hp>2 and "summon" or "dragon" end
+  if kind=="utopek" and b.t%3==0 then
     local a=aldric()
     if b.x==gpx(b.c) and b.y==gpy(b.r) then
       b.d={0,0}
@@ -1795,10 +1797,10 @@ local function updateBoss()
     end
     b.x,b.y=b.x+b.d[1],b.y+b.d[2]
     b.c,b.r=gcol(b.x+TILE//2),grow(b.y+TILE//2)
-  elseif (kind=="witch" or kind=="summon") and b.t%150==0 then
+  elseif (kind=="jaga" or kind=="summon") and b.t%150==0 then
     if kind=="summon" then spawnMonster("g",b.c,b.r) end
     bossTeleport(b)
-    if kind=="witch" then bombs[#bombs+1]={c=b.c,r=b.r,t=BOMB_TIMER,len=3,owner=BOSS_FIRE} end
+    if kind=="jaga" then bombs[#bombs+1]={c=b.c,r=b.r,t=BOMB_TIMER,len=3,owner=BOSS_FIRE} end
   elseif kind=="dragon" and (b.warn or b.t%120==0) then
     bossFire(b)
   end
@@ -1872,15 +1874,15 @@ end
 -- ── campaign drawing ──────────────────────────────────────────────────────────
 
 -- 8x8 art, one character per pixel: '.' transparent, other letters index ART_COL
-local ART_COL={g=5,k=0,w=12,d=15,r=2,y=4,s=10,t=7,p=9,o=3}
+local ART_COL={g=5,k=0,w=12,d=15,r=2,y=4,s=10,t=7,p=9,o=3,c=13}
 local ART={
-  g={"..gggg..",".gggggg.","gwkggwkg","gggggggg",".gyyyyg.","..gggg..",".g.gg.g.","g......g"},
+  g={"...rr...","..rrrr..",".rrrrrr.","..skks..","..ssss..",".wwwwww.",".pwwwwp.","..d..d.."},
   b={"d......d","dd.dd.dd","ddddddd.",".drddrd.","..dddd..","...dd...","........","........"},
-  troll={"..tttt..",".tttttt.","twkttwkt","tttttttt","tyttttyt",".tttttt.",".tt..tt.",".tt..tt."},
-  witch={"...dd...","..dddd..","dddddddd",".ssssss.",".skssks.",".sssyss.","..gggg..",".gggggg."},
+  utopek={"..tttt..",".tttttt.","tggggggt","gwkggwkg","gggggggg","g.kkkk.g",".gggggg.","t.g..g.t"},
+  jaga={"..rrrr..",".rrrrrr.","rrssssrr",".skssks.",".sssoss.",".csssc..",".dddddd.","dddddddd"},
   dragon={"r......r","rr.rr.rr","rrrrrrrr","rwkrrwkr","rrrrrrrr","ryyyyyyr",".rr..rr.","rr....rr"},
   heart={"........",".rr.rr..","rrrrrrr.","rrrrrrr.",".rrrrr..","..rrr...","...r....","........"},
-  morgath={"...pp...","..pppp..",".pppppp.","..ssss..","..kssk..","..sooss.",".pppppp.","pppppppp"},
+  devil={"k......k",".krrrrk.","rrrrrrrr","ryrrrryr","rrrrrrrr","kkkrrkkk",".rrrrrr.","r.dddd.r"},
 }
 
 function drawArt(name,x,y,scale,flash)
@@ -1965,19 +1967,58 @@ function drawCampaign()
 end
 
 -- ── scenes ────────────────────────────────────────────────────────────────────
--- A scene is a film: shots with their own set, camera pan, actors and lines, cut with a fade.
--- The cast is drawn larger than the game sprites, from shapes, so it reads at a glance.
+-- A scene is a film: shots with their own backdrop, camera pan, actors and lines, cut with a
+-- fade. Backdrops are painted by tools/scenes/paint.py; the cast is drawn from shapes, larger
+-- than the game sprites, in colours the backdrops leave alone (all but 1, 5, 7 and 11).
 
 local sin,cos=math.sin,math.cos
 
+-- scenes.bin sits in MAP RAM; a shot's backdrop is unpacked into MUSIC PATTERNS RAM (the
+-- tracker plays PCM, so TIC-80's own music never reads it) and copied to the screen each frame
+local ART_RAM,BACKDROP_RAM,BACKDROP_BYTES=0x08000,0x11164,11520
+local BACKDROPS={"rynek","workshop","road","sleza","wawel","hall","cellars","night"}
+local BAR=20  -- letterbox bar height; the backdrop fills the 96 rows between the bars
+SUB_Y=127     -- the line being typed, in the bottom bar
+
 -- fading works on the palette: TIC-80 has no transparency to darken a frame with
-local palBase
+local palBase,palShot,sky,fadeK
 local function fadePal(k)
-  if not palBase then
-    palBase={}
-    for i=0,47 do palBase[i]=peek(0x03FC0+i) end
+  fadeK=k
+  for i=0,47 do poke(0x03FC0+i,palShot[i]*k//1) end
+end
+
+local function rgbAt(p) return {peek(p),peek(p+1),peek(p+2)} end
+
+-- unpacks backdrop name, sets its three colours and sky; false when the cart has no art
+local function loadBackdrop(name)
+  palShot,sky={},nil
+  for i=0,47 do palShot[i]=palBase[i] end
+  local k
+  for i,n in ipairs(BACKDROPS) do if n==name then k=i end end
+  if not k or peek(ART_RAM)<k then return false end
+  local e=ART_RAM+1+(k-1)*20
+  for i,c in ipairs{1,5,7} do
+    for j=0,2 do palShot[c*3+j]=peek(e+2+(i-1)*3+j) end
   end
-  for i=0,47 do poke(0x03FC0+i,palBase[i]*k//1) end
+  sky={rgbAt(e+11),rgbAt(e+14),rgbAt(e+17)}
+  -- byte RLE: c<128 copies the next c+1 bytes, c>=128 repeats the next byte c-126 times
+  local src,dst=ART_RAM+(peek(e)|peek(e+1)<<8),BACKDROP_RAM
+  while dst<BACKDROP_RAM+BACKDROP_BYTES do
+    local c=peek(src)
+    if c<128 then memcpy(dst,src+1,c+1) src,dst=src+c+2,dst+c+1
+    else memset(dst,peek(src+1),c-126) src,dst=src+2,dst+c-126 end
+  end
+  return true
+end
+
+-- the sky colour (11) changes on every scanline, like the Amiga copper
+function BDR(row)
+  local y=row-4-BAR
+  if not sky or y<0 or y>95 then return end
+  local k=y/95*2
+  local i=math.min(1,k//1)
+  local a,b,f=sky[i+1],sky[i+2],k-i
+  for c=1,3 do poke(0x03FC0+32+c,(a[c]+(b[c]-a[c])*f)*fadeK//1) end
 end
 
 -- figure units: feet at (x,y), about 25 units tall, s pixels per unit, mirrored when left
@@ -1987,39 +2028,49 @@ local function fig(who,x,y,s,t,left,walk,fire)
   local function C(dx,dy,r,c) circ(x+dx*m*s,y+dy*s,r*s,c) end
   local function T(a,b,c,d,e,f,col) tri(x+a*m*s,y+b*s,x+c*m*s,y+d*s,x+e*m*s,y+f*s,col) end
   local step=walk and t//6%2*2-1 or 0
-  local function face(c,hair)
+  local function face(c)
     C(0,-17,4,c)
-    if hair then R(-4,-21,8,3,hair) end
-    R(0,-18,1,1,0) R(2,-18,1,1,0)
+    R(1,-18,1,1,0) R(3,-18,1,1,0)
   end
-  if who=="aldric" then
-    T(-3,-13,-3,-3,-8,-1+step,2)
-    R(-3+step,-5,2,5,14) R(1-step,-5,2,5,14)
-    R(-4,-13,8,8,13) R(-2,-12,4,6,9)
-    C(0,-17,5,13) R(-1,-19,5,4,SKIN) R(1,-18,1,1,0) R(3,-18,1,1,0)
-    T(-1,-21,1,-22,-6,-26,2)
-    C(6,-9,2,0) R(7,-12,1,2,13)
-    if t%8<4 then R(7,-13,1,1,4) end
-  elseif who=="elena" then
-    R(-5,-19,9,10,3)
-    T(-6,0,6,0,0,-12,6) R(-2,-13,4,4,5)
-    face(SKIN,3)
-    R(-2,-23,5,2,4) R(-2,-24,1,1,4) R(2,-24,1,1,4)
-  elseif who=="king" then
+  if who=="kuba" then
+    R(-3+step,-5,2,5,14) R(1-step,-5,2,5,14) R(-3+step,-1,2,1,0) R(1-step,-1,2,1,0)
+    R(-4,-13,8,8,12) R(-3,-11,6,7,8)
+    face(SKIN)
+    R(-4,-19,2,3,8) R(-4,-22,8,3,2) R(2,-20,4,1,2)
+    C(7,-9,3,12) C(9,-11,2,12) R(10,-11,2,2,0) R(6,-14,1,2,13)
+    if t%8<4 then R(6,-15,1,1,4) end
+  elseif who=="wanda" then
+    R(-5,-19,4,13,4)
+    T(-6,0,6,0,0,-12,2) R(-2,-13,4,4,12)
+    face(SKIN)
+    R(-4,-21,8,2,4) R(-4,-22,8,1,6) R(-3,-23,1,1,2) R(0,-23,1,1,9) R(3,-23,1,1,12)
+  elseif who=="krak" then
     T(-7,0,7,0,0,-14,2) R(-7,-1,14,1,12) R(-1,-12,2,11,12)
     face(SKIN)
     T(-3,-15,3,-15,0,-9,12)
     R(-3,-23,7,2,4) R(-3,-24,1,1,4) R(0,-25,1,2,4) R(3,-24,1,1,4)
-  elseif who=="goblin" then
-    R(-2+step,-4,2,4,6) R(1-step,-4,2,4,6)
-    R(-3,-10,6,6,6) C(0,-13,4,5) T(3,-14,7,-17,3,-12,5) T(-3,-14,-7,-17,-3,-12,5)
-    R(0,-14,1,1,2) R(2,-14,1,1,2)
-  elseif who=="morgath" then
-    y=y+sin(t/10)*s
-    R(8,-24,1,24,WOOD) C(8,-25,2,t%30<15 and 5 or 11)
-    T(-8,0,8,0,0,-19,2) T(-7,0,7,0,0,-17,0)
-    C(0,-17,6,2) T(-6,-18,6,-18,-1,-29,2) C(0,-17,5,0) T(-5,-18,5,-18,-1,-27,0)
-    C(1,-16,3,15) R(0,-17,1,1,4) R(2,-17,1,1,4)
+  elseif who=="twardowski" then
+    T(-6,0,6,0,0,-14,9) R(-1,-13,2,13,2) R(-4,-8,8,2,4)
+    face(SKIN)
+    R(-2,-15,7,1,0)
+    R(-4,-25,8,5,8) R(-3,-26,6,1,2) R(3,-29,1,4,12)
+  elseif who=="devil" then
+    T(-7,0,7,0,0,-15,2) T(-6,0,6,0,0,-14,0)
+    R(-9,-4,3,1,2) R(-9,-8,1,4,2) T(-10,-8,-8,-8,-9,-10,2)
+    C(0,-17,4,2) R(1,-18,1,1,4) R(3,-18,1,1,4) R(-1,-15,7,1,0)
+    T(-3,-20,-1,-20,-4,-25,0) T(1,-20,3,-20,4,-25,0)
+  elseif who=="jaga" then
+    R(-6,-16,1,16,8) T(-8,0,-4,0,-6,-5,4)
+    T(-6,0,6,0,0,-12,14)
+    C(0,-15,5,2) C(1,-14,4,SKIN) R(4,-14,2,1,3) R(2,-15,1,1,0) R(-2,-12,5,1,13)
+  elseif who=="dwarf" then
+    R(-2,-2,1,2,0) R(1,-2,1,2,0) R(-3,-6,6,4,9)
+    C(0,-10,3,SKIN) T(-3,-9,3,-9,0,-4,12) R(1,-11,1,1,0)
+    T(-4,-12,4,-12,0,-20,2)
+  elseif who=="rooster" then
+    T(-4,-8,-13,-20,-6,-4,6) T(-4,-8,-11,-15,-4,-4,0)
+    C(0,-8,5,3) C(4,-14,3,3) R(3,-18,3,2,2) R(6,-13,1,2,2) T(7,-15,10,-14,7,-13,4)
+    R(5,-15,1,1,0) R(-1,-3,1,3,4) R(1,-3,1,3,4)
   elseif who=="dragon" then
     local flap=sin(t/6)*6
     T(-6,-9,-6,-4,-22,-3,2)
@@ -2029,65 +2080,22 @@ local function fig(who,x,y,s,t,left,walk,fire)
     T(4,-16,9,-16,10,-26,2) C(11,-26,5,2) R(13,-27,7,4,2)
     R(11,-29,2,2,4) R(12,-29,1,2,0) T(8,-30,10,-31,6,-36,13)
     if fire then T(20,-26,44,-34,44,-18,3) T(20,-26,36,-29,36,-23,4) end
-  elseif who=="egg" then
-    C(0,-5,5,12) R(-2,-6,2,2,5) R(2,-3,2,2,5)
   end
 end
 
-local function hills(cx,t,far,near)
-  for i=0,6 do circ((i*60-cx//3)%360-60,112,40,far) end
-  rect(0,104,240,16,near)
+-- what moves on a backdrop: sparks of the bonfire, embers, the candle, the river, stars
+local function rising(t,n,x,y,w,h,c1,c2)
+  for k=0,n do
+    local p=(t+k*23)%h
+    pix(x+(k*41)%w+sin(t/15+k)*3,y-p,p<h//2 and c1 or c2)
+  end
 end
-
-local function sky(top,mid,low)
-  cls(top) rect(0,50,240,30,mid) rect(0,80,240,40,low)
-end
-
--- sets, drawn under a camera at cx; parallax layers move slower than the actors
-local SETS={
-  day=function(cx,t)
-    sky(9,9,11)
-    for i=0,3 do local x=(i*80+t//4-cx//5)%320-40 circ(x,30+i%2*10,8,12) circ(x+9,32+i%2*10,6,12) end
-    hills(cx,t,6,5)
-    castle(120-cx//2,52,13,14)
-    for i=0,1 do rect(110-cx//2+i*82,40,1,12,14) rect(111-cx//2+i*82,40+t//8%2,5,3,2) end
-  end,
-  hall=function(cx,t)
-    cls(15)
-    for r=0,5 do for c=0,8 do rectb((c*32-r%2*16-cx)%288-32,16+r*15,32,15,14) end end
-    for i=0,2 do local x=(i*90+40-cx)%270-20 rect(x,30,16,40,9) circ(x+7,30,8,9) rect(x+7,30,2,40,15) end
-    rect(0,104,240,16,14) tri(80-cx,120,160-cx,120,120-cx,104,2)
-    rect(20-cx,70,24,34,4) rect(24-cx,60,16,12,4) rect(26-cx,76,12,14,2)
-  end,
-  night=function(cx,t)
-    nightSky(t,cx)
-    castle(110-cx//2,62,15,4)
-    rect(0,112,240,8,15)
-  end,
-  swamp=function(cx,t)
-    sky(15,15,7)
-    for i=0,5 do
-      local x=(i*50-cx//2)%300-30
-      rect(x,40,5,64,0) line(x+2,60,x-10,48,0) line(x+3,70,x+16,56,0)
-    end
-    rect(0,104,240,16,7)
-    for i=0,7 do line((i*31+t//3)%260-20,108+i%3*4,(i*31+t//3)%260-6,108+i%3*4,11) end
-    for i=0,5 do pix((i*47+sin(t/20+i)*12)%240,60+cos(t/25+i)*20,t//10%3==i%3 and 4 or 5) end
-  end,
-  storm=function(cx,t)
-    cls(t%120<3 and 12 or 15)
-    for i=0,4 do local x=(i*70-t//2)%300-30 circ(x,24,14,14) circ(x+16,28,10,14) end
-    if t%120<6 then line(60,16,50,40,12) line(50,40,64,50,12) line(64,50,54,80,12) end
-    rect(150-cx//2,30,40,74,13) tri(144-cx//2,30,170-cx//2,4,196-cx//2,30,2) rect(166-cx//2,50,8,10,4)
-    rect(0,104,240,16,14)
-  end,
-  sunset=function(cx,t)
-    sky(15,2,3)
-    circ(120,104,26,4) circ(120,104,22,12)
-    rect(0,104,240,16,0)
-    castle(10-cx//4,74,0)
-  end,
-  black=function() cls(0) end,
+local OVERLAYS={
+  sleza=function(t) rising(t,10,118,44,12,30,4,2) rising(t,5,0,100,240,50,4,6) end,
+  cellars=function(t) rising(t,24,0,116,240,90,4,2) end,
+  workshop=function(t) rect(89,70+t//5%2,2,4,t//3%2==0 and 4 or 3) end,
+  wawel=function(t) for k=0,14 do pix((k*53+t//4)%240,106+k%4*3,t//8%2==k%2 and 12 or 4) end end,
+  night=function(t) for k=0,6 do pix((k*67)%240,24+(k*29)%40,(t//20+k)%3==0 and 12 or 13) end end,
 }
 
 -- fireworks over the castle at the end: bursts of bombs, each on its own clock
@@ -2095,7 +2103,7 @@ local function fireworks(t)
   for k=0,4 do
     local p=(t+k*29)%80
     local n=(t+k*29)//80
-    local x,y=(k*67+n*41)%180+30,30+(k*31+n*17)%40
+    local x,y=(k*67+n*41)%180+30,36+(k*31+n*17)%36
     if p<10 then pix(x,y+40-p*4,13)
     elseif p<50 then
       for j=0,11 do
@@ -2106,78 +2114,85 @@ local function fireworks(t)
   end
 end
 
--- actors: {who, x0,y0, x1,y1, t0,t1, scale=2, faces left (default: walks left)}
--- shots: set, pan (camera travel in px), len (frames without lines), cap (place, top bar),
--- title (big caption), fx: flash | shake | fire (dragon breath) | fireworks; lines start
--- once every actor stands still
+-- actors: {who, x0,y0, x1,y1, t0,t1, scale=2, faces left (default: walks left)}; standing
+-- feet at y=108, close-ups at scale 4 with feet at y=126 under the bar
+-- shots: bd (backdrop), pan (camera travel in px), len (frames without lines), cap (place,
+-- top bar), title (big caption), fx: flash | shake | fire (dragon breath) | fireworks;
+-- lines start once every actor stands still
+local function closeUp(who,x,left) return {{who,x,126,x,126,0,0,4,left}} end
 SCENES={
-  intro={
-    {set="day",pan=60,len=180,cap="THE KINGDOM OF TICLAND"},
-    {set="hall",act={{"king",60,104,60,104,0,0},{"elena",100,104,100,104,0,0}},
-      say={{"KING","One day, daughter, all this will be yours."},{"ELENA","I'd rather have a sword."}}},
-    {set="hall",fx="flash",act={{"king",60,104,60,104,0,0,2},{"elena",100,104,100,104,0,0},
-      {"morgath",250,96,170,96,0,50,2,true}},
-      say={{"MORGATH","Your daughter is coming with me!"}}},
-    {set="hall",fx="shake",len=100,act={{"king",60,104,60,104,0,0},{"morgath",170,96,260,0,10,90,2,false},
-      {"elena",150,104,240,10,10,90,2,true}}},
-    {set="hall",act={{"king",120,118,120,118,0,0,4}},say={{"KING","Sir Aldric! Morgath took my daughter!"}}},
-    {set="day",pan=-30,act={{"aldric",120,118,120,118,0,0,4,true}},say={{"ALDRIC","With what? I only have bombs."}}},
-    {set="hall",act={{"king",120,118,120,118,0,0,4}},say={{"KING","Swords are so last century. GO!"}}},
-    {set="sunset",pan=20,len=150,act={{"aldric",-10,104,170,104,0,150,1}}},
-    {set="black",len=120,title=1},
+  wroclaw={
+    {bd="rynek",len=170,cap="WROCLAW, THE MARKET SQUARE",
+      act={{"dwarf",30,108,30,108,0,0},{"dwarf",206,108,206,108,0,0,2,true}}},
+    {bd="rynek",act={{"dwarf",-20,108,96,108,0,70,3}},
+      say={{"DWARF","News from Krakow! A dragon eats the sheep!"},{"DWARF","King Krak gives half his kingdom to a hero!"}}},
+    {bd="workshop",act=closeUp("kuba",110),
+      say={{"KUBA","Half a kingdom for one dragon?"},{"KUBA","Wool, sulphur, a bit of love..."}}},
+    {bd="workshop",fx="flash",act=closeUp("kuba",110),say={{"KUBA","...and less sulphur next time."}}},
+    {bd="night",act={{"rooster",-40,70,280,44,0,170,1},{"twardowski",-38,62,282,36,0,170,1},{"kuba",60,108,60,108,0,0}},
+      say={{"KUBA","Master Twardowski on his rooster."},{"KUBA","Where he flies, trouble follows."}}},
+    {bd="rynek",len=150,act={{"kuba",-10,108,250,108,0,150}}},
+    {bd="black",len=120,title=1},
   },
-  swamp={
-    {set="swamp",pan=40,len=150,cap="WITCH'S SWAMP"},
-    {set="swamp",act={{"goblin",150,104,150,104,0,0,2,true},{"goblin",180,104,180,104,0,0,2,true},
-      {"elena",120,104,120,104,0,0},{"aldric",-20,104,60,104,0,70}},
-      say={{"ALDRIC","Princess! I came to rescue..."}}},
-    {set="swamp",act={{"elena",120,118,120,118,0,0,4,true}},
-      say={{"ELENA","You're late. I rescued myself."},{"ELENA","Morgath fled into the swamp. Keep up."}}},
-    {set="swamp",pan=30,len=110,act={{"elena",80,104,260,104,0,110},{"aldric",40,104,230,104,20,130}}},
-    {set="black",len=120,title=2},
+  sleza={
+    {bd="road",len=170,cap="THE ROAD SOUTH",act={{"kuba",-10,108,120,108,0,170,1}}},
+    {bd="sleza",len=150,cap="MOUNT SLEZA, KUPALA NIGHT"},
+    {bd="sleza",act={{"wanda",150,108,150,108,0,0,2,true},{"kuba",-20,108,90,108,0,70}},
+      say={{"KUBA","A princess? On a mountain? At night?"},{"WANDA","I ran away. Father wants to marry me to a hero."}}},
+    {bd="sleza",act=closeUp("wanda",120,true),say={{"WANDA","Don't get any ideas, shoemaker."}}},
+    {bd="sleza",fx="flash",act=closeUp("jaga",130,true),say={{"BABA JAGA","Twardowski sends his regards!"}}},
+    {bd="sleza",act=closeUp("kuba",110),say={{"KUBA","Twardowski. I knew it."}}},
+    {bd="black",len=120,title=2},
   },
-  tower={
-    {set="storm",len=160,cap="DRAGON'S TOWER",act={{"dragon",-80,90,320,60,0,160,2}}},
-    {set="storm",act={{"aldric",40,104,40,104,0,0},{"elena",80,104,80,104,0,0}},
-      say={{"ELENA","The dragon guards Morgath's tower..."}}},
-    {set="storm",fx="fire",act={{"dragon",70,112,70,112,0,0,2}},say={{"ELENA","...because he stole its egg."}}},
-    {set="storm",act={{"aldric",120,118,120,118,0,0,4},{"egg",190,104,190,104,0,0,2}},
-      say={{"ALDRIC","Find the egg, save the dragon?"},{"ELENA","Your call, bomb boy."}}},
-    {set="black",len=120,title=3},
+  krakow={
+    {bd="wawel",len=170,cap="KRAKOW, WAWEL HILL",act={{"dragon",-80,80,320,50,0,170,1}}},
+    {bd="wawel",act={{"kuba",40,108,40,108,0,0},{"wanda",70,108,70,108,0,0},{"dragon",190,110,190,110,0,0,2,true}},
+      say={{"KUBA","Here, dragon! Have a sheep!"}}},
+    {bd="wawel",fx="fire",act={{"dragon",70,118,70,118,0,0,2}},
+      say={{"DRAGON","*burp* Spicy. Who sent you?"},{"DRAGON","A gentleman with a tail took my egg."}}},
+    {bd="wawel",act=closeUp("wanda",120,true),say={{"WANDA","A gentleman with a tail... the devil!"}}},
+    {bd="night",fx="flash",act=closeUp("twardowski",120,true),
+      say={{"TWARDOWSKI","Yes. He holds my pact."},{"TWARDOWSKI","He makes me send the dragon. Burn the pact!"}}},
+    {bd="black",len=120,title=3},
   },
-  castle={
-    {set="night",pan=40,len=150,cap="THE KING'S CASTLE"},
-    {set="night",fx="flash",act={{"morgath",120,110,120,110,0,0,4}},
-      say={{"MORGATH","Surprised? I am the royal alchemist."},{"MORGATH","Who do you think sold you those bombs?"}}},
-    {set="night",act={{"aldric",120,118,120,118,0,0,4}},say={{"ALDRIC","...Can I get a refund?"}}},
-    {set="night",act={{"aldric",-20,104,90,104,0,60},{"elena",-50,104,60,104,0,60},
-      {"morgath",250,96,170,96,30,80,2,true}},say={{"ELENA","Bomb him."}}},
-    {set="black",len=120,title=4},
+  cellars={
+    {bd="cellars",len=170,cap="THE DEVIL'S CELLARS"},
+    {bd="cellars",fx="flash",act=closeUp("devil",120,true),
+      say={{"DEVIL","A shoemaker? Against me?"},{"DEVIL","I own Twardowski. Soon I own Krakow."}}},
+    {bd="cellars",act=closeUp("kuba",110),say={{"KUBA","I brought sheep."}}},
+    {bd="cellars",act={{"kuba",-20,108,70,108,0,60},{"wanda",-50,108,40,108,0,60},{"twardowski",130,108,130,108,0,0,2,true}},
+      say={{"TWARDOWSKI","Three pages of the pact are hidden here."},{"TWARDOWSKI","Find them and burn them!"}}},
+    {bd="black",len=120,title=4},
   },
   ending={
-    {set="hall",act={{"king",60,104,60,104,0,0},{"elena",-30,104,110,104,0,80},{"aldric",-60,104,140,104,0,90,2,true}},
-      say={{"KING","My heroes! The kingdom is safe."},{"ELENA","Next time I rescue you."},{"ALDRIC","Deal. No more bombs."}}},
-    {set="night",fx="fireworks",len=240},
-    {set="sunset",pan=20,len=200,act={{"elena",60,104,200,104,0,200,1},{"aldric",40,104,180,104,0,200,1}}},
-    {set="black",len=200,title="THE END"},
+    {bd="cellars",fx="shake",act={{"devil",120,108,300,30,10,90}},say={{"DEVIL","My pact! Noooo!"}}},
+    {bd="night",act={{"rooster",60,104,190,48,20,200,1},{"twardowski",62,96,192,40,20,200,1}},
+      say={{"TWARDOWSKI","Free at last! I'm off to the moon."},{"TWARDOWSKI","It's quieter up there."}}},
+    {bd="hall",act={{"krak",120,108,120,108,0,0},{"wanda",-30,108,80,108,0,80},{"kuba",-60,108,164,108,0,90,2,true}},
+      say={{"KRAK","My hero! Here is your reward..."},{"KRAK","Cheese!"},{"WANDA","Half the kingdom, father."},{"KRAK","Half the cheese?"}}},
+    {bd="night",fx="fireworks",len=240},
+    {bd="rynek",act={{"dwarf",40,108,40,108,0,0},{"dwarf",206,108,206,108,0,0,2,true},{"kuba",-10,108,120,108,0,120}},
+      say={{"KUBA","Home. No more dragons."}}},
+    {bd="black",len=200,title="THE END"},
   },
 }
-SCENE_OF_CHAPTER={"intro","swamp","tower","castle"}
+SCENE_OF_CHAPTER={"wroclaw","sleza","krakow","cellars"}
 
-local scene
+local scene,backdrop
 local LINE_FRAMES,FADE=150,12
-SUB_Y=129  -- the line being typed, in the bottom letterbox bar
 
 local function nextShot()
   local s=scene
   s.n=s.n+1
   local sh=s.shots[s.n]
   if not sh then
+    palShot,sky=palBase,nil
     fadePal(1)
     scene=nil
     s.after()
     return
   end
+  backdrop=loadBackdrop(sh.bd)
   local stop=0
   for _,a in ipairs(sh.act or {}) do stop=math.max(stop,a[7]) end
   s.sh,s.t,s.line,s.lineT,s.start,s.leave=sh,0,1,0,stop+10,nil
@@ -2185,6 +2200,10 @@ end
 
 function playScene(name,after)
   initPalette()
+  if not palBase then
+    palBase={}
+    for i=0,47 do palBase[i]=peek(0x03FC0+i) end
+  end
   scene={shots=SCENES[name],n=0,after=after}
   nextShot()
   state="scene"
@@ -2205,12 +2224,15 @@ function drawScene()
   local t=s.t
   local len=sh.len or s.start+60
   local cx=(sh.pan or 0)*math.min(1,t/len)//1
-  if sh.fx=="shake" and t<60 then cx=cx+sin(t*7)*3//1 end
-  if sh.fx=="flash" and t<8 then cls(12) else SETS[sh.set](cx,t) end
+  local dy=sh.fx=="shake" and t<60 and sin(t*7)*2//1 or 0
+  cls(0)
+  if sh.fx=="flash" and t<8 then cls(12)
+  elseif backdrop then memcpy((BAR+dy)*120,BACKDROP_RAM,BACKDROP_BYTES) end
+  if OVERLAYS[sh.bd] then OVERLAYS[sh.bd](t) end
   if sh.fx=="fireworks" then fireworks(t) end
   for _,a in ipairs(sh.act or {}) do
     local who,x,y,sc,left,moving=drawActor(a,t)
-    fig(who,x-cx,y,sc,t,left,moving,sh.fx=="fire")
+    fig(who,x-cx,y+dy,sc,t,left,moving,sh.fx=="fire")
   end
   local title=sh.title
   if title then
@@ -2222,10 +2244,10 @@ function drawScene()
       print(CHAPTERS[sh.title],120-w//2,72,4,false,1,true)
     end
   end
-  rect(0,0,240,16,0) rect(0,120,240,16,0)
+  rect(0,0,240,BAR,0) rect(0,136-BAR,240,BAR,0)
   if sh.cap then
     local w=textW(sh.cap,1)
-    print(sh.cap:sub(1,t//3),120-w//2,6,13,false,1,true)
+    print(sh.cap:sub(1,t//3),120-w//2,8,13,false,1,true)
   end
 
   if s.leave then
@@ -2240,7 +2262,7 @@ function drawScene()
     if t>=s.start then
       local l=sh.say[s.line]
       s.lineT=s.lineT+1
-      print(l[1],8,122,4,false,1,true)
+      print(l[1],8,119,4,false,1,true)
       print(l[2]:sub(1,s.lineT//2),8,SUB_Y,12,false,1,true)
       if s.lineT>LINE_FRAMES or (s.lineT>20 and btnp(4)) then
         s.line,s.lineT=s.line+1,0
@@ -2288,7 +2310,7 @@ local function drawIntro()
       if d<0 then return -60 elseif d<10 then return d*3-30 end
       return d<20 and -math.abs(sin((d-10)/3))*4//1 or 0
     end)
-    if b>90 then print(("NOT YOUR PRINCESS"):sub(1,(b-90)//3),86,48,13,false,1,true) end
+    if b>90 then print(SUBTITLE:sub(1,(b-90)//3),84,48,13,false,1,true) end
   end
   if t>=INTRO_END or (t>10 and btnp(4)) then
     state,titleTimer="title",2

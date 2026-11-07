@@ -1402,7 +1402,7 @@ check("the intro ends on the world map", skip_to("map"))
 check("the world map leads into stage 1", skip_to("game") and env.camp.stage==1)
 check("stage 1 scrolls vertically on a taller map", env.W==32 and env.H==34, ("W=%d H=%d"):format(env.W,env.H))
 check("chapter 1 has only Aldric", #env.players==1 and env.players[1].team==1)
-check("stage 1 has its goblins", #env.monsters==env.STAGES[1][4], "monsters="..#env.monsters)
+check("stage 1 has its dwarves", #env.monsters==env.STAGES[1][4], "monsters="..#env.monsters)
 check("stage 1 hides an exit", has_hidden("X"))
 
 -- the camera follows Aldric along the stage's one axis, within the map
@@ -1515,12 +1515,12 @@ check("skeletons leave quest items", env.camp.keys==0 and #env.powerups>=1)
 -- bosses: blasts hurt them with a pause between hits; the dragon's egg wins too
 env.startStage(5)
 local b=env.boss
-check("stage 5 is the first troll fight", b and b.kind=="troll" and b.hp==env.BOSS_HP.troll)
+check("stage 5 is the first Utopek fight", b and b.kind=="utopek" and b.hp==env.BOSS_HP.utopek)
 env.blasts={{c=b.c,r=b.r,t=30}}
 env.TIC()
-check("a blast hurts the boss once", b.hp==env.BOSS_HP.troll-1 and b.inv>0)
+check("a blast hurts the boss once", b.hp==env.BOSS_HP.utopek-1 and b.inv>0)
 env.TIC()
-check("the boss is briefly invulnerable", b.hp==env.BOSS_HP.troll-1)
+check("the boss is briefly invulnerable", b.hp==env.BOSS_HP.utopek-1)
 b.hp,b.inv=1,0
 env.blasts={{c=b.c,r=b.r,t=30}}
 env.TIC()
@@ -1554,8 +1554,8 @@ for n,st in ipairs(env.STAGES) do
   if st[7] then bosses=bosses+1 end
 end
 check("100 stages, a boss on every 5th", #env.STAGES==100 and bosses==20 and last_ok)
-check("chapter bosses end their chapters", env.STAGES[25][7]=="troll" and env.STAGES[50][7]=="witch"
-      and env.STAGES[75][7]=="dragon" and env.STAGES[100][7]=="morgath")
+check("chapter bosses end their chapters", env.STAGES[25][7]=="utopek" and env.STAGES[50][7]=="jaga"
+      and env.STAGES[75][7]=="dragon" and env.STAGES[100][7]=="devil")
 local m1,m99=env.STAGES[1][4]+env.STAGES[1][5]+env.STAGES[1][6],env.STAGES[99][4]+env.STAGES[99][5]+env.STAGES[99][6]
 check("later stages have more monsters", m99>m1, ("%d -> %d"):format(m1,m99))
 
@@ -1591,7 +1591,7 @@ env.TIC()
 check("his own blast still kills him", not ha.alive)
 
 -- bosses are not hurt by their own fire
-env.startStage(find_stage(function(st) return st[7]=="witch" end))
+env.startStage(find_stage(function(st) return st[7]=="jaga" end))
 local wb=env.boss
 env.blasts={{c=wb.c,r=wb.r,t=20,owner=env.BOSS_FIRE}}
 env.TIC()
@@ -1629,7 +1629,7 @@ check("the ending scene follows", skip_to("scene"))
 check("the ending returns to the title", skip_to("title") and env.pmem(env.SAVE_SLOT)==0)
 
 -- scenes animate: the dialogue types out letter by letter
-env.playScene("swamp",function() env.state="title" end)
+env.playScene("sleza",function() env.state="title" end)
 local shown={}
 do
   local sp=env.print
@@ -1644,6 +1644,48 @@ end
 check("scene dialogue types out", #shown==4 and #shown[4]>#shown[1])
 skip_to("title")
 env.mode="pvp"
+
+-- painted backdrops: scenes.bin in MAP RAM, unpacked into their own buffer, copied under the
+-- letterbox; the sky colour follows the scanline
+do
+  local f=io.open("scenes.bin","rb")
+  local blob=f:read("a") f:close()
+  local mem={}
+  for i=1,#blob do mem[0x08000+i-1]=blob:byte(i) end
+  local outside=0
+  local g=fresh_game(function(a,v) mem[a]=v end,function() end)
+  g.peek=function(a) return mem[a] or 0 end
+  g.memset=function(d,v,n)
+    if d<0x11164 or d+n>0x11164+11520 then outside=outside+1 end
+    for i=0,n-1 do mem[d+i]=v end
+  end
+  g.memcpy=function(d,src,n)
+    if d>=0x11164 and d+n>0x11164+11520 then outside=outside+1 end
+    for i=0,n-1 do mem[d+i]=mem[src+i] end
+  end
+  local done=false
+  local seen={}
+  for _,name in ipairs({"wroclaw","sleza","krakow","cellars","ending"}) do
+    done=false
+    g.playScene(name,function() done=true end)
+    g.btnp=function(b) return b==4 end
+    for _=1,4000 do
+      if done then break end
+      g.TIC()
+      if g.state=="scene" and mem[20*120] then seen[mem[20*120]]=true end
+    end
+  end
+  check("every scene plays to its end with backdrops", done)
+  check("backdrops unpack inside their buffer", outside==0, "outside="..outside)
+  g.btnp=function() return false end
+  g.playScene("wroclaw",function() end)
+  for _=1,30 do g.TIC() end
+  check("the market backdrop opens with sky at the top left", mem[20*120]==0xBB, tostring(mem[20*120]))
+  local function sky(row) g.BDR(row) return ("%d,%d"):format(mem[0x03FC0+33] or 0,mem[0x03FC0+34] or 0) end
+  check("the sky colour changes down the screen", sky(4+20)~=sky(4+110), sky(4+20).." / "..sky(4+110))
+  check("the sky starts from the backdrop's top colour",
+    sky(4+20)==blob:byte(1+11+1)..","..blob:byte(1+11+2), sky(4+20))
+end
 
 end)()
 
