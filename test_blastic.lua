@@ -1719,8 +1719,11 @@ do
   local outside,syncs=0,0
   local g=fresh_game(function(a,v) mem[a]=v end,function() end)
   g.peek=function(a) return mem[a] or 0 end
-  g.sync=function(mask,bank)  -- the MAP of a memory bank replaces the MAP in RAM
-    syncs=syncs+1
+  local lastSync,synced=nil,{}
+  g.sync=function(mask,bank)  -- the MAP of a memory bank replaces the MAP in RAM, once a frame
+    if lastSync==g.frame then return end
+    lastSync,syncs=g.frame,syncs+1
+    synced[#synced+1]=bank
     if mask&4~=0 then loadBank(bank,true) end
   end
   g.memset=function(d,v,n)
@@ -1772,6 +1775,12 @@ do
     end
   end
   check("every shot's backdrop is painted", #unknown==0, table.concat(unknown," "))
+  local odra,night=mem[painted.odra],mem[painted.night]
+  g.showBackdrop("night")
+  g.playScene("wroclaw",function() end)  -- the same frame: the Oder's bank must wait for the next
+  for _=1,3 do g.TIC() end
+  check("a backdrop in another bank waits a frame for its sync", odra==night or synced[#synced]==odra,
+    "banks "..tostring(night).."/"..tostring(odra)..", last sync "..tostring(synced[#synced]))
   local missing={}
   for name,shots in pairs(g.SCENES) do
     for _,sh in ipairs(shots) do
@@ -1807,7 +1816,7 @@ do
           local y=function(f) return select(3,g.actorAt(a,f)) end
           local fall=y(t+1)-2*y(t)+y(t-1)
           if math.abs(fall-g.GRAVITY*sc/2)>1e-6 then unreal[#unreal+1]=name..n..":"..who.." falls "..fall end
-        elseif t1>t0 and not a.hop and not a.anim and who~="dragon" and g.CAST[who..(sc==1 and "_far" or "").."_a"] then
+        elseif t1>t0 and not a.hop and not a.anim and who~="dragon" and (g.CAST[who..(sc==1 and "_far" or "").."_a"] or g.CAST[who..(sc==1 and "_far" or "").."_w0"]) then
           local pace=math.abs(x1-x0)/(t1-t0)
           if pace>1.3*sc/2 then unreal[#unreal+1]=("%s%d:%s walks %.2f px/frame"):format(name,n,who,pace) end
         end

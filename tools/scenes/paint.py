@@ -14,7 +14,8 @@ u16 length and its bytes.
 
 In RAM at 0x08000 (bank 0): u8 backdrop count, u8 sprite count; per backdrop u8 name length, the
 name, u8 bank, u24 address, 3 RGB colours (indices 1, 5, 7) and 3 RGB sky stops (top, middle, bottom); then
-u24 address and u16 length of the cast, LZ-packed (see below). A backdrop is its 4-bit pixels (low nibble left), rows top down, packed by
+the cast, LZ-packed (see below) and cut into up to three parts: u8 count, three times u24
+address and u16 length. A backdrop is its 4-bit pixels (low nibble left), rows top down, packed by
 make_tic.lz_pack: c<128 copies the next c+1 bytes, c>=128 repeats c-125 bytes from u16
 distance back. A sprite is u8 name length,
 the name, u8 width, height, x and y offset (of a patch over its bust), then per row runs of
@@ -1064,31 +1065,45 @@ def main():
             preview_png(name, img, own, sky, preview)
     castp = lz_pack(cast_runs(sprites))
     print(f"cast      {len(sprites)} sprites {len(castp):5d} B")
-    # the header and the cast in MAP, the backdrops wherever they fit, largest first: bank 0's
-    # regions, MAP last, then the MAP of banks 1..7; places are (bank, region)
-    places = [(0, 1), (0, 2), (0, 0)] + [(b, 0) for b in range(1, BANKS)]
-    head = 2 + sum(23 + len(n) for n, _, _ in pieces) + 5
-    used = {pl: 0 for pl in places}
-    used[(0, 0)] = head + len(castp)
+    # bank 0 holds the header and the cast, spread over its MAP, the end of SPRITES and the
+    # spare SFX slots (no sync needed: TIC-80 syncs a section once a frame); the backdrops go
+    # to the MAP of banks 1..7, largest first, one sync each
+    head = 2 + sum(23 + len(n) for n, _, _ in pieces) + 1 + 3 * 5
+    parts, rest, used = [], castp, {(0, 0): head, (0, 1): 0, (0, 2): 0}
+    datas = {pl: bytearray() for pl in used}
+    for pl in ((0, 0), (0, 1), (0, 2)):
+        room = REGIONS[pl[1]][1] - used[pl]
+        piece, rest = rest[:room], rest[room:]
+        if piece:
+            parts.append((REGIONS[pl[1]][0] + used[pl], len(piece)))
+            datas[pl] = bytearray(used[pl]) + piece
+            used[pl] += len(piece)
+    if rest:
+        raise ValueError(f"the cast is {len(rest)} B too big for bank 0")
     where = {}
     for name, packed, _ in sorted(pieces, key=lambda p: -len(p[1])):
-        for pl in places:
-            if used[pl] + len(packed) <= REGIONS[pl[1]][1]:
+        for bank in range(1, BANKS):
+            pl = (bank, 0)
+            used.setdefault(pl, 0)
+            datas.setdefault(pl, bytearray())
+            if used[pl] + len(packed) <= REGIONS[0][1]:
                 where[name] = (pl, used[pl])
+                datas[pl] += packed
                 used[pl] += len(packed)
                 break
         else:
             raise ValueError(f"no room for the backdrop {name}")
     table = bytearray([len(pieces), len(sprites)])
-    datas = {pl: bytearray(u) for pl, u in used.items()}
     for name, packed, colours in pieces:
         (bank, r), off = where[name]
         table += bytes([len(name)]) + name.encode() + bytes([bank]) + (REGIONS[r][0] + off).to_bytes(3, "little")
         for h in colours:
             table += bytes(hexrgb(h))
-        datas[(bank, r)][off:off + len(packed)] = packed
-    table += (REGIONS[0][0] + head).to_bytes(3, "little") + len(castp).to_bytes(2, "little")
-    datas[(0, 0)][:head + len(castp)] = table + castp
+    table += bytes([len(parts)])
+    for at, n in parts + [(0, 0)] * (3 - len(parts)):
+        table += at.to_bytes(3, "little") + n.to_bytes(2, "little")
+    assert len(table) == head
+    datas[(0, 0)][:head] = table
     # the file: per piece u8 bank, u24 address, u16 length, its bytes (make_tic.py puts them in chunks)
     blob = bytearray()
     for (bank, r), d in datas.items():

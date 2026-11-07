@@ -112,334 +112,6 @@ class Canvas:
         return self.img
 
 
-# ── the cartoon cast: drawn by hand, one character a design pixel ────────────
-# k black, r red, o orange (the shadow on skin), y yellow, g green, b brown, u blue, s skin,
-# w white, l light grey, e grey, d dark; '.' is transparent. Everyone faces right.
-KEY = {'.': T, 'k': K, 'r': RED, 'o': ORANGE, 'y': YELLOW, 'g': GREEN, 'b': BROWN, 'u': BLUE,
-       's': SKIN, 'w': WHITE, 'l': LIGHT, 'e': GREY, 'd': DARK}
-
-ART = {}
-ART["dratewka"] = [
-    "...........w..........",
-    "..........ww..........",
-    "......rrrrwrrr........",
-    "....rrrrrrrrrrrr......",
-    "...rrrrrrrrrrrrrrr....",
-    "...rrrrrrrrrrrrrrrrrr.",
-    "...bbbbbbbbbbbbbbbbb..",
-    "..bbbbbbbbbbsbbsss....",
-    "..bbbbbbssssssssss....",
-    "..bbbbbsswwwssswwws...",
-    "..bbbbbsswkkssswkks...",
-    "..bboobsswkkssswkkss..",
-    "...booosssssssssssss..",
-    "...bbossssssssssssooo.",
-    "....bosssssssssssss...",
-    ".....ossskkkkkksss....",
-    "......osssrrrrsss.....",
-    ".......ooosssss.......",
-    ".........oooss........",
-    ".....wwwwwwwwwww......",
-    "....wwwwbbbbbwwww.....",
-    "....wwwwbbbbbwwwww....",
-    "....lwwwbbbbbwwwsw....",
-    "....lwwwbbbbbbwwss....",
-    "....lwwbbbbbbbb.......",
-    "....llwbbbbbbbb.......",
-]
-ART["wanda"] = [
-    "......g.r.g.r.g.......",
-    ".....ggggggggggggg....",
-    "....gyyyyyyyyyyyyg....",
-    "...yyyyyyyyyyyyyyyy...",
-    "...yyyyyyyyyyyyyyyyy..",
-    "..yyyyyyysyyyyssyyy...",
-    "..yyyyysssssssssssy...",
-    "..yyyyssskssssssks....",
-    "..yyyysswwwssssswww...",
-    "..yyyysswkkssssswkk...",
-    "..yyyosswkkssssswkks..",
-    "..yyyossssssssssssoo..",
-    "..yyyyooosssssssss....",
-    "..yyy.oossskrrkss.....",
-    "..yyy...ooosrrss......",
-    "..yyy....oosss........",
-    "..yy..wwwwwwwwwww.....",
-    "..yy.wwwwrrrrrrwww....",
-    "..yy.wwwwrrrrrrwwsw...",
-    "...y.lwwrrrrrrrrrss...",
-    ".....lwrrrrrrrrrr.....",
-    "....rrrrrrrrrrrrrr....",
-    "....rrrrrrrrrrrrrrr...",
-    "...rrrrrrrrrrrrrrrr...",
-    "...rrrrrrrrrrrrrrrrr..",
-    "..rrrrrrrrrrrrrrrrrr..",
-    "..rrrrrrrrrrrrrrrrrrr.",
-    "..rrrrrrrrrrrrrrrrrrr.",
-    ".rrrrrrrrrrrrrrrrrrrr.",
-    ".wwwwwwwwwwwwwwwwwwww.",
-]
-ART["krak"] = [
-    "...y...y...y...y....",
-    "...yy.yyy.yyy.yy....",
-    "...yyyyyyyyyyyyyy...",
-    "...yuyyyryyyuyyyy...",
-    "...yyyyyyyyyyyyyy...",
-    "..llssssssssssssl...",
-    "..lsssssssssssssss..",
-    "..lsskkkssssskkkss..",
-    "..lsswwkssssswwkss..",
-    "..losswkssssswkkss..",
-    "..loossssssssssssoo.",
-    "..lossssssssssssso..",
-    "..lwwwwsssssssswww..",
-    "..lwwwwwwkkkkwwwww..",
-    "...wwwwwwwwwwwwwww..",
-    "...wwwwwwwwwwwwwww..",
-    "....wwwwwwwwwwwww...",
-    "...rrrwwwwwwwwwrrr..",
-    "..rrrrrwwwwwwwrrrrr.",
-    "..rrrrrrwwwwwrrrrrr.",
-    "..rrrrrrrwwwrrrrrrr.",
-    "..rrrrrrrrwrrrrrrrr.",
-    "..rrrrrrrrwrrrrrrsr.",
-    "..rrrrrrrrwrrrrrrss.",
-    "..rrrrrrrrwrrrrrrr..",
-    "..rrrrrrrrwrrrrrrr..",
-    "..rrrrrrrrwrrrrrrrr.",
-    "..rrrrrrrrwrrrrrrrr.",
-    ".rrrrrrrrrwrrrrrrrrr",
-    ".rrrrrrrrrwrrrrrrrrr",
-    ".rrrrrrrrrwrrrrrrrrr",
-    ".rrrrrrrrrwrrrrrrrrr",
-    ".wwwwwwwwwwwwwwwwwww",
-    ".wlwwlwwlwwlwwlwwlww",
-]
-ART["twardowski"] = [
-    "................w.....",
-    "......bbbbbbbbbww.....",
-    ".....bbbbbbbbbbbb.....",
-    ".....bbbbbbbbbbbb.....",
-    ".....bbbbbbbbbbbb.....",
-    ".....bbbbbbbbbbbb.....",
-    "....rrrrrrrrrrrrrr....",
-    ".....ssssssssssss.....",
-    ".....sskkksssskkk.....",
-    ".....sswwkssssswk.....",
-    ".....oswkkssssswkk....",
-    ".....osssssssssssoo...",
-    "...kkkkkkksssskkkkkkk.",
-    "..kk...kkkkkkkkk....kk",
-    ".....oossssssssss.....",
-    ".......ooosssss.......",
-    "....uuuuuuuuuuuuu.....",
-    "...uuuuurrrrruuuuu....",
-    "...uuuuurrrrruuuuu....",
-    "...uuuuurrrrruuuuuu...",
-    "...uuuuurrrrruuuuss...",
-    "...yyyyyyyyyyyyyss....",
-    "...uuuuurrrrruuuu.....",
-    "...uuuuurrrrruuuu.....",
-    "..uuuuuurrrrruuuuu....",
-    "..uuuuuurrrrruuuuuu...",
-    "..uuuuuurrrrruuuuuu...",
-    "..uuuuuurrrrruuuuuuu..",
-]
-ART["devil"] = [
-    "...k............k.......",
-    "...kk..........kk.......",
-    "....kk........kk........",
-    "....kkk.kkkkkkkk........",
-    ".....kkkkkkkkkkk........",
-    "....rkkkkkkkkkkkr.......",
-    "....rrrrrrrrrrrrrr......",
-    "....rrkkkrrrrrkkkr......",
-    "....rryykrrrrryykr......",
-    "....orrykrrrrrrykrr.....",
-    "....orrrrrrrrrrrrrrr....",
-    "..kkkkkkrrrrrrkkkkkkk...",
-    ".kk...kkkkkkkkkk....kk..",
-    ".....orrwkwkwkrr........",
-    "......orrrkkkrr.........",
-    ".......ooorrrr..........",
-    "....ddddddddddddd.......",
-    "...ddddddrrrrdddddd.....",
-    "...ddddddrrrrddddddd....",
-    "...dddddddrrddddddrr....",
-    "...dddddddrrdddddrr.....",
-    "...dddddddrrdddddd......",
-    "...dddddddrrdddddd......",
-    "..ddddddddrrddddddd.....",
-    "..ddddddddrrdddddddd....",
-    "..ddddddddrrdddddddd....",
-    "..ddddddddrrddddddddd...",
-    "..ddddddddrrddddddddd...",
-]
-ART["dwarf"] = [
-    ".......r........",
-    "......rrr.......",
-    "......rrr.......",
-    ".....rrrrr......",
-    ".....rrrrr......",
-    "....rrrrrrr.....",
-    "...rrrrrrrrr....",
-    "..rrrrrrrrrrr...",
-    "...sssssssss....",
-    "...sswksswks....",
-    "...ossssssoss...",
-    "..wwwwssssswww..",
-    "..wwwwwkkwwwww..",
-    "..uwwwwwwwwwwu..",
-    "..uuwwwwwwwwuu..",
-    "..uuuwwwwwwuuu..",
-    "..uuuuwwwwuuuu..",
-    "..uuuuuwwuuuuu..",
-    ".uuuuuuuuuuuuuu.",
-]
-ART["jaga"] = [
-    ".........rrrrrr.......",
-    ".......rrrrwrrrrr.....",
-    "......rrrrrrrrrrrr....",
-    ".....rrwrrrrrrwrrrr...",
-    ".....rrrrrlllssssrr...",
-    ".....rrrrllsssssssrr..",
-    "....rrrrllskkssskksr..",
-    "....rrrrlssswksssswk..",
-    "....rrwrrssssssssssss.",
-    "....rrrrrossssssssooss",
-    "....rrrrrossssssssooss",
-    ".....rrrrosskkkksssoo.",
-    "......rrroossswssss...",
-    ".......rrrooooosss....",
-    ".......eeeeeeeeeee....",
-    "......eeeeeeeeeeeee...",
-    "......eeeeeeeeeeeeee..",
-    "......eeeeeeeeeeeess..",
-    ".....eeeeeeeeeeeeess..",
-    ".....eeeeeeeeeeeeee...",
-    ".....eeeeeeeeeeeeee...",
-    "....eeeeeeeeeeeeeeee..",
-    "....eeeeeeeeeeeeeeee..",
-    "....eeeeeeeeeeeeeeeee.",
-    "...eeeeeeeeeeeeeeeeee.",
-    "...eeeeeeeeeeeeeeeeee.",
-    "...eeeeeeeeeeeeeeeeeee",
-    "...eeeeeeeeeeeeeeeeeee",
-    "...eeeeeeeeeeeeeeeeeee",
-    "...eeeeeeeeeeeeeeeeeee",
-    "...eeeeeeeeeeeeeeeeeee",
-    "...kk..kk.........kk..",
-]
-ART["witch"] = [
-    "......ddddddddd.......",
-    ".....ddddddddddddd....",
-    "....ddddddddddddddd...",
-    "....dddddddddssssdd...",
-    "...ddddddssssssssss...",
-    "...ddddddsskkssskks...",
-    "...dddddsswgkssswgk...",
-    "...dddddsswkkssswkk...",
-    "...ddddosssssssssssss.",
-    "...dddddossssssssssoo.",
-    "...ddddddosssrrrrss...",
-    "...ddddddoosssssss....",
-    "...dddddd..ooosss.....",
-    "...ddddd..ggggggggg...",
-    "...dddd..ggggggggggg..",
-    "...dddd..gggggggggggg.",
-    "...ddd..ggggggggggggg.",
-    "....dd..ggggggggggggg.",
-    "........ggggggggggggg.",
-    ".......gggggggggggggg.",
-    ".......ggggggggggggggg",
-    "......gggggggggggggggg",
-    "......gggggggggggggggg",
-    ".....ggggggggggggggggg",
-    ".....ggggggggggggggggg",
-    "....gggggggggggggggggg",
-    "....gggggggggggggggggg",
-    "....gggggggggggggggggg",
-    "....gggggggggggggggggg",
-    "....gggggggggggggggggg",
-    "....gggggggggggggggggg",
-]
-# where the faces are: eye rows, the mouth's row (and its columns when it hides under a
-# moustache), the colour of the skin round the eyes
-FACE = {"dratewka": ((9, 10, 11), 15, None, 's'), "wanda": ((8, 9, 10), 13, None, 's'),
-        "krak": ((8, 9), 13, None, 's'), "twardowski": ((9, 10), 14, range(9, 13), 's'),
-        "devil": ((8, 9), 13, None, 'r'), "jaga": ((6, 7), 11, None, 's')}
-
-
-def art(c, rows, x0=0, y0=0):
-    """Paint hand-drawn rows onto a canvas, one design pixel a character."""
-    for y, row in enumerate(rows):
-        for x, ch in enumerate(row):
-            if ch != '.':
-                c.px([(x0 + x, y0 + y)], KEY[ch])
-
-
-def blinking(rows, eyes_at, skin):
-    """The eyes shut: whites and pupils become skin, a lid line across the middle row."""
-    rows = list(rows)
-    cols = {x for y in eyes_at for x, ch in enumerate(rows[y]) if ch in "wgy"}
-    cols = {x for x in range(min(cols) - 1, max(cols) + 2)} if cols else set()
-    for y in eyes_at:
-        rows[y] = "".join(skin if x in cols and ch in "wkgy" else ch for x, ch in enumerate(rows[y]))
-    mid = eyes_at[len(eyes_at) // 2]
-    rows[mid] = "".join('k' if x in cols and rows[mid][x] == skin else ch for x, ch in enumerate(rows[mid]))
-    return rows
-
-
-def talking(rows, m, cols=None):
-    """The mouth open: its row goes dark, the row under it too, the tongue below."""
-    rows = list(rows)
-    cols = list(cols) if cols else [x for x, ch in enumerate(rows[m]) if ch in "kr"]
-
-    def put(y, xs, ch):
-        rows[y] = "".join(ch if x in xs else c for x, c in enumerate(rows[y]))
-    put(m, cols, 'k')
-    put(m + 1, cols, 'k')
-    put(m + 2, cols[1:-1], 'r')
-    return rows
-
-
-def scale2x(rows):
-    """Scale2x (EPX): twice the size, with the staircase of diagonals smoothed."""
-    h, w = len(rows), len(rows[0])
-    g = lambda y, x: rows[y][x] if 0 <= y < h and 0 <= x < w else '.'
-    out = [[None] * (w * 2) for _ in range(h * 2)]
-    for y in range(h):
-        for x in range(w):
-            p, a, b, c, d = g(y, x), g(y - 1, x), g(y, x + 1), g(y, x - 1), g(y + 1, x)
-            out[2 * y][2 * x] = a if c == a and c != d and a != b else p
-            out[2 * y][2 * x + 1] = b if a == b and a != c and b != d else p
-            out[2 * y + 1][2 * x] = c if d == c and d != b and c != a else p
-            out[2 * y + 1][2 * x + 1] = d if b == d and b != a and d != c else p
-    return ["".join(r) for r in out]
-
-
-# ── busts: the figure's head and shoulders at twice the size ─────────────────
-
-BUST_ROWS = 22
-
-
-def bust(name, talk=False, blink=False):
-    rows = ART[name][:BUST_ROWS]
-    eyes_at, m, mcols, skin = FACE[name]
-    if blink:
-        rows = blinking(rows, eyes_at, skin)
-    if talk:
-        rows = talking(rows, m, mcols)
-    big = scale2x(rows)
-    c = Canvas(len(big[0]), len(big))
-    art(c, big)
-    return c.outline()
-
-
-for _n in FACE:
-    globals()["bust_" + _n] = lambda talk=False, blink=False, _n=_n: bust(_n, talk, blink)
-
-
 # ── full figures: about 20x34, feet on the bottom row ────────────────────────
 # pose 0 stands, 1 is the stride of a step (feet apart), 2 its passing moment (feet together,
 # the back foot lifted); a walk alternates 1 and 2, and blastic.lua lifts the body on 2
@@ -463,49 +135,94 @@ def legs(c, cx, hip, foot, pose, col, shoe=K, w=3):
         c.rect(cx + 1, foot, cx + 5, foot + 2, shoe)
 
 
+# ── people: realistic figures, from the skeleton in body.py ──────────────────
+import body as B
+
+# dress, height in pixels at RES 2, skeleton, how far the body leans forward (degrees)
+PEOPLE = {
+    "dratewka": (B.dress_dratewka, 64, B.SEG, 0),
+    "wanda": (B.dress_wanda, 60, B.SEG, 0),
+    "krak": (B.dress_krak, 66, B.SEG, 0),
+    "twardowski": (B.dress_twardowski, 64, B.SEG, 0),
+    "devil": (B.dress_devil, 66, B.SEG, 0),
+    "dwarf": (B.dress_dwarf, 40, B.DWARF, 0),
+    "jaga": (B.dress_jaga, 60, B.SEG, 22),
+    "witch": (B.dress_witch, 62, B.SEG, 0),
+}
+# the sprite round a figure px tall: room for a stride, a hat, a plume or horns
+SPRITE_W, SPRITE_H = 0.84, 1.12
+
+
+def person(name, pose=None, wide=SPRITE_W, **kw):
+    dress, px, seg, lean = PEOPLE[name]
+    px = px * RES // 2
+    w, h = int(px * wide) // 2 * 2, int(px * SPRITE_H)
+    return B.figure(dress, pose or B.stand_pose(lean), px, w, h, seg, **kw)
+
+
+def walking(name, k):
+    """Frame k of eight of a walk; a gait cycle is body.cycle_of(seg) of the figure's height."""
+    _, _, seg, lean = PEOPLE[name]
+    return person(name, B.walk_pose(k / 8, seg=seg, lean=lean or 3))
+
+
+BUST_PX = 360          # a close-up: the figure rendered this tall, its head and shoulders kept
+BUST_W, BUST_H = 88, 88
+
+
+def bust(name, talk=False, blink=False):
+    dress, px, seg, lean = PEOPLE[name]
+    big = BUST_PX * px // 64
+    w, h = big * 7 // 10, big * 28 // 25
+    pose = B.stand_pose(lean)
+    img = B.figure(dress, pose, big, w, h, seg, talk=talk, blink=blink)
+    hx, hy = B.head_at(pose, big, h, w, seg)
+    x0, y0 = int(hx) - BUST_W // 2 - 6, max(0, int(hy) - 42)
+    return img[y0:y0 + BUST_H, x0:x0 + BUST_W]
+
+
+for _n in PEOPLE:
+    globals()["bust_" + _n] = lambda talk=False, blink=False, _n=_n: bust(_n, talk, blink)
+
+
 def figure_dratewka(pose=0):
-    c = Canvas(22, 34)
-    legs(c, 10, 25, 32, pose, DARK)
-    art(c, ART["dratewka"])
-    return c.outline()
+    return person("dratewka")
 
 
 def figure_wanda(pose=0):
-    c = Canvas(22, 34)
-    legs(c, 10, 30, 32, pose, K)
-    art(c, ART["wanda"])
-    return c.outline()
+    return person("wanda")
 
 
 def figure_krak(pose=0):
-    c = Canvas(20, 34)
-    art(c, ART["krak"])
-    return c.outline()
+    return person("krak")
 
 
 def figure_twardowski(pose=0):
-    c = Canvas(22, 34)
-    legs(c, 10, 28, 32, pose, K)
-    art(c, ART["twardowski"])
-    return c.outline()
+    return person("twardowski")
 
 
 def figure_devil(pose=0):
-    c = Canvas(24, 34)
-    legs(c, 11, 28, 32, pose, K, K)
-    c.poly([(1, 26), (0, 20), (2, 18), (3, 24), (6, 27)], RED, light=False)      # tail
-    art(c, ART["devil"])
-    return c.outline()
+    return person("devil")
 
 
 def figure_dwarf(pose=0):
-    c = Canvas(16, 22)
-    # short waddling steps: the feet stay under the coat
-    back, front = {0: (4, 7), 1: (3, 8), 2: (5, 7)}[pose]
-    c.rect(back, 19 - (pose == 2), back + 3, 21 - (pose == 2), K)
-    c.rect(front, 19, front + 3, 21, K)
-    art(c, ART["dwarf"])
-    return c.outline()
+    return person("dwarf")
+
+
+def figure_jaga(pose=0):
+    """Baba Jaga leaning on her broom; pose 1 casts a spell, 2 rides the broom."""
+    if pose == 2:
+        return person("jaga", B.ride_pose(30), wide=1.2, before=B.broom_ridden)
+    if pose == 1:
+        return person("jaga", B.cast_pose(22), after=B.broom_in_hand)
+    return person("jaga", after=B.broom_in_hand)
+
+
+def figure_witch(pose=0):
+    """A witch of Sleza; poses 0, 1 dance, 2 rides a broom."""
+    if pose == 2:
+        return person("witch", B.ride_pose(20), wide=1.2, before=B.broom_ridden)
+    return person("witch", B.dance_pose(pose))
 
 
 def dragon_wing(c, sx, sy, tips, col, bone):
@@ -587,54 +304,6 @@ def figure_egg(pose=0):
     return c.outline()
 
 
-def broom_ride(head, body_col, cloak=None):
-    """Riding a broom through the air: the head (the art's first 14 rows) over a body bent
-    forward, the broomstick under it, bristles trailing."""
-    c = Canvas(36, 24)
-    c.rect(0, 18, 34, 20, BROWN, shade=False)
-    c.poly([(0, 15), (-2, 23), (8, 21), (8, 16)], YELLOW, light=False)
-    if cloak:
-        c.poly([(8, 8), (14, 4), (16, 16), (6, 14)], cloak, light=False)          # hair in the wind
-    c.poly([(12, 19), (14, 11), (26, 11), (28, 19)], body_col)
-    c.poly([(14, 19), (26, 19), (28, 24), (16, 24)], body_col, light=False)
-    c.rect(26, 15, 33, 17, body_col, shade=False, light=False)                   # arm to the stick
-    c.rect(32, 15, 34, 18, SKIN, shade=False, light=False)
-    art(c, head, 12, -2)
-    return c.outline()
-
-
-def figure_jaga(pose=0):
-    """Baba Jaga with her broom; pose 1 casts a spell, 2 rides the broom."""
-    if pose == 2:
-        return broom_ride(ART["jaga"][:14], GREY)
-    c = Canvas(24, 32)
-    c.rect(1, 4, 3, 30, BROWN, shade=False, light=False)                         # the broom
-    c.poly([(-1, 32), (1, 25), (3, 25), (5, 32)], YELLOW, light=False)
-    art(c, ART["jaga"], 1, 0)
-    if pose == 1:                                                                # an arm raised
-        c.poly([(16, 16), (21, 7), (23, 8), (19, 17)], GREY, light=False)
-        c.rect(21, 4, 24, 7, SKIN, shade=False, light=False)
-    else:
-        c.rect(3, 16, 7, 18, GREY, shade=False, light=False)                     # a hand on the broom
-        c.rect(2, 15, 4, 17, SKIN, shade=False, light=False)
-    return c.outline()
-
-
-def figure_witch(pose=0):
-    """A witch of Sleza: long dark hair, a green dress; poses 0, 1 dance, 2 rides a broom."""
-    if pose == 2:
-        return broom_ride(ART["witch"][:13], GREEN, DARK)
-    c = Canvas(24, 34)
-    legs(c, 12, 31, 32, 0, K)
-    art(c, ART["witch"], 1, 0)
-    up = pose == 1
-    for side, (sx, hx) in ((1, (17, 22)), (-1, (10, 3))):                        # both arms
-        hy = 4 if (up == (side > 0)) else 24
-        c.poly([(sx, 15), (hx, hy), (hx + side, hy + 2), (sx + side, 18)], GREEN, light=False)
-        c.rect(hx - 1, hy - 2, hx + 2, hy + 1, SKIN, shade=False, light=False)
-    return c.outline()
-
-
 class Lowered:
     """A canvas whose drawing calls land dy design pixels lower."""
     def __init__(self, c, dy):
@@ -671,14 +340,16 @@ def figure_rider(pose=0):
     c.px([(41, 8)], K)
     c.poly([(18, 34), (16, 40), (19, 38)], YELLOW, light=False)                 # legs tucked
     c.poly([(26, 34), (25, 40), (28, 38)], YELLOW, light=False)
-    # the rider
-    c.poly([(19, 21), (22, 8), (30, 8), (32, 21)], BLUE)                        # kontusz
-    c.poly([(24, 9), (27, 9), (27, 21), (24, 21)], RED, light=False)
-    c.rect(21, 15, 31, 17, YELLOW, light=False)                                 # sash
-    c.poly([(24, 20), (20, 30), (24, 31), (27, 21)], BLUE, light=False)         # leg down the side
-    c.rect(19, 29, 24, 32, K)
-    c.poly([(31, 12), (38, 14), (38, 16), (31, 15)], BLUE, light=False)         # arm to the reins
-    art(whole, ART["twardowski"][:16], 15, 0)
+    # the rider, sitting astride, hands on the reins
+    dress, px, seg, _ = PEOPLE["twardowski"]
+    px = px * RES // 2
+    rider = B.figure(dress, B.ride_pose(10, 0.3), px, whole.w, int(px * SPRITE_H), seg, at=whole.w * 0.5)
+    seat = int(whole.h * 0.62)                                   # his hips on the rooster's back
+    hip_row = rider.shape[0] - 1 - int(0.3 * px)
+    dy = seat - hip_row
+    for y, x in zip(*np.nonzero(rider != T)):
+        if 0 <= y + dy < whole.h and 0 <= x < whole.w:
+            whole.img[y + dy, x] = rider[y, x]
     # the wing over all: a fan of long feathers from the shoulder, raised or beating down
     sx, sy = 20, 22
     tips = [(28, 40), (22, 42), (15, 40), (9, 36)] if down else [(6, 2), (1, 8), (-2, 15), (0, 21)]
@@ -755,8 +426,8 @@ def figure_poster(pose=0):
 BUSTS = ["dratewka", "wanda", "krak", "twardowski", "devil", "jaga"]
 FIGURES = ["dratewka", "wanda", "krak", "twardowski", "devil", "jaga", "dwarf", "dragon", "sheep",
            "poster", "cheese", "egg", "witch", "rider", "fox", "sack"]
-WALKERS = ["dratewka", "wanda", "devil", "dwarf"]
-FAR = ["dratewka", "wanda", "sheep", "poster", "egg", "jaga", "devil", "dwarf", "rider"]  # far shots, chapter cards
+WALKERS = ["dratewka", "wanda", "devil", "dwarf", "twardowski"]
+FAR = ["dratewka", "wanda", "sheep", "poster", "egg", "jaga", "devil", "dwarf", "rider", "cheese"]  # far shots, chapter cards
 # poses beyond standing: walkers step (_a, _b); these dance, beat wings or run (_a, _b) and fly (_fly)
 POSES = {"witch": (0, 1, 2), "jaga": (0, 1, 2), "rider": (0, 1, None), "fox": (0, 1, None)}
 
@@ -786,8 +457,8 @@ def sprites():
             f = globals()["figure_" + n]
             out[n + tag] = (0, 0, f())
             if n in WALKERS and (tag == "" or n in ("dratewka", "wanda")):
-                out[n + tag + "_a"] = (0, 0, f(1))
-                out[n + tag + "_b"] = (0, 0, f(2))
+                for k in range(8):
+                    out[n + tag + "_w%d" % k] = (0, 0, walking(n, k))
             if n in POSES and (tag == "" or n == "rider"):
                 a, b_, fly = POSES[n]
                 out[n + tag + "_a"] = (0, 0, f(a))

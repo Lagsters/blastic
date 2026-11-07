@@ -2188,15 +2188,15 @@ local function nameAt(p)
   return table.concat(s),p+peek(p)+1
 end
 
--- backdrops by name: the address of their table entry (the art is spread over MAP, the end of
--- SPRITES and spare SFX slots; tools/scenes/paint.py). The cast is LZ-packed in the cart and
+-- backdrops by name: their bank, address and colours (the cast fills bank 0's MAP, the end of
+-- SPRITES and spare SFX slots; the backdrops the MAP of banks 1..7; tools/scenes/paint.py). The cast is LZ-packed in the cart and
 -- unpacked once into castRuns, a Lua string (no RAM is left for it); CAST by name: {index of
 -- its runs in castRuns, width, height, x, y}
 local backdrops,castRuns
-local mapBank=0
+local mapBank,syncFrame=0,nil
 CAST=nil
 local function loadCast()
-  if mapBank~=0 then sync(4,0) mapBank=0 end
+  if mapBank~=0 then sync(4,0) mapBank,syncFrame=0,frame end
   backdrops,CAST={},{}
   local p=ART_RAM+2
   for _=1,peek(ART_RAM) do
@@ -2207,15 +2207,19 @@ local function loadCast()
     backdrops[name]=e
     p=p+22
   end
-  local a,o,n=addr(p),{},0
-  local e=a+word(p+3)
-  while a<e do
-    local c=peek(a)
+  local src={}  -- the cast, LZ-packed, in up to three parts of bank 0
+  for k=0,peek(p)-1 do
+    local at=addr(p+1+k*5)
+    for i=0,word(p+4+k*5)-1 do src[#src+1]=peek(at+i) end
+  end
+  local a,o,n=1,{},0
+  while a<=#src do
+    local c=src[a]
     if c<128 then
-      for i=1,c+1 do n=n+1 o[n]=string.char(peek(a+i)) end
+      for i=1,c+1 do n=n+1 o[n]=string.char(src[a+i]) end
       a=a+c+2
     else
-      local d=word(a+1)
+      local d=src[a+1]|src[a+2]<<8
       for _=1,c-125 do n=n+1 o[n]=o[n-d] end
       a=a+3
     end
@@ -2265,7 +2269,10 @@ local function loadBackdrop(name)
   end
   sky={{e[12],e[13],e[14]},{e[15],e[16],e[17]},{e[18],e[19],e[20]}}
   -- the backdrops fill the MAP of several memory banks; bank 0's holds the cast and this table
-  if e[1]~=mapBank then sync(4,e[1]) mapBank=e[1] end
+  if e[1]~=mapBank then
+    if syncFrame==frame then return "wait" end  -- TIC-80 syncs a section once a frame
+    sync(4,e[1]) mapBank,syncFrame=e[1],frame
+  end
   -- LZ: c<128 copies the next c+1 bytes, c>=128 repeats c-125 bytes from u16 distance back
   local src,dst=e[2],BACKDROP_RAM
   while dst<BACKDROP_RAM+BACKDROP_BYTES do
@@ -2295,6 +2302,8 @@ local SPEAKER_WHO={DRATEWKA="dratewka",WANDA="wanda",KRAK="krak",TWARDOWSKI="twa
 
 -- an actor with its feet at x,y: scale 1 is a far shot (the small sprites), 4 a close-up
 -- standing on the bottom bar; talking moves the mouth
+-- a gait cycle in sprite heights (tools/scenes/body.py: cycle_of(seg) / SPRITE_H in cast.py)
+STRIDE={man=0.732,dwarf=0.497}
 local function drawCast(who,x,y,s,t,left,walk,talking,roar,anim)
   if s>=4 then
     local b=CAST["bust_"..who]
@@ -2308,9 +2317,10 @@ local function drawCast(who,x,y,s,t,left,walk,talking,roar,anim)
   local name,lift=who..(s==1 and "_far" or ""),0
   if who=="dragon" then
     name=name..(roar and "_roar" or ({"_a","","_b",""})[t//(walk and 5 or 9)%4+1])
+  elseif walk and CAST[name.."_w0"] then
+    -- eight frames a gait cycle, picked by the ground covered, so the standing foot stays put
+    name=name.."_w"..math.floor(walk*8/(CAST[name][3]*(STRIDE[who] or STRIDE.man)))%8
   elseif (walk or anim) and CAST[name.."_a"] then
-    -- a walker's feet change with the ground covered, so
-    -- they never slide (a step is about a fifth of the height: 0.7 m for a grown man)
     local b=(anim and t//7 or walk//(CAST[name][3]//5))%2==1
     name,lift=name..(b and "_b" or "_a"),b and walk and not anim and 1 or 0
   end
@@ -2506,7 +2516,7 @@ SCENES={
     {bd="night",act={{"rider",40,104,224,56,20,200,1,anim=true}},
       say={{"TWARDOWSKI","It's quieter up there.","Tam będzie spokojniej."}}},
     {bd="hall",act={{"krak",120,108,120,108,0,0},{"wanda",-30,108,68,108,0,90},
-      {"dratewka",250,108,174,108,0,80,2,true},{"cheese",128,90,166,92,175,215,2,arc=true,show=175}},
+      {"dratewka",250,108,174,108,0,80,2,true},{"cheese",128,82,166,92,175,215,1,arc=true,show=175}},
       say={{"KRAK","Your reward!","Twoja nagroda!"},{"WANDA","Half the kingdom, father.","Pół królestwa, ojcze."},
         {"KRAK","Half the cheese?","Pół sera?"}}},
     {bd="night",fx="fireworks",len=240},
@@ -2551,10 +2561,11 @@ function showBackdrop(name)
   end
   if not CAST then loadCast() end
   if shown~=name then
-    backdrop,shown=loadBackdrop(name),name
+    backdrop=loadBackdrop(name)
+    shown=backdrop~="wait" and name or nil
     fadePal(1)
   end
-  if backdrop then memcpy(BAR*120,BACKDROP_RAM,BACKDROP_BYTES) end
+  if backdrop==true then memcpy(BAR*120,BACKDROP_RAM,BACKDROP_BYTES) end
   return backdrop
 end
 
@@ -2640,8 +2651,9 @@ function drawScene()
   local shake=sh.shake or sh.fx=="shake" and 0
   local dy=shake and t>=shake and t<shake+60 and sin(t*7)*2//1 or 0
   cls(0)
+  if backdrop=="wait" then backdrop=loadBackdrop(sh.bd) end
   if sh.fx=="flash" and t<8 then cls(12)
-  elseif backdrop then memcpy((BAR+dy)*120,BACKDROP_RAM,BACKDROP_BYTES) end
+  elseif backdrop==true then memcpy((BAR+dy)*120,BACKDROP_RAM,BACKDROP_BYTES) end
   if OVERLAYS[sh.bd] then OVERLAYS[sh.bd](t) end
   if sh.fx=="fireworks" then fireworks(t) elseif sh.fx=="stairs" then stairs(t) end
   local l=t>=s.start and sh.say and sh.say[s.line]
@@ -2811,7 +2823,8 @@ function drawWorldMap()
   local k=math.min(1,m.t/60)
   local walking=k<1
   local walked=math.sqrt((tx-fx)^2+(ty-fy)^2)*k
-  if not castSprite("dratewka_far"..(walking and (walked//5%2==0 and "_a" or "_b") or ""),
+  local far=CAST and CAST.dratewka_far
+  if not castSprite("dratewka_far"..(walking and far and "_w"..math.floor(walked*8/(far[3]*STRIDE.man))%8 or ""),
       fx+(tx-fx)*k,fy+(ty-fy)*k+2,tx<fx) then
     drawSp(5+(walking and (m.t//8)%2 or 0),fx+(tx-fx)*k-4,fy+(ty-fy)*k-11,12,tx<fx)
   end

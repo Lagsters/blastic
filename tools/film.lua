@@ -91,7 +91,8 @@ env.peek=function(a) return mem[a] or 0 end
 env.poke=function(a,v) mem[a]=math.floor(v) end
 env.memcpy=function(d,s,n) for i=0,n-1 do mem[d+i]=mem[s+i] end end
 env.memset=function(d,v,n) for i=0,n-1 do mem[d+i]=v end end
-env.sync=function(mask,bank) if mask&4~=0 then loadBank(bank,true) end end
+local lastSync  -- TIC-80 syncs a section once a frame
+env.sync=function(mask,bank) if mask&4~=0 and lastSync~=env.frame then lastSync=env.frame loadBank(bank,true) end end
 env.btn=function() return false end
 env.btnp=function() return false end
 env.sfx=function() end

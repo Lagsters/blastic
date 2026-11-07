@@ -28,8 +28,10 @@ env.peek=function(a) return mem[a] or 0 end
 env.poke=function(a,v) mem[a]=v end
 env.memcpy=function(d,s,n) for i=0,n-1 do mem[d+i]=mem[s+i] end end
 env.memset=function(d,v,n) for i=0,n-1 do mem[d+i]=v end end
-env.sync=function(mask,bank)  -- as TIC-80 does: the whole MAP of that cart bank, zeros where none
-  if mask&4==0 then return end
+local lastSync
+env.sync=function(mask,bank)  -- as TIC-80 does: the whole MAP of that cart bank, zeros where none,
+  if mask&4==0 or lastSync==env.frame then return end  -- and once a frame
+  lastSync=env.frame
   local body=banks[bank] and banks[bank][4] or ""
   for i=0,MAP_SIZE-1 do mem[0x08000+i]=i<#body and body:byte(i+1) or 0 end
 end
