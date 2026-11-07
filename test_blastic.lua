@@ -1368,11 +1368,30 @@ local function has_hidden(kind)
 end
 
 -- menu: up wraps to the last item, Z on BATTLE starts a battle
+for k in pairs(_pmem) do _pmem[k]=nil end
 env.state,env.titleTimer,env.menuSel="title",2,1
 press_frame(0)
-check("menu: up from the first item wraps to BATTLE", env.menuSel==3, "sel="..env.menuSel)
+check("menu: up from the first item wraps to BATTLE", env.titleMenu()[env.menuSel][1]=="BATTLE", "sel="..env.menuSel)
 press_frame(4)
 check("menu: BATTLE starts a battle", env.state=="game" and env.mode=="pvp")
+
+-- with a save the menu continues it or starts over; starting over clears the save
+_pmem[env.SAVE_SLOT]=7
+local labels={}
+for _,it in ipairs(env.titleMenu()) do labels[#labels+1]=it[1] end
+check("menu with a save: continue, continue 2P, new story, battle",
+  table.concat(labels,"|")=="CONTINUE (STAGE 7)|CONTINUE 2P|NEW STORY|BATTLE", table.concat(labels,"|"))
+env.state,env.titleTimer,env.menuSel="title",2,1
+press_frame(4)
+check("menu: CONTINUE resumes the saved stage", env.mode=="camp" and env.camp.stage==7)
+_pmem[env.SAVE_SLOT]=7
+env.mode,env.state,env.titleTimer,env.menuSel="pvp","title",2,3
+press_frame(4)
+check("menu: NEW STORY clears the save", env.pmem(env.SAVE_SLOT)==0 and env.state=="title")
+check("menu: after NEW STORY the cursor is on STORY", env.titleMenu()[env.menuSel][1]=="STORY")
+press_frame(4)
+check("menu: STORY after NEW STORY opens the intro", env.state=="scene" and env.camp.stage==1)
+env.mode="pvp"
 
 -- a new story opens with the intro scene, then the world map, then stage 1
 for k in pairs(_pmem) do _pmem[k]=nil end

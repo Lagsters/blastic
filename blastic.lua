@@ -1414,7 +1414,14 @@ end
 
 -- ── title screen ──────────────────────────────────────────────────────────────
 
-local MENU={"STORY","STORY 2P","BATTLE"}
+-- menu items: label and what Z does (true/false: story with or without player 2)
+function titleMenu()
+  local saved=pmem(SAVE_SLOT)
+  if saved>1 then
+    return {{"CONTINUE (STAGE "..saved..")",false},{"CONTINUE 2P",true},{"NEW STORY","new"},{"BATTLE","battle"}}
+  end
+  return {{"STORY",false},{"STORY 2P",true},{"BATTLE","battle"}}
+end
 menuSel=1
 TITLE_IDLE=900  -- frames on the menu before the battle demo starts
 local LOGO,LOGO_X,LOGO_Y="BLASTIC",57,22
@@ -1455,11 +1462,10 @@ local function drawTitle()
   drawLogo()
   print("NOT YOUR PRINCESS",86,48,13,false,1,true)
 
-  local saved=pmem(SAVE_SLOT)
-  for i,item in ipairs(MENU) do
-    local label=item
-    if i<3 and saved>1 then label=label.." (STAGE "..saved..")" end
-    local y=58+i*12
+  local menu=titleMenu()
+  for i,item in ipairs(menu) do
+    local label=item[1]
+    local y=56+i*11
     local w=textW(label,1)
     local x=120-w//2
     if i==menuSel then
@@ -1471,11 +1477,14 @@ local function drawTitle()
   print("P1: ARROWS + Z     P2: WASD + TAB",54,128,14,false,1,true)
 
   if btnp(0) or btnp(1) then
-    menuSel=(menuSel+(btnp(0) and -2 or 0))%#MENU+1
+    menuSel=(menuSel+(btnp(0) and -2 or 0))%#menu+1
     titleTimer=2
   end
   if btnp(4) or btnp(12) then
-    if menuSel==3 then state="game" init() else startCampaign(menuSel==2) end
+    local act=menu[menuSel][2]
+    if act=="battle" then state="game" init()
+    elseif act=="new" then pmem(SAVE_SLOT,0) menuSel=1
+    else startCampaign(act) end
   elseif titleTimer>TITLE_IDLE then
     state="game"
     init()
