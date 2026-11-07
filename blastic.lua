@@ -359,6 +359,64 @@ function initPalette()
   setColour(WOOD_DARK,0x5C,0x3A,0x1A)
 end
 
+-- ── language ──────────────────────────────────────────────────────────────────
+-- English by default, Polish to choose (saved in pmem). TIC-80's font has no Polish letters:
+-- they are built at start into the unused control codes 1..18 of both fonts, from the plain
+-- letter plus a mark, and L() turns a Polish text's UTF-8 letters into those codes.
+LANG_SLOT=1
+LANG=pmem and pmem(LANG_SLOT)==1 and "pl" or "en"
+local FONT=0x14604
+local PL_LETTERS="ąćęłńóśźżĄĆĘŁŃÓŚŹŻ"
+local PL_BASE="acelnoszzACELNOSZZ"
+local PL_MARK="oaosaaaadoaosaaaad"  -- o ogonek, a acute, s stroke, d dot
+local plCode,plCache={},{}
+-- every Polish letter is two bytes in UTF-8 (TIC-80 has no utf8 library)
+for k=1,#PL_LETTERS//2 do plCode[PL_LETTERS:sub(2*k-1,2*k)]=string.char(k) end
+
+local function markGlyph(code,base,mark)
+  local rows,top,bottom,minc,maxc={},8,-1,8,-1
+  for r=0,7 do
+    local b=peek(FONT+base*8+r)
+    rows[r]=b
+    for i=0,7 do
+      if (b>>i)&1==1 then top,bottom=math.min(top,r),math.max(bottom,r) minc,maxc=math.min(minc,i),math.max(maxc,i) end
+    end
+  end
+  local function set(c,r) if r>=0 and r<8 and c>=0 and c<8 then rows[r]=rows[r]|(1<<c) end end
+  local mid=(minc+maxc+1)//2
+  -- a capital has no room for a mark above it: it moves down
+  local drop=(mark=="a" or mark=="d") and math.min(math.max(0,2-top),7-bottom) or 0
+  for r=7,0,-1 do rows[r]=r>=drop and rows[r-drop] or 0 end
+  top,bottom=top+drop,bottom+drop
+  if mark=="o" then set(maxc,bottom+1) set(maxc+1,bottom+2)
+  elseif mark=="a" then set(mid+1,math.max(0,top-2))
+  elseif mark=="d" then set(mid,math.max(0,top-2))
+  else
+    local r=(top+bottom)//2
+    set(minc-1,r) set(minc+1+((rows[r]>>(minc+1))&1),r)
+  end
+  for r=0,7 do poke(FONT+code*8+r,rows[r]) end
+end
+
+function initFont()
+  for k=1,#PL_BASE do
+    local base,mark=PL_BASE:byte(k),PL_MARK:sub(k,k)
+    markGlyph(k,base,mark)
+    markGlyph(128+k,128+base,mark)
+  end
+end
+
+-- the text in the chosen language; the Polish one with its letters in the font's codes
+function L(en,pl)
+  if LANG~="pl" or not pl then return en end
+  local c=plCache[pl]
+  if not c then
+    c=pl:gsub("[\xC3-\xC5][\x80-\xBF]",plCode)
+    plCache[pl]=c
+  end
+  return c
+end
+
 local audioReady=false
 local function initAudio()
   if audioReady then return end
@@ -1418,14 +1476,15 @@ end
 function titleMenu()
   local saved=pmem(SAVE_SLOT)
   if saved>1 then
-    return {{"CONTINUE (STAGE "..saved..")",false},{"CONTINUE 2P",true},{"NEW STORY","new"},{"BATTLE","battle"}}
+    return {{L("CONTINUE","DALEJ").." ("..L("STAGE","ETAP").." "..saved..")",false},{L("CONTINUE 2P","DALEJ 2P"),true},
+      {L("NEW STORY","NOWA GRA"),"new"},{L("BATTLE","BITWA"),"battle"},{L("LANGUAGE: ENGLISH","JĘZYK: POLSKI"),"lang"}}
   end
-  return {{"STORY",false},{"STORY 2P",true},{"BATTLE","battle"}}
+  return {{L("STORY","OPOWIEŚĆ"),false},{L("STORY 2P","OPOWIEŚĆ 2P"),true},{L("BATTLE","BITWA"),"battle"},
+    {L("LANGUAGE: ENGLISH","JĘZYK: POLSKI"),"lang"}}
 end
 menuSel=1
 TITLE_IDLE=900  -- frames on the menu before the battle demo starts
 local LOGO,LOGO_X,LOGO_Y="BLASTIC",57,22
-local SUBTITLE="THE SULPHUR LEGEND"
 
 -- print returns the width of the text; drawn off-screen, it only measures
 function textW(s,scale) return print(s,0,-20,0,false,scale,true) or 0 end
@@ -1455,13 +1514,14 @@ end
 
 local function drawTitle()
   titleTimer=titleTimer+1
-  if titleTimer==1 then initPalette() startMusic() end
+  if titleTimer==1 then initPalette() initFont() startMusic() end
   local t=titleTimer
   nightSky(t)
   castle(80,104,15,4)
   rect(0,126,240,10,15)
   drawLogo()
-  print(SUBTITLE,84,48,13,false,1,true)
+  local sub=L("THE SULPHUR LEGEND","LEGENDA O SIARCE")
+  print(sub,120-textW(sub,1)//2,48,13,false,1,true)
 
   local menu=titleMenu()
   for i,item in ipairs(menu) do
@@ -1475,7 +1535,8 @@ local function drawTitle()
     end
     print(label,x,y,i==menuSel and 12 or 14,false,1,true)
   end
-  print("P1: ARROWS + Z     P2: WASD + TAB",54,128,14,false,1,true)
+  local keys=L("P1: ARROWS + Z     P2: WASD + TAB","P1: STRZAŁKI + Z     P2: WASD + TAB")
+  print(keys,120-textW(keys,1)//2,128,14,false,1,true)
 
   if btnp(0) or btnp(1) then
     menuSel=(menuSel+(btnp(0) and -2 or 0))%#menu+1
@@ -1485,6 +1546,7 @@ local function drawTitle()
     local act=menu[menuSel][2]
     if act=="battle" then state="game" init()
     elseif act=="new" then pmem(SAVE_SLOT,0) menuSel=1
+    elseif act=="lang" then LANG=LANG=="pl" and "en" or "pl" pmem(LANG_SLOT,LANG=="pl" and 1 or 0)
     else startCampaign(act) end
   elseif titleTimer>TITLE_IDLE then
     state="game"
@@ -1590,9 +1652,10 @@ end
 
 STAGES={}
 for n=1,STAGE_COUNT do STAGES[n]=stageDef(n) end
-CHAPTERS={"WROCLAW","MOUNT SLEZA","KRAKOW","THE DEVIL'S CELLARS"}
-local GOALS={exit="FIND THE EXIT",enemies="DEFEAT ALL MONSTERS",keys="FIND 3 KEYS",
-  survive="SURVIVE THE WALLS",boss="DEFEAT THE BOSS"}
+CHAPTERS={{"WROCLAW","WROCŁAW"},{"MOUNT SLEZA","ŚLĘŻA"},{"KRAKOW","KRAKÓW"},{"THE DEVIL'S CELLARS","PIEKIELNE LOCHY"}}
+function chapterName(n) return L(CHAPTERS[n][1],CHAPTERS[n][2]) end
+local GOALS={exit={"FIND THE EXIT","ZNAJDŹ WYJŚCIE"},enemies={"DEFEAT ALL MONSTERS","POKONAJ POTWORY"},
+  keys={"FIND 3 KEYS","ZNAJDŹ 3 KLUCZE"},survive={"SURVIVE THE WALLS","PRZETRWAJ MURY"},boss={"DEFEAT THE BOSS","POKONAJ BOSSA"}}
 local SKELETON_COL=13
 SAVE_SLOT=0
 SURVIVE_STEPS=5  -- a survive stage ends after this many zone steps, with room still left
@@ -1924,13 +1987,13 @@ local function drawCampaignHUD()
     end
   end
   local goal,txt=STAGES[camp.stage][2],nil
-  if goal=="keys" then txt="KEYS "..camp.keys.."/3"
+  if goal=="keys" then txt=L("KEYS ","KLUCZE ")..camp.keys.."/3"
   elseif goal=="enemies" then
     local n=#monsters
     for _,p in ipairs(players) do if p.alive and p.team==2 then n=n+1 end end
-    txt="LEFT "..n
-  elseif goal=="survive" then txt="HOLD ON "..math.max(0,SURVIVE_STEPS-zoneSteps)
-  elseif goal=="exit" then txt="FIND EXIT" end
+    txt=L("LEFT ","ZOSTAŁO ")..n
+  elseif goal=="survive" then txt=L("HOLD ON ","WYTRWAJ ")..math.max(0,SURVIVE_STEPS-zoneSteps)
+  elseif goal=="exit" then txt=L("FIND EXIT","SZUKAJ WYJŚCIA") end
   if txt then print(txt,238-#txt*4,1,12,false,1,true) end
   if goal=="boss" and boss then
     rect(160,2,74,3,15)
@@ -1952,15 +2015,16 @@ function drawCampaign()
   drawMonsters()
   drawBoss()
   drawCampaignHUD()
-  local msg=state=="clear" and "STAGE CLEAR!" or state=="lost" and "OUCH!" or state=="gameover" and "GAME OVER"
+  local msg=state=="clear" and L("STAGE CLEAR!","ETAP ZALICZONY!") or state=="lost" and L("OUCH!","AUĆ!")
+    or state=="gameover" and L("GAME OVER","KONIEC GRY")
   if msg then
     if state=="clear" then
       for k=1,40 do
         pix((k*53+frame*(k%3+1))%240,(k*29+frame*(k%4+1))%136,k%15+1)
       end
     end
-    print(msg,120-#msg*6,52+(state=="clear" and math.floor(math.sin(frame/6)*3) or 0),12,false,2,true)
-    if state=="lost" then print("LIVES LEFT: "..camp.lives,90,72,13,false,1,true) end
+    print(msg,120-textW(msg,2)//2,52+(state=="clear" and math.floor(math.sin(frame/6)*3) or 0),12,false,2,true)
+    if state=="lost" then print(L("LIVES LEFT: ","ŻYCIA: ")..camp.lives,90,72,13,false,1,true) end
     restartTimer=restartTimer-1
     if restartTimer<=0 or (restartTimer<90 and btnp(4)) then campaignNext() end
   end
@@ -2034,7 +2098,7 @@ local function fig(who,x,y,s,t,left,walk,fire)
     C(0,-17,4,c)
     R(1,-18,1,1,0) R(3,-18,1,1,0)
   end
-  if who=="kuba" then
+  if who=="dratewka" then
     R(-3+step,-5,2,5,14) R(1-step,-5,2,5,14) R(-3+step,-1,2,1,0) R(1-step,-1,2,1,0)
     R(-4,-13,8,8,12) R(-3,-11,6,7,8)
     face(SKIN)
@@ -2122,60 +2186,75 @@ end
 -- top bar), title (big caption), fx: flash | shake | fire (dragon breath) | fireworks;
 -- lines start once every actor stands still
 local function closeUp(who,x,left) return {{who,x,126,x,126,0,0,4,left}} end
+local SPEAKER_PL={DEVIL="DIABEŁ",DRAGON="SMOK",DWARF="KRASNAL"}
 SCENES={
   wroclaw={
-    {bd="rynek",len=170,cap="WROCLAW, THE MARKET SQUARE",
+    {bd="rynek",len=170,cap={"WROCLAW, THE MARKET SQUARE","WROCŁAW, RYNEK"},
       act={{"dwarf",30,108,30,108,0,0},{"dwarf",206,108,206,108,0,0,2,true}}},
     {bd="rynek",act={{"dwarf",-20,108,96,108,0,70,3}},
-      say={{"DWARF","News from Krakow! A dragon eats the sheep!"},{"DWARF","King Krak gives half his kingdom to a hero!"}}},
-    {bd="workshop",act=closeUp("kuba",110),
-      say={{"KUBA","Half a kingdom for one dragon?"},{"KUBA","Wool, sulphur, a bit of love..."}}},
-    {bd="workshop",fx="flash",act=closeUp("kuba",110),say={{"KUBA","...and less sulphur next time."}}},
-    {bd="night",act={{"rooster",-40,70,280,44,0,170,1},{"twardowski",-38,62,282,36,0,170,1},{"kuba",60,108,60,108,0,0}},
-      say={{"KUBA","Master Twardowski on his rooster."},{"KUBA","Where he flies, trouble follows."}}},
-    {bd="rynek",len=150,act={{"kuba",-10,108,250,108,0,150}}},
+      say={{"DWARF","News from Krakow! A dragon eats the sheep!","Wieści z Krakowa! Smok pożera owce!"},
+        {"DWARF","King Krak gives half his kingdom to a hero!","Król Krak da pół królestwa bohaterowi!"}}},
+    {bd="workshop",act=closeUp("dratewka",110),
+      say={{"DRATEWKA","Half a kingdom for one dragon?","Pół królestwa za jednego smoka?"},
+        {"DRATEWKA","Wool, sulphur, a bit of love...","Wełna, siarka, odrobina serca..."}}},
+    {bd="workshop",fx="flash",act=closeUp("dratewka",110),
+      say={{"DRATEWKA","...and less sulphur next time.","...i następnym razem mniej siarki."}}},
+    {bd="night",act={{"rooster",-40,70,280,44,0,170,1},{"twardowski",-38,62,282,36,0,170,1},{"dratewka",60,108,60,108,0,0}},
+      say={{"DRATEWKA","Master Twardowski on his rooster.","Mistrz Twardowski na swoim kogucie."},
+        {"DRATEWKA","Where he flies, trouble follows.","Gdzie on leci, tam kłopoty."}}},
+    {bd="rynek",len=150,act={{"dratewka",-10,108,250,108,0,150}}},
     {bd="black",len=120,title=1},
   },
   sleza={
-    {bd="road",len=170,cap="THE ROAD SOUTH",act={{"kuba",-10,108,120,108,0,170,1}}},
-    {bd="sleza",len=150,cap="MOUNT SLEZA, KUPALA NIGHT"},
-    {bd="sleza",act={{"wanda",150,108,150,108,0,0,2,true},{"kuba",-20,108,90,108,0,70}},
-      say={{"KUBA","A princess? On a mountain? At night?"},{"WANDA","I ran away. Father wants to marry me to a hero."}}},
-    {bd="sleza",act=closeUp("wanda",120,true),say={{"WANDA","Don't get any ideas, shoemaker."}}},
-    {bd="sleza",fx="flash",act=closeUp("jaga",130,true),say={{"BABA JAGA","Twardowski sends his regards!"}}},
-    {bd="sleza",act=closeUp("kuba",110),say={{"KUBA","Twardowski. I knew it."}}},
+    {bd="road",len=170,cap={"THE ROAD SOUTH","DROGA NA POŁUDNIE"},act={{"dratewka",-10,108,120,108,0,170,1}}},
+    {bd="sleza",len=150,cap={"MOUNT SLEZA, KUPALA NIGHT","ŚLĘŻA, NOC KUPAŁY"}},
+    {bd="sleza",act={{"wanda",150,108,150,108,0,0,2,true},{"dratewka",-20,108,90,108,0,70}},
+      say={{"DRATEWKA","A princess? On a mountain? At night?","Królewna? Na górze? W nocy?"},
+        {"WANDA","I ran away. Father wants to marry me to a hero.","Uciekłam. Ojciec chce mnie wydać za bohatera."}}},
+    {bd="sleza",act=closeUp("wanda",120,true),
+      say={{"WANDA","Don't get any ideas, shoemaker.","Nawet o tym nie myśl, szewczyku."}}},
+    {bd="sleza",fx="flash",act=closeUp("jaga",130,true),
+      say={{"BABA JAGA","Twardowski sends his regards!","Pozdrowienia od Twardowskiego!"}}},
+    {bd="sleza",act=closeUp("dratewka",110),say={{"DRATEWKA","Twardowski. I knew it.","Twardowski. Wiedziałem."}}},
     {bd="black",len=120,title=2},
   },
   krakow={
-    {bd="wawel",len=170,cap="KRAKOW, WAWEL HILL",act={{"dragon",-80,80,320,50,0,170,1}}},
-    {bd="wawel",act={{"kuba",40,108,40,108,0,0},{"wanda",70,108,70,108,0,0},{"dragon",190,110,190,110,0,0,2,true}},
-      say={{"KUBA","Here, dragon! Have a sheep!"}}},
+    {bd="wawel",len=170,cap={"KRAKOW, WAWEL HILL","KRAKÓW, WZGÓRZE WAWELSKIE"},act={{"dragon",-80,80,320,50,0,170,1}}},
+    {bd="wawel",act={{"dratewka",40,108,40,108,0,0},{"wanda",70,108,70,108,0,0},{"dragon",190,110,190,110,0,0,2,true}},
+      say={{"DRATEWKA","Here, dragon! Have a sheep!","Masz, smoku! Zjedz owieczkę!"}}},
     {bd="wawel",fx="fire",act={{"dragon",70,118,70,118,0,0,2}},
-      say={{"DRAGON","*burp* Spicy. Who sent you?"},{"DRAGON","A gentleman with a tail took my egg."}}},
-    {bd="wawel",act=closeUp("wanda",120,true),say={{"WANDA","A gentleman with a tail... the devil!"}}},
+      say={{"DRAGON","*burp* Spicy. Who sent you?","*bek* Ostre. Kto was przysłał?"},
+        {"DRAGON","A gentleman with a tail took my egg.","Pan z ogonem ukradł mi jajo."}}},
+    {bd="wawel",act=closeUp("wanda",120,true),
+      say={{"WANDA","A gentleman with a tail... the devil!","Pan z ogonem... diabeł!"}}},
     {bd="night",fx="flash",act=closeUp("twardowski",120,true),
-      say={{"TWARDOWSKI","Yes. He holds my pact."},{"TWARDOWSKI","He makes me send the dragon. Burn the pact!"}}},
+      say={{"TWARDOWSKI","Yes. He holds my pact.","Tak. Ma mój cyrograf."},
+        {"TWARDOWSKI","He makes me send the dragon. Burn the pact!","Każe mi nasyłać smoka. Spalcie cyrograf!"}}},
     {bd="black",len=120,title=3},
   },
   cellars={
-    {bd="cellars",len=170,cap="THE DEVIL'S CELLARS"},
+    {bd="cellars",len=170,cap={"THE DEVIL'S CELLARS","PIEKIELNE LOCHY"}},
     {bd="cellars",fx="flash",act=closeUp("devil",120,true),
-      say={{"DEVIL","A shoemaker? Against me?"},{"DEVIL","I own Twardowski. Soon I own Krakow."}}},
-    {bd="cellars",act=closeUp("kuba",110),say={{"KUBA","I brought sheep."}}},
-    {bd="cellars",act={{"kuba",-20,108,70,108,0,60},{"wanda",-50,108,40,108,0,60},{"twardowski",130,108,130,108,0,0,2,true}},
-      say={{"TWARDOWSKI","Three pages of the pact are hidden here."},{"TWARDOWSKI","Find them and burn them!"}}},
+      say={{"DEVIL","A shoemaker? Against me?","Szewczyk? Przeciwko mnie?"},
+        {"DEVIL","I own Twardowski. Soon I own Krakow.","Mam Twardowskiego. Wkrótce będę miał Kraków."}}},
+    {bd="cellars",act=closeUp("dratewka",110),say={{"DRATEWKA","I brought sheep.","Przyniosłem owce."}}},
+    {bd="cellars",act={{"dratewka",-20,108,70,108,0,60},{"wanda",-50,108,40,108,0,60},{"twardowski",130,108,130,108,0,0,2,true}},
+      say={{"TWARDOWSKI","Three pages of the pact are hidden here.","Trzy karty cyrografu są tu ukryte."},
+        {"TWARDOWSKI","Find them and burn them!","Znajdźcie je i spalcie!"}}},
     {bd="black",len=120,title=4},
   },
   ending={
-    {bd="cellars",fx="shake",act={{"devil",120,108,300,30,10,90}},say={{"DEVIL","My pact! Noooo!"}}},
+    {bd="cellars",fx="shake",act={{"devil",120,108,300,30,10,90}},say={{"DEVIL","My pact! Noooo!","Mój cyrograf! Nieee!"}}},
     {bd="night",act={{"rooster",60,104,190,48,20,200,1},{"twardowski",62,96,192,40,20,200,1}},
-      say={{"TWARDOWSKI","Free at last! I'm off to the moon."},{"TWARDOWSKI","It's quieter up there."}}},
-    {bd="hall",act={{"krak",120,108,120,108,0,0},{"wanda",-30,108,80,108,0,80},{"kuba",-60,108,164,108,0,90,2,true}},
-      say={{"KRAK","My hero! Here is your reward..."},{"KRAK","Cheese!"},{"WANDA","Half the kingdom, father."},{"KRAK","Half the cheese?"}}},
+      say={{"TWARDOWSKI","Free at last! I'm off to the moon.","Wolny! Lecę na Księżyc."},
+        {"TWARDOWSKI","It's quieter up there.","Tam jest spokojniej."}}},
+    {bd="hall",act={{"krak",120,108,120,108,0,0},{"wanda",-30,108,80,108,0,80},{"dratewka",-60,108,164,108,0,90,2,true}},
+      say={{"KRAK","My hero! Here is your reward...","Mój bohaterze! Oto twoja nagroda..."},{"KRAK","Cheese!","Ser!"},
+        {"WANDA","Half the kingdom, father.","Pół królestwa, ojcze."},{"KRAK","Half the cheese?","Pół sera?"}}},
     {bd="night",fx="fireworks",len=240},
-    {bd="rynek",act={{"dwarf",40,108,40,108,0,0},{"dwarf",206,108,206,108,0,0,2,true},{"kuba",-10,108,120,108,0,120}},
-      say={{"KUBA","Home. No more dragons."}}},
-    {bd="black",len=200,title="THE END"},
+    {bd="rynek",act={{"dwarf",40,108,40,108,0,0},{"dwarf",206,108,206,108,0,0,2,true},{"dratewka",-10,108,120,108,0,120}},
+      say={{"DRATEWKA","Home. No more dragons.","Dom. Koniec ze smokami."}}},
+    {bd="black",len=200,title="end"},
   },
 }
 SCENE_OF_CHAPTER={"wroclaw","sleza","krakow","cellars"}
@@ -2202,6 +2281,7 @@ end
 
 function playScene(name,after)
   initPalette()
+  initFont()
   if not palBase then
     palBase={}
     for i=0,47 do palBase[i]=peek(0x03FC0+i) end
@@ -2238,18 +2318,18 @@ function drawScene()
   end
   local title=sh.title
   if title then
-    title=CHAPTERS[title] and "CHAPTER "..title or title
+    title=CHAPTERS[title] and L("CHAPTER ","ROZDZIAŁ ")..title or L("THE END","KONIEC")
     local w=textW(title,2)
     print(title,120-w//2,56,12,false,2,true)
     if CHAPTERS[sh.title] then
-      w=textW(CHAPTERS[sh.title],1)
-      print(CHAPTERS[sh.title],120-w//2,72,4,false,1,true)
+      local name=chapterName(sh.title)
+      print(name,120-textW(name,1)//2,72,4,false,1,true)
     end
   end
   rect(0,0,240,BAR,0) rect(0,136-BAR,240,BAR,0)
   if sh.cap then
-    local w=textW(sh.cap,1)
-    print(sh.cap:sub(1,t//3),120-w//2,8,13,false,1,true)
+    local cap=L(sh.cap[1],sh.cap[2])
+    print(cap:sub(1,t//3),120-textW(cap,1)//2,8,13,false,1,true)
   end
 
   if s.leave then
@@ -2264,8 +2344,8 @@ function drawScene()
     if t>=s.start then
       local l=sh.say[s.line]
       s.lineT=s.lineT+1
-      print(l[1],8,119,4,false,1,true)
-      print(l[2]:sub(1,s.lineT//2),8,SUB_Y,12,false,1,true)
+      print(L(l[1],SPEAKER_PL[l[1]]),8,119,4,false,1,true)
+      print(L(l[2],l[3]):sub(1,s.lineT//2),8,SUB_Y,12,false,1,true)
       if s.lineT>LINE_FRAMES or (s.lineT>20 and btnp(4)) then
         s.line,s.lineT=s.line+1,0
         done=s.line>#sh.say
@@ -2291,7 +2371,7 @@ local INTRO_BOOM,INTRO_END=110,330
 local function drawIntro()
   introT=introT+1
   local t=introT
-  if t==1 then initPalette() startMusic() end
+  if t==1 then initPalette() initFont() startMusic() end
   if t==INTRO_BOOM then sndExplosion() end
   cls(0)
   if t<INTRO_BOOM then
@@ -2316,7 +2396,10 @@ local function drawIntro()
       if d<0 then return -60 elseif d<10 then return d*3-30 end
       return d<20 and -math.abs(sin((d-10)/3))*4//1 or 0
     end)
-    if b>90 then print(SUBTITLE:sub(1,(b-90)//3),84,48,13,false,1,true) end
+    if b>90 then
+      local sub=L("THE SULPHUR LEGEND","LEGENDA O SIARCE")
+      print(sub:sub(1,(b-90)//3),120-textW(sub,1)//2,48,13,false,1,true)
+    end
   end
   if t>=INTRO_END or (t>10 and btnp(4)) then
     state,titleTimer="title",2
@@ -2359,11 +2442,11 @@ function drawWorldMap()
   local tx,ty=nodePos(m.n)
   local k=math.min(1,m.t/60)
   drawSp(5+(k<1 and (m.t//8)%2 or 0),fx+(tx-fx)*k-4,fy+(ty-fy)*k-11,12,tx<fx)
-  local title=CHAPTERS[st[1]]
-  print(title,120-#title*3,4,12,false,1,false)
-  local sub="STAGE "..st[1].."-"..((m.n-1)%CHAPTER_LEN+1)..": "..GOALS[st[2]]
-  print(sub,120-#sub*2,16,4,false,1,true)
-  if m.t>60 and m.t%40<28 then print("PRESS Z",104,128,12,false,1,true) end
+  local title=chapterName(st[1])
+  print(title,120-(print(title,0,-20) or 0)//2,4,12,false,1,false)
+  local sub=L("STAGE ","ETAP ")..st[1].."-"..((m.n-1)%CHAPTER_LEN+1)..": "..L(table.unpack(GOALS[st[2]]))
+  print(sub,120-textW(sub,1)//2,16,4,false,1,true)
+  if m.t>60 and m.t%40<28 then print(L("PRESS Z","NACIŚNIJ Z"),104,128,12,false,1,true) end
   if m.t>200 or (m.t>30 and btnp(4)) then mapAnim=nil startStage(m.n) end
 end
 
@@ -2435,19 +2518,19 @@ function TIC()
     drawPowerups()
     drawHUD()
 
-    local msg=winner and ("P"..winner.id.." WINS!") or "DRAW!"
+    local msg=winner and ("P"..winner.id..L(" WINS!"," WYGRYWA!")) or L("DRAW!","REMIS!")
     local col=winner and winner.color or 7
     local mx=120-#msg*3
     print(msg,mx,50,col,false,2,true)
 
     if winner then
-      local sub=winner.id<=2 and "YOU WIN!" or "BOT WINS"
+      local sub=winner.id<=2 and L("YOU WIN!","WYGRAŁEŚ!") or L("BOT WINS","WYGRAŁ BOT")
       local sc=winner.id<=2 and 12 or 9
       print(sub,120-#sub*2,72,sc,false,1,true)
     end
 
     local pct=math.ceil(restartTimer/210*100)
-    print("restarting "..pct.."%",88,90,13,false,1,true)
+    print(L("restarting ","restart ")..pct.."%",88,90,13,false,1,true)
 
     restartTimer=restartTimer-1
     if restartTimer<=0 then
@@ -2463,9 +2546,9 @@ function TIC()
     drawMap()
     drawHUD()
     local w=matchWinner(score)
-    local msg="P"..w.." WINS THE MATCH!"
+    local msg="P"..w..L(" WINS THE MATCH!"," WYGRYWA MECZ!")
     print(msg,120-#msg*3,50,players[w].color,false,1,true)
-    print("new match in "..math.ceil(restartTimer/60).."s",88,90,13,false,1,true)
+    print(L("new match in ","nowy mecz za ")..math.ceil(restartTimer/60).."s",88,90,13,false,1,true)
 
     restartTimer=restartTimer-1
     if restartTimer<=0 then

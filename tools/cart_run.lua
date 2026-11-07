@@ -29,19 +29,27 @@ env.btnp=function(b) return b==4 and z end
 env.pmem=function() return 0 end
 env.time=function() return 42 end
 env.load=function(s,n,m,e) return load(s,n,m,e or env) end  -- TIC-80 runs the cart in one global table
-setmetatable(env,{__index=_G})
+-- only the libraries TIC-80 gives a cart: no io, os, utf8, require
+local TIC_LUA={}
+for _,n in ipairs{"assert","error","ipairs","pairs","next","pcall","select","tonumber","tostring",
+  "type","setmetatable","getmetatable","rawget","rawset","rawequal","rawlen","unpack","xpcall",
+  "math","string","table","coroutine"} do TIC_LUA[n]=_G[n] end
+setmetatable(env,{__index=TIC_LUA})
 assert(load(code,"cart","t",env))()
 
 local function run(n,cond) for _=1,n do if cond and cond() then return true end env.TIC() end return not cond end
 assert(run(1000,function() return env.state=="title" end),"the intro never reaches the title")
-for _,name in ipairs{"wroclaw","sleza","krakow","cellars","ending"} do
-  local done=false
-  env.playScene(name,function() done=true end)
-  z=true
-  assert(run(5000,function() return done end),"scene "..name.." never ends")
-  z=false
+for _,lang in ipairs{"en","pl"} do
+  env.LANG=lang
+  for _,name in ipairs{"wroclaw","sleza","krakow","cellars","ending"} do
+    local done=false
+    env.playScene(name,function() done=true end)
+    z=true
+    assert(run(5000,function() return done end),"scene "..name.." never ends ("..lang..")")
+    z=false
+  end
 end
 env.state="title" env.titleTimer=2 env.menuSel=1
 env.init()
 assert(run(600),"battle")
-print("cart runs: intro, "..5 .." scenes, battle")
+print("cart runs: intro, 5 scenes in English and Polish, battle")

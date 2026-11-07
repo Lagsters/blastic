@@ -19,14 +19,70 @@ SCENES_BLOB   = 'scenes.bin'
 CHUNK_MAP     = 4
 MAP_SIZE      = 32640
 FILM_REEL     = os.path.join('tools', 'film_reel.lua')
-# The story section of the code (scenes and their texts) lands in MUSIC PATTERNS RAM, which the
-# PCM tracker never uses, and is loaded from there: it does not count against CODE_LIMIT.
+# The story section of the code (scenes and their texts) lands LZ-packed in MUSIC PATTERNS RAM,
+# which the PCM tracker never uses, and is unpacked and loaded from there: it does not count
+# against CODE_LIMIT. Packing: u16 packed length, then c<128 copies the next c+1 bytes,
+# c>=128 repeats c-125 bytes from u16 distance back.
 CHUNK_PATTERNS = 15
 STORY_RAM, STORY_SIZE = 0x11164, 11520
 STORY = re.compile(r'^-- story:begin.*?^-- story:end[^\n]*\n', re.S | re.M)
-STORY_LOADER = ('do local s={} for i=0,%d do local b=peek(%d+i) if b==0 then break end '
-                's[#s+1]=string.char(b) end assert(load(table.concat(s),"story"))() end\n'
-                % (STORY_SIZE - 1, STORY_RAM))
+STORY_LOADER = ('do local a,o,n=%d,{},0 local e=a+2+(peek(a)|peek(a+1)<<8) a=a+2 '
+                'while a<e do local c=peek(a) a=a+1 if c<128 then '
+                'for i=0,c do n=n+1 o[n]=string.char(peek(a+i)) end a=a+c+1 '
+                'else local d=peek(a)|peek(a+1)<<8 a=a+2 for _=1,c-125 do n=n+1 o[n]=o[n-d] end end end '
+                'assert(load(table.concat(o),"story"))() end\n' % STORY_RAM)
+LZ_MIN, LZ_MAX, LZ_WINDOW = 3, 130, 65535
+
+
+def lz_pack(data: bytes) -> bytes:
+    """Greedy LZ77 in the format above, without the length header."""
+    out, lit, heads, i, n = bytearray(), bytearray(), {}, 0, len(data)
+
+    def flush():
+        while lit:
+            part = lit[:128]
+            out.append(len(part) - 1)
+            out.extend(part)
+            del lit[:128]
+
+    while i < n:
+        best_len, best_dist = 0, 0
+        for j in reversed(heads.get(data[i:i + LZ_MIN], [])[-64:]):
+            if i - j > LZ_WINDOW:
+                break
+            k = 0
+            while k < LZ_MAX and i + k < n and data[j + k] == data[i + k]:
+                k += 1
+            if k > best_len:
+                best_len, best_dist = k, i - j
+        if best_len >= LZ_MIN:
+            flush()
+            out.append(best_len + 125)
+            out += best_dist.to_bytes(2, 'little')
+            step = best_len
+        else:
+            lit.append(data[i])
+            step = 1
+        for k in range(i, min(i + step, n - LZ_MIN + 1)):
+            heads.setdefault(data[k:k + LZ_MIN], []).append(k)
+        i += step
+    flush()
+    return bytes(out)
+
+
+def lz_unpack(packed: bytes) -> bytes:
+    out, i = bytearray(), 0
+    while i < len(packed):
+        c = packed[i]
+        if c < 128:
+            out += packed[i + 1:i + 2 + c]
+            i += c + 2
+        else:
+            d = int.from_bytes(packed[i + 1:i + 3], 'little')
+            for _ in range(c - 125):
+                out.append(out[-d])
+            i += 3
+    return bytes(out)
 # TIC-80 reads the cart's metadata from these header comments, so they stay.
 METADATA = re.compile(r'--\s*(title|author|desc|script|input|saveid|site|license|version):')
 LONG_OPEN = re.compile(r'\[(=*)\[')
@@ -125,9 +181,12 @@ def lua_to_tic(lua_path: str, tic_path: str, extra: str = ''):
     src, story = split_story(open(lua_path, 'r', encoding='utf-8').read() + extra)
     code = minify(src)
     code_bytes = code.encode('utf-8')
-    story_bytes = minify(story).encode('utf-8') if story else b''
-    if len(story_bytes) >= STORY_SIZE:
-        raise ValueError(f"Story too large: {len(story_bytes)} bytes (max {STORY_SIZE - 1})")
+    story_bytes = b''
+    if story:
+        packed = lz_pack(minify(story).encode('utf-8'))
+        story_bytes = len(packed).to_bytes(2, 'little') + packed
+    if len(story_bytes) > STORY_SIZE:
+        raise ValueError(f"Story too large: {len(story_bytes)} bytes packed (max {STORY_SIZE})")
     if len(code_bytes) > CODE_LIMIT:
         raise ValueError(f"Code too large: {len(code_bytes)} bytes (max {CODE_LIMIT})")
     data = make_chunk(CHUNK_DEFAULT, 0, b'')
@@ -146,7 +205,7 @@ def lua_to_tic(lua_path: str, tic_path: str, extra: str = ''):
     with open(tic_path, 'wb') as f:
         f.write(data)
     print(f"Written {len(data)} bytes to {tic_path} (code {len(code_bytes)}/{CODE_LIMIT} B, "
-          f"story {len(story_bytes)}/{STORY_SIZE - 1} B)")
+          f"story {len(story_bytes)}/{STORY_SIZE} B packed)")
 
 
 if __name__ == '__main__':

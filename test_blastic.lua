@@ -1342,6 +1342,28 @@ for i=1,128 do
 end
 check("the explosion plays at 0.6 over the music ducked to half", ducked)
 
+-- Polish letters: the plain letter from the font plus its mark, in control codes 1..18
+do
+  local F=0x14604
+  local mem={}
+  local g=fresh_game(function(a,v) mem[a]=v end,function() end)
+  g.peek=function(a) return mem[a] or 0 end
+  -- a 3x5 stand-in for the plain letters: a box from row 1 to row 5, columns 1..3
+  for _,ch in ipairs({"a","c","e","l","n","o","s","z","A","C","E","L","N","O","S","Z"}) do
+    for _,base in ipairs({ch:byte(),ch:byte()+128}) do
+      for r=1,5 do mem[F+base*8+r]=0x0E end
+    end
+  end
+  g.initFont()
+  local function row(code,r) return mem[F+code*8+r] or 0 end
+  check("a gets an ogonek under its right side", row(1,6)==0x08 and row(1,7)==0x10, row(1,6)..","..row(1,7))
+  check("l gets a stroke through its middle", row(4,3)~=0x0E and row(4,3)&0x0E==0x0E, tostring(row(4,3)))
+  check("S moves down a row and gets an acute above", row(16,1)==0 and row(16,6)==0x0E and row(16,0)~=0,
+    row(16,0)..","..row(16,1)..","..row(16,6))
+  check("the small font gets the same letters", row(128+4,3)==row(4,3))
+  check("L() writes Polish text in those codes", (function() g.LANG="pl" local r=g.L("x","łą") g.LANG="en" return r end)()==string.char(4,1))
+end
+
 -- ── TEST: campaign ────────────────────────────────────────────────────────────
 
 io.write("\n=== campaign ===\n")
@@ -1367,11 +1389,17 @@ local function has_hidden(kind)
   return false
 end
 
--- menu: up wraps to the last item, Z on BATTLE starts a battle
+-- menu: up wraps to the last item (the language), Z on BATTLE starts a battle
 for k in pairs(_pmem) do _pmem[k]=nil end
 env.state,env.titleTimer,env.menuSel="title",2,1
 press_frame(0)
-check("menu: up from the first item wraps to BATTLE", env.titleMenu()[env.menuSel][1]=="BATTLE", "sel="..env.menuSel)
+check("menu: up from the first item wraps to LANGUAGE", env.titleMenu()[env.menuSel][1]=="LANGUAGE: ENGLISH", "sel="..env.menuSel)
+press_frame(4)
+check("menu: LANGUAGE switches to Polish and remembers it", env.LANG=="pl" and env.pmem(env.LANG_SLOT)==1)
+check("menu: in Polish the menu speaks Polish", env.titleMenu()[2][1]=="OPOWIE"..string.char(16,11).." 2P", env.titleMenu()[2][1])
+press_frame(4)
+check("menu: LANGUAGE switches back to English", env.LANG=="en" and env.pmem(env.LANG_SLOT)==0)
+press_frame(0)
 press_frame(4)
 check("menu: BATTLE starts a battle", env.state=="game" and env.mode=="pvp")
 
@@ -1379,8 +1407,8 @@ check("menu: BATTLE starts a battle", env.state=="game" and env.mode=="pvp")
 _pmem[env.SAVE_SLOT]=7
 local labels={}
 for _,it in ipairs(env.titleMenu()) do labels[#labels+1]=it[1] end
-check("menu with a save: continue, continue 2P, new story, battle",
-  table.concat(labels,"|")=="CONTINUE (STAGE 7)|CONTINUE 2P|NEW STORY|BATTLE", table.concat(labels,"|"))
+check("menu with a save: continue, continue 2P, new story, battle, language",
+  table.concat(labels,"|")=="CONTINUE (STAGE 7)|CONTINUE 2P|NEW STORY|BATTLE|LANGUAGE: ENGLISH", table.concat(labels,"|"))
 env.state,env.titleTimer,env.menuSel="title",2,1
 press_frame(4)
 check("menu: CONTINUE resumes the saved stage", env.mode=="camp" and env.camp.stage==7)
