@@ -2407,8 +2407,6 @@ local FOREGROUNDS={
   wawel=function(fx,t) every(fx,7,0,function(x)
     local h=14+(x*5)%11
     line(x,116,x+sin(t/25+x)*2,116-h,0) rect(x-1+sin(t/25+x)*2,114-h,3,5,0) end) end,
-  cellars=function(fx) every(fx,120,30,function(x) tri(x,116,x+22,116,x+9,70,0) tri(x+30,116,x+44,116,x+38,90,0) end)
-    every(fx,200,90,function(x) for y=20,60,4 do rect(x,y,2,3,0) end end) end,
   night=function(fx) every(fx,420,0,function(x)
     rect(x,20,7,96,0) circ(x+3,28,16,0) circ(x-10,44,11,0) circ(x+16,48,12,0) circ(x+4,60,9,0) end) end,
 }
@@ -2472,8 +2470,8 @@ SCENES={
   krakow={
     {bd="wawel",len=210,pan=50,cap={"KRAKOW","KRAKÓW"}},
     {bd="krakow",len=220,pan=40,shake=130,act={{"dragon",-80,50,320,30,120,210,1}}},
-    {bd="wawel",len=140,act={{"dragon",70,106,70,106,0,0,1},{"wanda",204,108,204,108,0,0,2,true},
-      {"dratewka",174,108,174,108,0,0,2,true},{"sheep",160,94,107,70,40,80,2,arc=true,spark=0,hide=80}}},
+    {bd="wawel",len=140,act={{"dragon",64,110,64,110,0,0,2},{"wanda",204,108,204,108,0,0,2,true},
+      {"dratewka",174,108,174,108,0,0,2,true},{"sheep",160,94,104,56,40,80,2,arc=true,spark=0,hide=80}}},
     {bd="wawel",fx="fire",act={{"dragon",90,124,90,124,0,0,2}},
       say={{"DRAGON","*burp* Spicy! Who sent you?","*bek* Ostre! Kto was przysłał?"}}},
     {bd="night",len=210,cap={"LAST NIGHT","ZESZŁEJ NOCY"},
@@ -2503,12 +2501,12 @@ SCENES={
       {"sheep",76,94,191,62,64,104,2,arc=true,spark=0,hide=104},
       {"devil",214,108,320,90,106,150,2,arc=true,show=106}},
       booms={{191,62,104}}},
-    {bd="cellars",fx="shake",act={{"devil",200,108,300,108,10,60,2,hop=6}},
+    {bd="cellars",fx="shake",act={{"devil",200,108,200,108,0,0,2,true,hop=6}},
       say={{"DEVIL","My pact! Noooo!","Mój cyrograf! Nieee!"}}},
-    {bd="night",act={{"rider",40,104,200,44,20,200,1,anim=true}},
+    {bd="night",act={{"rider",40,104,224,56,20,200,1,anim=true}},
       say={{"TWARDOWSKI","It's quieter up there.","Tam będzie spokojniej."}}},
     {bd="hall",act={{"krak",120,108,120,108,0,0},{"wanda",-30,108,68,108,0,90},
-      {"dratewka",-10,108,174,108,0,170,2,true},{"cheese",128,90,166,92,175,215,2,arc=true,show=175}},
+      {"dratewka",250,108,174,108,0,80,2,true},{"cheese",128,90,166,92,175,215,2,arc=true,show=175}},
       say={{"KRAK","Your reward!","Twoja nagroda!"},{"WANDA","Half the kingdom, father.","Pół królestwa, ojcze."},
         {"KRAK","Half the cheese?","Pół sera?"}}},
     {bd="night",fx="fireworks",len=240},

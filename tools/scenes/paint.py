@@ -426,12 +426,12 @@ def odra():
         deck |= under & ~ellipse(ax + 1, 62, ax + 69, 90) & (yy >= 59) & (yy < 66)
         for k in range(ax + 4, ax + 68, 4):
             deck |= (xx == k) & (yy >= 59) & (yy < 66) & ~under
-    deck |= box(60, 56, 216, 60) | box(60, 52, 216, 53)
-    for k in range(62, 214, 3):
+    deck |= box(0, 56, 216, 60) | box(0, 52, 216, 53)
+    for k in range(2, 214, 3):
         deck |= box(k, 53, k + 1, 56)
     img[deck] = 7
-    img[box(60, 59, 216, 60)] = 5
-    for lx in range(66, 214, 24):
+    img[box(0, 59, 216, 60)] = 5
+    for lx in range(6, 214, 24):
         img[box(lx, 46, lx + 1, 56)] = 0
         img[box(lx - 1, 43, lx + 2, 46)] = 4
     for px0 in (64, 138, 208):
@@ -975,13 +975,14 @@ def night():
     by it, the Wawel's towers and roofs dark with lit windows, the river mirroring the lights."""
     img = np.full((H, W), SKY)
     stars(img, 110, yy < 70, 61)
-    glow(img, 190, 24, 30, [SKY, 7, 13])
-    img[ellipse(180, 14, 200, 34)] = 12
-    img[ellipse(182, 16, 192, 28) & ~ellipse(186, 12, 204, 30)] = 13
-    img[ellipse(185, 12, 203, 30)] = SKY
-    img[ellipse(185, 12, 203, 30) & LEVELS[1] & ellipse(180, 14, 200, 34)] = 7       # earthshine
+    mx, my = 224, 40                                                         # clear of the title's logo
+    glow(img, mx, my, 30, [SKY, 7, 13])
+    img[ellipse(mx - 10, my - 10, mx + 10, my + 10)] = 12
+    img[ellipse(mx - 8, my - 8, mx + 2, my + 4) & ~ellipse(mx - 4, my - 12, mx + 14, my + 6)] = 13
+    img[ellipse(mx - 5, my - 12, mx + 13, my + 6)] = SKY
+    img[ellipse(mx - 5, my - 12, mx + 13, my + 6) & LEVELS[1] & ellipse(mx - 10, my - 10, mx + 10, my + 10)] = 7
     # clouds drifting, lit on top by the moon
-    for k, (cx, cy, cw) in enumerate(((50, 30, 70), (130, 18, 50), (226, 44, 40))):
+    for k, (cx, cy, cw) in enumerate(((50, 30, 70), (130, 18, 50), (186, 10, 40))):
         cloud = ellipse(cx - cw // 2, cy - 5, cx + cw // 2, cy + 5) & (noise(5, 2, 160 + k) > 0.35)
         img[cloud & LEVELS[2]] = 7
         img[cloud & ~np.roll(cloud, 2, axis=0) & LEVELS[2]] = 13
@@ -999,7 +1000,7 @@ def night():
     img[box(124, 32, 128, 38)] = 4
     img[box(0, 74, W, 76)] = 0                                               # the embankment
     reflect(img, yy >= 76, 76, 165)
-    img[(yy >= 77) & (np.abs(xx - 190 - np.sin(yy) * 2) < 2 + (yy - 76) * 0.4) & (yy % 2 == 0) & ((xx + yy * 3) % 5 < 3)] = 13   # the moon path
+    img[(yy >= 77) & (np.abs(xx - 224 - np.sin(yy) * 2) < 2 + (yy - 76) * 0.4) & (yy % 2 == 0) & ((xx + yy * 3) % 5 < 3)] = 13   # the moon path
     return img, ["000000", "1a2a40", "4a6a8a"], ["05051a", "101a40", "2a3a60"]
 
 
