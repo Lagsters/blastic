@@ -12,11 +12,11 @@ The cast (cast.py) follows the backdrops.
 
 Layout: u8 backdrop count, u8 sprite count; per backdrop u8 name length, the name, u16 offset
 (from the start of the blob), 3 RGB colours (indices 1, 5, 7) and 3 RGB sky stops (top,
-middle, bottom); per sprite u16 offset. A backdrop is its 4-bit pixels (low nibble left), rows top down, packed by
+middle, bottom); then u16 offset and u16 length of the cast, LZ-packed (see below). A backdrop is its 4-bit pixels (low nibble left), rows top down, packed by
 make_tic.lz_pack: c<128 copies the next c+1 bytes, c>=128 repeats c-125 bytes from u16
 distance back. A sprite is u8 name length,
 the name, u8 width, height, x and y offset (of a patch over its bust), then per row runs of
-colour<<4 | length-1 (11 is transparent).
+colour<<4 | length-1 (11 is transparent); the sprites follow one another and are packed together.
 """
 import sys, os
 import numpy as np
@@ -462,7 +462,7 @@ def main():
     out = sys.argv[1]
     preview = sys.argv[sys.argv.index("--preview") + 1] if "--preview" in sys.argv else None
     sprites = cast.sprites()
-    head = 2 + sum(21 + len(n) for n in NAMES) + len(sprites) * 2
+    head = 2 + sum(21 + len(n) for n in NAMES) + 4
     table, data = bytearray([len(NAMES), len(sprites)]), bytearray()
     for name in NAMES:
         img, own, sky = globals()[name]()
@@ -488,19 +488,21 @@ def main():
                 rgb[y][img[y] == SKY] = [int(a[c] + (b[c] - a[c]) * f) for c in range(3)]
             Image.fromarray(rgb).resize((W * 3, H * 3), Image.NEAREST).save(
                 os.path.join(preview, name + ".png"))
+    raw = bytearray()
     for name, (ox, oy, px) in sprites.items():
-        table += (head + len(data)).to_bytes(2, "little")
-        data += bytes([len(name)]) + name.encode() + bytes([px.shape[1], px.shape[0], ox, oy])
+        raw += bytes([len(name)]) + name.encode() + bytes([px.shape[1], px.shape[0], ox, oy])
         for row in px:
             x = 0
             while x < len(row):
                 n = 1
                 while x + n < len(row) and row[x + n] == row[x] and n < 16:
                     n += 1
-                data.append(int(row[x]) << 4 | (n - 1))
+                raw.append(int(row[x]) << 4 | (n - 1))
                 x += n
-    print(f"cast      {len(sprites)} sprites")
-    blob = table + data
+    packed = lz_pack(bytes(raw))
+    print(f"cast      {len(sprites)} sprites {len(packed):5d} B")
+    table += (head + len(data)).to_bytes(2, "little") + len(packed).to_bytes(2, "little")
+    blob = table + data + packed
     open(out, "wb").write(blob)
     print(f"{out}: {len(blob)} B")
 

@@ -455,6 +455,7 @@ function sndPickup() sfx(6,-1,24,3,15) end
 function sndShield() sfx(7,-1,24,3,15) end
 
 function init()
+  hideBackdrop()
   math.randomseed(time())
   mode,camX,camY,boss,monsters,hidden="pvp",0,0,nil,{},{}
   setArena(32,18)
@@ -1518,17 +1519,22 @@ local function drawTitle()
   titleTimer=titleTimer+1
   if titleTimer==1 then initPalette() initFont() startMusic() end
   local t=titleTimer
-  nightSky(t)
-  castle(80,104,15,4)
-  rect(0,126,240,10,15)
+  cls(0)
+  if not showBackdrop("night") then
+    nightSky(t)
+    castle(80,104,15,4)
+    rect(0,126,240,10,15)
+  end
   drawLogo()
   local sub=L("THE SULPHUR LEGEND","LEGENDA O SIARCE")
   print(sub,120-textW(sub,1)//2,48,13,false,1,true)
 
   local menu=titleMenu()
+  local top=60+(5-#menu)*5
+  rect(62,top,116,#menu*11+6,0) rectb(62,top,116,#menu*11+6,3) rectb(64,top+2,112,#menu*11+2,8)
   for i,item in ipairs(menu) do
     local label=item[1]
-    local y=56+i*11
+    local y=top-7+i*11
     local w=textW(label,1)
     local x=120-w//2
     if i==menuSel then
@@ -2034,7 +2040,7 @@ end
 
 -- story:begin (make_tic.py moves this section into the cart's MUSIC PATTERNS data and loads
 -- it from there, so the scenes do not count against the code limit; it may use only globals)
-do  -- the scenes' locals stay inside: the main chunk is near Lua's 200-local limit
+;(function()  -- own function: the main chunk is near Lua's 200-local limit
 -- ── scenes ────────────────────────────────────────────────────────────────────
 -- A scene is a film: shots with their own backdrop, camera pan, actors and lines, cut with a
 -- fade. Backdrops and the cast are painted by tools/scenes/paint.py and cast.py; the cast keeps
@@ -2064,9 +2070,10 @@ local function nameAt(p)
   return table.concat(s),p+peek(p)+1
 end
 
--- backdrops by name: the address of their table entry; the cast by name: {address of the
--- runs, width, height, x, y}
-local backdrops
+-- backdrops by name: the address of their table entry. The cast is LZ-packed in the cart and
+-- unpacked once into castRuns, a Lua string (no RAM is left for it); CAST by name: {index of
+-- its runs in castRuns, width, height, x, y}
+local backdrops,castRuns
 CAST=nil
 local function loadCast()
   backdrops,CAST={},{}
@@ -2077,25 +2084,48 @@ local function loadCast()
     backdrops[name]=p
     p=p+20
   end
-  for k=0,peek(ART_RAM+1)-1 do
-    local name,q=nameAt(ART_RAM+word(p+k*2))
-    CAST[name]={q+4,peek(q),peek(q+1),peek(q+2),peek(q+3)}
+  local a,o,n=ART_RAM+word(p),{},0
+  local e=a+word(p+2)
+  while a<e do
+    local c=peek(a)
+    if c<128 then
+      for i=1,c+1 do n=n+1 o[n]=string.char(peek(a+i)) end
+      a=a+c+2
+    else
+      local d=word(a+1)
+      for _=1,c-125 do n=n+1 o[n]=o[n-d] end
+      a=a+3
+    end
+  end
+  castRuns=table.concat(o)
+  local i,byte=1,string.byte
+  for _=1,peek(ART_RAM+1) do
+    local len=byte(castRuns,i)
+    local name=castRuns:sub(i+1,i+len)
+    local w,h,ox,oy=byte(castRuns,i+len+1,i+len+4)
+    i=i+len+5
+    CAST[name]={i,w,h,ox,oy}
+    for _=1,h do
+      local x=0
+      while x<w do x=x+(byte(castRuns,i)&15)+1 i=i+1 end
+    end
   end
 end
 
--- a sprite with its top left at x,y, s pixels per pixel, mirrored when left; a talk or blink
+-- a sprite with its top left at x,y, pixel for pixel, mirrored when left; a talk or blink
 -- patch is placed by its offset inside a bust bw pixels wide
-local function sprite(name,x,y,s,left,bw)
+local function sprite(name,x,y,left,bw)
   local sp=CAST[name]
   if not sp then return end
   local a,w,h,ox,oy=table.unpack(sp)
   if left then ox=(bw or w)-ox-w end
+  local byte=string.byte
   for j=0,h-1 do
     local i=0
     while i<w do
-      local b=peek(a)
+      local b=byte(castRuns,a)
       local c,n=b>>4,(b&15)+1
-      if c~=11 then rect(x+(left and ox+w-i-n or ox+i)*s,y+(oy+j)*s,n*s,s,c) end
+      if c~=11 then rect(x+(left and ox+w-i-n or ox+i),y+oy+j,n,1,c) end
       a,i=a+1,i+n
     end
   end
@@ -2138,27 +2168,28 @@ end
 local SPEAKER_WHO={DRATEWKA="dratewka",WANDA="wanda",KRAK="krak",TWARDOWSKI="twardowski",
   DEVIL="devil",["BABA JAGA"]="jaga"}
 
--- an actor with its feet at x,y (a close-up stands on the bottom bar); talking moves the mouth
+-- an actor with its feet at x,y: scale 1 is a far shot (the small sprites), 4 a close-up
+-- standing on the bottom bar; talking moves the mouth
 local function drawCast(who,x,y,s,t,left,walk,talking,roar)
   if s>=4 then
     local b=CAST["bust_"..who]
     if not b then return end
-    local bx,by=x-b[2],136-BAR-b[3]*2+math.max(0,14-t)*3+t//40%2
-    sprite("bust_"..who,bx,by,2,left)
-    if talking and t//5%2==0 then sprite("talk_"..who,bx,by,2,left,b[2]) end
-    if t%170<6 then sprite("blink_"..who,bx,by,2,left,b[2]) end
+    local bx,by=x-b[2]//2,136-BAR-b[3]+math.max(0,14-t)*3+t//40%2
+    sprite("bust_"..who,bx,by,left)
+    if talking and t//5%2==0 then sprite("talk_"..who,bx,by,left,b[2]) end
+    if t%170<6 then sprite("blink_"..who,bx,by,left,b[2]) end
     return
   end
-  local name,lift=who,0
+  local name,lift=who..(s==1 and "_far" or ""),0
   if who=="dragon" then
-    name=roar and "dragon_roar" or ({"dragon_a","dragon","dragon_b","dragon"})[t//(walk and 5 or 9)%4+1]
-  elseif walk and CAST[who.."_a"] then
+    name=name..(roar and "_roar" or ({"_a","","_b",""})[t//(walk and 5 or 9)%4+1])
+  elseif walk and CAST[name.."_a"] then
     local b=t//7%2==1
-    name,lift=who..(b and "_b" or "_a"),b and s or 0
+    name,lift=name..(b and "_b" or "_a"),b and 1 or 0
   end
   local sp=CAST[name]
   if not sp then return end
-  sprite(name,x-sp[2]*s//2,y-sp[3]*s-lift,s,left)
+  sprite(name,x-sp[2]//2,y-sp[3]-lift,left)
 end
 
 -- the dragon's breath from its open jaws, flickering
@@ -2223,11 +2254,9 @@ local function chapterCard(n,t)
   print(top,120-textW(top,1)//2,36,3,false,1,true)
   print(title:sub(1,t//3),120-textW(title,2)//2+1,47,2,false,2,true)
   print(title:sub(1,t//3),120-textW(title,2)//2,46,4,false,2,true)
-  local e=CAST and CAST[EMBLEM[n] or "dratewka"]
-  if e and t>40 then
-    local sc=e[3]>30 and 1 or 2
-    sprite(EMBLEM[n] or "dratewka",120-e[2]*sc//2,104-e[3]*sc,sc,false)
-  end
+  local name=(EMBLEM[n] or "dratewka").."_far"
+  local e=CAST and CAST[name]
+  if e and t>40 then sprite(name,120-e[2]//2,104-e[3],false) end
 end
 
 -- the iris closing on the last shot before a chapter card
@@ -2243,6 +2272,34 @@ local function iris(k)
     end
   end
 end
+
+-- what stands in front: drawn over the actors and moving faster than them, so the backdrop
+-- reads as far away; fx is the camera at foreground speed. Every few pieces repeat along x.
+local function every(fx,step,off,f) for x=(off-fx)%step-step,240,step do f(x) end end
+local function lamp(x)
+  rect(x,40,3,96,0) rect(x-3,32,9,9,0) rect(x-2,34,5,5,4)
+end
+local function blades(fx,t,c)
+  every(fx,9,0,function(x)
+    local h=10+(x*7)%9
+    tri(x,116,x+3,116,x+1+sin(t/20+x)*2,116-h,c)
+  end)
+end
+local FOREGROUNDS={
+  rynek=function(fx) every(fx,170,20,lamp) every(fx,340,250,function(x)
+    rect(x,88,40,28,0) for k=0,4 do rect(x-2+k*9,82,9,6,k%2==0 and 2 or 12) end end) end,
+  krakow=function(fx) every(fx,190,60,lamp) end,
+  sleza=function(fx,t) blades(fx,t,0) every(fx,160,40,function(x) circ(x,116,12,0) circ(x+14,118,8,0) end) end,
+  road=function(fx,t) blades(fx,t,0) every(fx,300,200,function(x) rect(x,70,3,46,0) rect(x-8,72,22,6,0) end) end,
+  wawel=function(fx,t) every(fx,7,0,function(x)
+    local h=14+(x*5)%11
+    line(x,116,x+sin(t/25+x)*2,116-h,0) rect(x-1+sin(t/25+x)*2,114-h,3,5,0) end) end,
+  cellars=function(fx) every(fx,120,30,function(x) tri(x,116,x+22,116,x+9,70,0) tri(x+30,116,x+44,116,x+38,90,0) end)
+    every(fx,200,90,function(x) for y=20,60,4 do rect(x,y,2,3,0) end end) end,
+  hall=function(fx) every(fx,260,10,function(x) rect(x,20,26,96,0) rect(x+26,20,2,96,15) end) end,
+  night=function(fx) every(fx,420,0,function(x)
+    rect(x,20,7,96,0) circ(x+3,28,16,0) circ(x-10,44,11,0) circ(x+16,48,12,0) circ(x+4,60,9,0) end) end,
+}
 
 -- fireworks over the castle at the end: bursts of bombs, each on its own clock
 local function fireworks(t)
@@ -2270,9 +2327,9 @@ local function closeUp(who,x,left) return {{who,x,126,x,126,0,0,4,left}} end
 local SPEAKER_PL={DEVIL="DIABEŁ",DRAGON="SMOK",DWARF="KRASNAL"}
 SCENES={
   wroclaw={
-    {bd="rynek",len=190,cap={"WROCLAW","WROCŁAW"},
+    {bd="rynek",len=190,pan=70,cap={"WROCLAW","WROCŁAW"},
       act={{"dwarf",-10,108,70,108,0,180},{"dwarf",250,108,190,108,20,150,2,true}}},
-    {bd="wawel",len=170,cap={"MEANWHILE, IN KRAKOW","TYMCZASEM W KRAKOWIE"},
+    {bd="wawel",len=170,pan=40,cap={"MEANWHILE, IN KRAKOW","TYMCZASEM W KRAKOWIE"},
       act={{"sheep",150,104,150,104,0,0,2,hide=95},{"dragon",-80,64,300,24,10,160,1},
         {"sheep",150,104,300,40,95,160,2,show=95}}},
     {bd="rynek",len=150,act={{"dwarf",-10,108,52,108,0,60},{"poster",64,98,64,98,0,0,1,show=75}}},
@@ -2283,14 +2340,14 @@ SCENES={
       booms={{122,92,80}}},
     {bd="workshop",fx="soot",act=closeUp("dratewka",110),
       say={{"DRATEWKA","...less sulphur next time.","...następnym razem mniej siarki."}}},
-    {bd="night",len=170,act={{"rooster",-40,70,280,44,0,170,1},{"twardowski",-38,62,282,36,0,170,1},
+    {bd="night",len=170,pan=30,act={{"rooster",-40,70,280,44,0,170,1},{"twardowski",-38,62,282,36,0,170,1},
       {"dratewka",60,108,60,108,0,0}}},
     {bd="black",len=120,title=1},
   },
   sleza={
-    {bd="road",len=170,cap={"THE ROAD SOUTH","DROGA NA POŁUDNIE"},
+    {bd="road",len=170,pan=50,cap={"THE ROAD SOUTH","DROGA NA POŁUDNIE"},
       act={{"dratewka",-10,108,140,108,0,170,1},{"sheep",-26,108,124,108,0,170,1}}},
-    {bd="sleza",len=150,cap={"MOUNT SLEZA, KUPALA NIGHT","ŚLĘŻA, NOC KUPAŁY"}},
+    {bd="sleza",len=150,pan=60,cap={"MOUNT SLEZA, KUPALA NIGHT","ŚLĘŻA, NOC KUPAŁY"}},
     {bd="sleza",len=100,act={{"wanda",100,108,100,108,0,0},{"dwarf",260,108,150,108,0,80,2,true},
       {"dwarf",290,108,180,108,10,90,2,true}}},
     {bd="sleza",len=120,act={{"wanda",100,108,100,108,0,0},{"dwarf",150,108,150,108,0,0,2,true,hide=62},
@@ -2304,7 +2361,7 @@ SCENES={
     {bd="black",len=120,title=2},
   },
   krakow={
-    {bd="krakow",len=170,fx="shake",cap={"KRAKOW","KRAKÓW"},act={{"dragon",-80,60,320,30,20,150,1}}},
+    {bd="krakow",len=170,pan=60,fx="shake",cap={"KRAKOW","KRAKÓW"},act={{"dragon",-80,60,320,30,20,150,1}}},
     {bd="wawel",len=120,act={{"dragon",70,106,70,106,0,0,1},{"wanda",204,108,204,108,0,0,2,true},
       {"dratewka",174,108,174,108,0,0,2,true},{"sheep",160,94,107,70,30,70,1,arc=26,hide=70}}},
     {bd="wawel",fx="fire",act={{"dragon",90,124,90,124,0,0,2}},
@@ -2316,7 +2373,7 @@ SCENES={
     {bd="black",len=120,title=3},
   },
   cellars={
-    {bd="cellars",len=170,cap={"THE DEVIL'S CELLARS","PIEKIELNE LOCHY"},act={{"devil",214,108,214,108,0,0,2,true}}},
+    {bd="cellars",len=170,pan=50,cap={"THE DEVIL'S CELLARS","PIEKIELNE LOCHY"},act={{"devil",214,108,214,108,0,0,2,true}}},
     {bd="cellars",fx="flash",act=closeUp("devil",120,true),
       say={{"DEVIL","A shoemaker? Against me?","Szewczyk? Przeciwko mnie?"}}},
     {bd="cellars",act=closeUp("dratewka",110),say={{"DRATEWKA","I brought sheep.","Przyniosłem owce."}}},
@@ -2337,14 +2394,14 @@ SCENES={
       say={{"KRAK","Your reward!","Twoja nagroda!"},{"WANDA","Half the kingdom, father.","Pół królestwa, ojcze."},
         {"KRAK","Half the cheese?","Pół sera?"}}},
     {bd="night",fx="fireworks",len=240},
-    {bd="rynek",len=200,act={{"dwarf",40,108,40,108,0,0,2,hop=4},{"dwarf",206,108,206,108,0,0,2,true,hop=5},
+    {bd="rynek",len=200,pan=40,act={{"dwarf",40,108,40,108,0,0,2,hop=4},{"dwarf",206,108,206,108,0,0,2,true,hop=5},
       {"wanda",-40,108,96,108,0,130},{"dratewka",-10,108,126,108,0,130},{"sheep",-26,108,110,108,0,130,1}}},
     {bd="black",len=200,title="end"},
   },
 }
 SCENE_OF_CHAPTER={"wroclaw","sleza","krakow","cellars"}
 
-local scene,backdrop
+local scene,backdrop,shown
 local READ_FRAMES,FADE=100,12  -- frames to read a line once typed; fade between shots
 local SPEAKER_COL={DRATEWKA=3,WANDA=4,KRAK=4,TWARDOWSKI=13,DEVIL=2,["BABA JAGA"]=6,DRAGON=2,DWARF=12}
 
@@ -2359,10 +2416,32 @@ local function nextShot()
     s.after()
     return
   end
-  backdrop=loadBackdrop(sh.bd)
+  backdrop,shown=loadBackdrop(sh.bd),nil
   local stop=0
   for _,a in ipairs(sh.act or {}) do stop=math.max(stop,a[7]) end
   s.sh,s.t,s.line,s.lineT,s.start,s.leave=sh,0,1,0,stop+10,nil
+end
+
+-- a backdrop behind another screen (the title): drawn between the bars, with its sky
+function showBackdrop(name)
+  if not palBase then
+    initPalette()
+    palBase={}
+    for i=0,47 do palBase[i]=peek(0x03FC0+i) end
+  end
+  if not CAST then loadCast() end
+  if shown~=name then
+    backdrop,shown=loadBackdrop(name),name
+    fadePal(1)
+  end
+  if backdrop then memcpy(BAR*120,BACKDROP_RAM,BACKDROP_BYTES) end
+  return backdrop
+end
+
+function hideBackdrop()
+  if not palBase then return end
+  palShot,sky,shown=palBase,nil,nil
+  fadePal(1)
 end
 
 function playScene(name,after)
@@ -2424,14 +2503,18 @@ function drawScene()
     if t==b[3] then sndExplosion() end
     if t>=b[3] and t<b[3]+16 then dy=dy+sin(t*9)*2//1 end
   end
+  if sh.fx=="flash" then puff(t-8) end
+  local close=false
   for _,a in ipairs(sh.act or {}) do
     local who,x,y,sc,left,moving=drawActor(a,t)
+    close=close or sc==4
     if who then
       drawCast(who,x-cx,y+dy,sc,t,left,moving,who==talker,sh.fx=="fire")
-      if who=="dragon" and sh.fx=="fire" then dragonFire(x-cx,y+dy,sc,t) end
+      if who=="dragon" and sh.fx=="fire" then dragonFire(x-cx,y+dy,sc==1 and 1 or 2,t) end
     end
   end
   for _,b in ipairs(sh.booms or {}) do boom(b[1]-cx,b[2]+dy,t-b[3]) end
+  if FOREGROUNDS[sh.bd] and not close then FOREGROUNDS[sh.bd](cx*16//10,t) end
   if sh.fx=="soot" then
     for k=0,34 do rect(92+(k*37)%40,48+(k*23)%30,2,2,k%3==0 and 0 or 15) end
   elseif sh.fx=="idea" and t>30 then
@@ -2439,7 +2522,6 @@ function drawScene()
     for k=0,7 do line(176,44,176+cos(k*0.785)*r*2,44+sin(k*0.785)*r*2,4) end
     circ(176,44,r,12)
   end
-  if sh.fx=="flash" then puff(t-8) end
   if sh.title then chapterCard(sh.title,t) end
   if s.leave and s.iris then iris(s.leave/IRIS) end
   rect(0,0,240,BAR,0) rect(0,136-BAR,240,BAR,0)
@@ -2479,7 +2561,7 @@ function drawScene()
   end
 end
 
-end
+end)()
 -- story:end
 
 -- ── game intro: a fuse burns to a bomb, the bomb blows the logo onto the screen ──

@@ -21,15 +21,22 @@ LIGHTEN = {SKIN: WHITE, RED: ORANGE, ORANGE: YELLOW, YELLOW: WHITE, BLUE: LIGHT,
            DARK: GREY, BROWN: RED, GREEN: GREEN, LIGHT: WHITE, WHITE: WHITE, K: DARK}
 
 
+# pixels per design unit: designs are written once, drawn at 2 for close and middle shots and
+# at 1 for far ones, so a sprite always shows on screen pixel for pixel
+RES = 2
+
+
 class Canvas:
     def __init__(self, w, h):
-        self.w, self.h = w, h
-        self.img = np.full((h, w), T)
-        self.yy, self.xx = np.mgrid[0:h, 0:w]
+        self.s = RES
+        self.w, self.h = w * RES, h * RES
+        self.img = np.full((self.h, self.w), T)
+        fy, fx = np.mgrid[0:self.h, 0:self.w]
+        self.yy, self.xx = (fy + 0.5) / RES - 0.5, (fx + 0.5) / RES - 0.5
 
     def mask_poly(self, pts):
         m = Image.new("1", (self.w, self.h))
-        ImageDraw.Draw(m).polygon([tuple(p) for p in pts], fill=1)
+        ImageDraw.Draw(m).polygon([(x * self.s, y * self.s) for x, y in pts], fill=1)
         return np.array(m, bool)
 
     def mask_ellipse(self, cx, cy, rx, ry):
@@ -50,10 +57,11 @@ class Canvas:
                 img[mask & (lit > 0.78)] = LIGHTEN[col]
             return
         img[mask] = col
+        k = self.s
         if shade:
             inner = mask.copy()
-            inner[:, 1:] &= mask[:, :-1]
-            inner[:-1, :] &= mask[1:, :]
+            inner[:, k:] &= mask[:, :-k]
+            inner[:-k, :] &= mask[k:, :]
             img[mask & ~inner] = SHADE[col]
         if light:
             top = mask.copy()
@@ -78,6 +86,16 @@ class Canvas:
         return m
 
     def px(self, pts, col):
+        """Design pixels: a block of RES x RES."""
+        k = self.s
+        for x, y in pts:
+            if 0 <= x * k < self.w and 0 <= y * k < self.h:
+                self.img[y * k:(y + 1) * k, x * k:(x + 1) * k] = col
+
+    def fine(self, pts, col):
+        """Screen pixels, for details only a close sprite has (none at RES 1)."""
+        if self.s < 2:
+            return
         for x, y in pts:
             if 0 <= x < self.w and 0 <= y < self.h:
                 self.img[y, x] = col
@@ -95,26 +113,64 @@ class Canvas:
 
 # ── faces ────────────────────────────────────────────────────────────────────
 
-def eyes(c, x, y, gap=5, brow=BROWN, lid=False):
-    """Two eyes looking right, x,y the left eye's top left."""
+def eyes(c, x, y, gap=5, brow=BROWN, lid=False, iris=BLUE):
+    """Two eyes looking right, x,y the left eye's top left (design units)."""
     for ex in (x, x + gap):
+        if c.s < 2:
+            if lid:
+                c.px([(ex, y + 1), (ex + 1, y + 1), (ex + 2, y + 1)], K)
+            else:
+                c.px([(ex, y), (ex + 1, y), (ex, y + 1)], WHITE)
+                c.px([(ex + 1, y + 1), (ex + 2, y), (ex + 2, y + 1)], K)
+            if brow is not None:
+                c.px([(ex, y - 2), (ex + 1, y - 2), (ex + 2, y - 2)], brow)
+            continue
+        X, Y = ex * 2, y * 2
         if lid:
-            c.px([(ex, y + 1), (ex + 1, y + 1), (ex + 2, y + 1)], K)
+            c.fine([(X + i, Y + 2) for i in range(5)] + [(X + 1, Y + 3), (X + 3, Y + 3)], K)
         else:
-            c.px([(ex, y), (ex + 1, y), (ex, y + 1)], WHITE)
-            c.px([(ex + 1, y + 1), (ex + 2, y), (ex + 2, y + 1)], K)
+            c.fine([(X + i, Y) for i in range(5)], K)                          # upper lid
+            c.fine([(X + i, Y + 1) for i in range(5)] + [(X + i, Y + 2) for i in range(5)], WHITE)
+            c.fine([(X + 2, Y + 1), (X + 3, Y + 1), (X + 2, Y + 2), (X + 3, Y + 2), (X + 2, Y + 3), (X + 3, Y + 3)], iris)
+            c.fine([(X + 3, Y + 2)], K)                                         # pupil
+            c.fine([(X + 2, Y + 1)], WHITE)                                     # glint
+            c.fine([(X + 4, Y + 1)], K)
         if brow is not None:
-            c.px([(ex, y - 2), (ex + 1, y - 2), (ex + 2, y - 2)], brow)
+            c.fine([(X, Y - 2), (X + 1, Y - 3), (X + 2, Y - 3), (X + 3, Y - 3), (X + 4, Y - 2)], brow)
 
 
 def mouth(c, x, y, w=4, open_=False):
+    if c.s < 2:
+        if open_:
+            c.px([(x + i, y) for i in range(w)], K)
+            c.px([(x + i, y + 1) for i in range(1, w - 1)], RED)
+            c.px([(x + i, y + 2) for i in range(1, w - 1)], K)
+        else:
+            c.px([(x + i, y) for i in range(w)], RED)
+            c.px([(x, y - 1), (x + w - 1, y - 1)], ORANGE)
+        return
+    X, Y, L = x * 2, y * 2, w * 2
     if open_:
-        c.px([(x + i, y) for i in range(w)], K)
-        c.px([(x + i, y + 1) for i in range(1, w - 1)], RED)
-        c.px([(x + i, y + 2) for i in range(1, w - 1)], K)
+        c.fine([(X + i, Y) for i in range(1, L - 1)] + [(X, Y + 1), (X + L - 1, Y + 1)], K)
+        c.fine([(X + i, Y + 1) for i in range(1, L - 1)], WHITE)                # teeth
+        c.fine([(X + i, Y + 2) for i in range(1, L - 1)] + [(X + i, Y + 3) for i in range(2, L - 2)], K)
+        c.fine([(X + i, Y + 3) for i in range(3, L - 3)], RED)                  # tongue
+        c.fine([(X + i, Y + 4) for i in range(2, L - 2)], BROWN)
     else:
-        c.px([(x + i, y) for i in range(w)], RED)
-        c.px([(x, y - 1), (x + w - 1, y - 1)], ORANGE)
+        c.fine([(X + i, Y) for i in range(1, L - 1)], BROWN)
+        c.fine([(X, Y - 1), (X + L - 1, Y - 1)], BROWN)                        # smiling corners
+        c.fine([(X + i, Y + 1) for i in range(2, L - 2)], RED)
+        c.fine([(X + i, Y + 2) for i in range(3, L - 3)], ORANGE)
+
+
+def hair_strands(c, mask, col):
+    """Fine strands across a hair shape, every fourth column a shade darker."""
+    if c.s < 2:
+        return
+    fx = np.arange(c.w)[None, :]
+    fy = np.arange(c.h)[:, None]
+    strand = mask & (((fx + fy // 3) % 4) == 0) & (fy % 5 != 0)
+    c.img[strand & (c.img == col)] = SHADE[col]
 
 
 # ── busts: 36x44, the face turned slightly right ─────────────────────────────
@@ -129,10 +185,13 @@ def bust_dratewka(talk=False, blink=False):
     c.rect(13, 30, 15, 35, BROWN, light=False)
     c.rect(22, 30, 24, 35, BROWN, light=False)
     c.rect(15, 25, 22, 31, SKIN, light=False)                                   # neck
-    c.ellipse(9, 18, 4, 9, BROWN)                                               # hair at the back
+    back = c.ellipse(9, 18, 4, 9, BROWN)                                        # hair at the back
+    hair_strands(c, back, BROWN)
     c.ellipse(19, 17, 9, 10, SKIN)                                              # head
     c.ellipse(10, 18, 2, 3, SKIN)                                               # ear
-    c.poly([(9, 12), (12, 6), (22, 5), (28, 9), (27, 12), (20, 10), (13, 13)], BROWN)  # fringe
+    c.fine([(19, 34), (20, 35), (19, 36)], ORANGE)
+    fringe = c.poly([(9, 12), (12, 6), (22, 5), (28, 9), (27, 12), (20, 10), (13, 13)], BROWN)  # fringe
+    hair_strands(c, fringe, BROWN)
     c.ellipse(17, 6, 11, 4, RED)                                                # cap
     c.poly([(22, 7), (33, 8), (31, 10), (22, 10)], RED)                         # its peak
     c.px([(23, 3), (24, 2), (25, 1), (26, 0)], WHITE)                           # feather
@@ -149,11 +208,12 @@ def bust_wanda(talk=False, blink=False):
     c.poly([(9, 44), (11, 35), (25, 35), (27, 44)], RED)                        # bodice
     c.px([(14 + i * 2, 33) for i in range(5)], RED)                             # corals
     c.px([(15 + i * 2, 34) for i in range(4)], RED)
-    c.ellipse(18, 20, 12, 14, YELLOW)                                           # hair
-    c.poly([(6, 22), (10, 40), (14, 40), (12, 22)], YELLOW)                     # braid behind
+    hair = c.ellipse(18, 20, 12, 14, YELLOW)                                    # hair
+    braid = c.poly([(6, 22), (10, 40), (14, 40), (12, 22)], YELLOW)             # braid behind
+    hair_strands(c, hair | braid, YELLOW)
     c.rect(15, 26, 22, 32, SKIN, light=False)
     c.ellipse(19, 18, 8, 10, SKIN)
-    c.poly([(10, 12), (14, 7), (24, 6), (28, 11), (24, 10), (16, 12)], YELLOW)  # fringe
+    hair_strands(c, c.poly([(10, 12), (14, 7), (24, 6), (28, 11), (24, 10), (16, 12)], YELLOW), YELLOW)  # fringe
     c.poly([(7, 8), (11, 4), (26, 3), (30, 7), (26, 7), (11, 9)], GREEN)        # wreath
     c.px([(10, 6), (15, 4), (20, 3), (25, 4), (29, 6)], RED)
     c.px([(12, 5), (18, 3), (23, 3), (27, 5)], WHITE)
@@ -172,7 +232,7 @@ def bust_krak(talk=False, blink=False):
     c.poly([(3, 34), (10, 29), (26, 29), (33, 34), (26, 35), (10, 35)], WHITE)  # ermine
     c.px([(8, 32), (14, 33), (20, 32), (26, 33), (30, 32)], K)
     c.ellipse(19, 17, 9, 10, SKIN)
-    c.poly([(10, 20), (14, 33), (19, 38), (25, 33), (28, 21), (24, 25), (14, 25)], WHITE)  # beard
+    hair_strands(c, c.poly([(10, 20), (14, 33), (19, 38), (25, 33), (28, 21), (24, 25), (14, 25)], WHITE), WHITE)  # beard
     c.poly([(13, 22), (24, 22), (26, 25), (11, 25)], WHITE)                     # moustache
     c.poly([(9, 11), (11, 2), (14, 6), (17, 0), (20, 6), (23, 1), (26, 6), (29, 2), (29, 11)], YELLOW)  # crown
     c.px([(13, 8), (19, 8), (25, 8)], RED)
@@ -180,8 +240,7 @@ def bust_krak(talk=False, blink=False):
     eyes(c, 18, 15, brow=WHITE, lid=blink)
     c.px([(27, 18), (28, 19), (27, 20)], ORANGE)
     if talk:
-        c.px([(18, 26), (19, 26), (20, 26), (21, 26)], K)
-        c.px([(19, 27), (20, 27)], RED)
+        mouth(c, 17, 25, 4, True)
     return c.outline()
 
 
@@ -198,7 +257,7 @@ def bust_twardowski(talk=False, blink=False):
     c.poly([(11, 3), (14, -2), (26, -2), (27, 3)], RED)                         # its crown
     c.px([(26, 1), (27, 0), (28, -1)], YELLOW)
     c.px([(25, 4), (26, 3), (27, 2), (28, 1), (29, 0)], WHITE)                  # heron feather
-    eyes(c, 18, 16, brow=K, lid=blink)
+    eyes(c, 18, 16, brow=K, lid=blink, iris=BROWN)
     c.px([(17, 14), (23, 14)], K)                                               # sly brows
     c.px([(27, 19), (28, 20), (27, 21)], ORANGE)
     if talk:
@@ -491,6 +550,7 @@ BUSTS = ["dratewka", "wanda", "krak", "twardowski", "devil", "jaga"]
 FIGURES = ["dratewka", "wanda", "krak", "twardowski", "devil", "jaga", "dwarf", "rooster", "dragon", "sheep",
            "poster", "cheese", "egg"]
 WALKERS = ["dratewka", "wanda", "twardowski", "devil", "dwarf"]
+FAR = ["dratewka", "twardowski", "rooster", "sheep", "poster", "egg", "cheese", "jaga", "devil", "dwarf"]  # far shots, cards
 
 
 def patch(full, base):
@@ -502,22 +562,27 @@ def patch(full, base):
 
 
 def sprites():
-    """name -> (ox, oy, pixels); the talk/blink patches sit at their offset over the bust."""
+    """name -> (ox, oy, pixels); the talk/blink patches sit at their offset over the bust.
+    Figures come close (RES 2) and far (RES 1, named _far)."""
+    global RES
     out = {}
+    RES = 2
     for n in BUSTS:
         f = globals()["bust_" + n]
         base = f()
         out["bust_" + n] = (0, 0, base)
         out["talk_" + n] = patch(f(talk=True), base)
         out["blink_" + n] = patch(f(blink=True), base)
-    for n in FIGURES:
-        f = globals()["figure_" + n]
-        out[n] = (0, 0, f())
-        if n in WALKERS:
-            out[n + "_a"] = (0, 0, f(1))
-            out[n + "_b"] = (0, 0, f(2))
-    out["dragon_a"] = (0, 0, figure_dragon(0))
-    out["dragon"] = (0, 0, figure_dragon(1))
-    out["dragon_b"] = (0, 0, figure_dragon(2))
-    out["dragon_roar"] = (0, 0, figure_dragon(1, roar=True))
+    for RES, tag in ((2, ""), (1, "_far")):
+        for n in FIGURES if tag == "" else FAR:
+            f = globals()["figure_" + n]
+            out[n + tag] = (0, 0, f())
+            if n in WALKERS:
+                out[n + tag + "_a"] = (0, 0, f(1))
+                out[n + tag + "_b"] = (0, 0, f(2))
+        out["dragon" + tag + "_a"] = (0, 0, figure_dragon(0))
+        out["dragon" + tag] = (0, 0, figure_dragon(1))
+        out["dragon" + tag + "_b"] = (0, 0, figure_dragon(2))
+        out["dragon" + tag + "_roar"] = (0, 0, figure_dragon(1, roar=True))
+    RES = 2
     return out

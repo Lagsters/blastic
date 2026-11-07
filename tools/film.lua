@@ -1,5 +1,5 @@
--- Records the game intro and every story scene, frame by frame, for tools/film.py to turn into
--- a video: lua tools/film.lua <out-dir> [every=2]
+-- Records the game intro, two seconds of the title screen and every story scene, frame by
+-- frame, for tools/film.py to turn into a video: lua tools/film.lua <out-dir> [every=2]
 -- Writes frames.bin (per kept frame: 16320 B of 4-bit pixels, 48 B palette, 136x3 B colour 11
 -- per row as BDR left it) and texts.txt (frame, x, y, colour, scale, text) for the print calls.
 local out=arg[1] or "."
@@ -95,6 +95,7 @@ local function tick()
 end
 
 while env.state=="intro" do tick() end
+for _=1,120 do tick() end  -- the title screen
 for _,name in ipairs{"wroclaw","sleza","krakow","cellars","ending"} do
   local done=false
   env.playScene(name,function() done=true end)

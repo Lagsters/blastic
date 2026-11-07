@@ -1731,7 +1731,7 @@ do
     for _,sh in ipairs(shots) do
       for _,a in ipairs(sh.act or {}) do
         local who,sc=a[1],a[8] or 2
-        if not g.CAST[sc>=4 and "bust_"..who or who] then missing[#missing+1]=name..":"..who end
+        if not g.CAST[sc>=4 and "bust_"..who or sc==1 and who.."_far" or who] then missing[#missing+1]=name..":"..who end
       end
     end
   end
