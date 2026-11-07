@@ -1712,7 +1712,21 @@ do
   local function sky(row) g.BDR(row) return ("%d,%d"):format(mem[0x03FC0+33] or 0,mem[0x03FC0+34] or 0) end
   check("the sky colour changes down the screen", sky(4+20)~=sky(4+110), sky(4+20).." / "..sky(4+110))
   check("the sky starts from the backdrop's top colour",
-    sky(4+20)==blob:byte(1+11+1)..","..blob:byte(1+11+2), sky(4+20))
+    sky(4+20)==blob:byte(2+11+1)..","..blob:byte(2+11+2), sky(4+20))
+  local missing={}
+  for name,shots in pairs(g.SCENES) do
+    for _,sh in ipairs(shots) do
+      for _,a in ipairs(sh.act or {}) do
+        local who,sc=a[1],a[8] or 2
+        if not g.CAST[sc>=4 and "bust_"..who or who] then missing[#missing+1]=name..":"..who end
+      end
+    end
+  end
+  check("every actor of every scene has its sprite", #missing==0, table.concat(missing," "))
+  for who in pairs({dratewka=1,wanda=1,krak=1,twardowski=1,devil=1,jaga=1}) do
+    if not (g.CAST["talk_"..who] and g.CAST["blink_"..who]) then missing[#missing+1]=who end
+  end
+  check("every close-up can talk and blink", #missing==0, table.concat(missing," "))
 end
 
 end)()

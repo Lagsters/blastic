@@ -8,14 +8,20 @@ every scanline (BDR) into a smooth gradient, as the Amiga copper did.
 Shading is ordered dithering with a horizontal period of two pixels, so every byte of a row
 repeats and the byte RLE below packs it well.
 
-Layout: u8 count, then per backdrop u16 offset (from the start of the blob), 3 RGB colours
-(indices 1, 5, 7) and 3 RGB sky stops (top, middle, bottom); at each
-offset the 4-bit pixels (low nibble left), rows top down, byte RLE: c<128 copies the next
-c+1 bytes, c>=128 repeats the next byte c-126 times.
+The cast (cast.py) follows the backdrops.
+
+Layout: u8 backdrop count, u8 sprite count; per backdrop u16 offset (from the start of the
+blob), 3 RGB colours (indices 1, 5, 7) and 3 RGB sky stops (top, middle, bottom); per sprite
+u16 offset. A backdrop is its 4-bit pixels (low nibble left), rows top down, byte RLE: c<128
+copies the next c+1 bytes, c>=128 repeats the next byte c-126 times. A sprite is u8 name length,
+the name, u8 width, height, x and y offset (of a patch over its bust), then per row runs of
+colour<<4 | length-1 (11 is transparent).
 """
 import sys, os
 import numpy as np
 from PIL import Image, ImageDraw
+sys.path.insert(0, os.path.dirname(__file__))
+import cast
 
 W, H = 240, 96
 SHARED = {0: "1a1c2c", 2: "b13e53", 3: "ef7d57", 4: "ffcd75", 6: "38b764", 8: "5c3a1a",
@@ -348,8 +354,9 @@ def pack(img):
 def main():
     out = sys.argv[1]
     preview = sys.argv[sys.argv.index("--preview") + 1] if "--preview" in sys.argv else None
-    head = 1 + len(NAMES) * 20
-    table, data = bytearray([len(NAMES)]), bytearray()
+    sprites = cast.sprites()
+    head = 2 + len(NAMES) * 20 + len(sprites) * 2
+    table, data = bytearray([len(NAMES), len(sprites)]), bytearray()
     for name in NAMES:
         img, own, sky = globals()[name]()
         raw = pack(img)
@@ -374,6 +381,18 @@ def main():
                 rgb[y][img[y] == SKY] = [int(a[c] + (b[c] - a[c]) * f) for c in range(3)]
             Image.fromarray(rgb).resize((W * 3, H * 3), Image.NEAREST).save(
                 os.path.join(preview, name + ".png"))
+    for name, (ox, oy, px) in sprites.items():
+        table += (head + len(data)).to_bytes(2, "little")
+        data += bytes([len(name)]) + name.encode() + bytes([px.shape[1], px.shape[0], ox, oy])
+        for row in px:
+            x = 0
+            while x < len(row):
+                n = 1
+                while x + n < len(row) and row[x + n] == row[x] and n < 16:
+                    n += 1
+                data.append(int(row[x]) << 4 | (n - 1))
+                x += n
+    print(f"cast      {len(sprites)} sprites")
     blob = table + data
     open(out, "wb").write(blob)
     print(f"{out}: {len(blob)} B")

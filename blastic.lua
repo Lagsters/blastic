@@ -2034,13 +2034,13 @@ end
 -- it from there, so the scenes do not count against the code limit; it may use only globals)
 -- ── scenes ────────────────────────────────────────────────────────────────────
 -- A scene is a film: shots with their own backdrop, camera pan, actors and lines, cut with a
--- fade. Backdrops are painted by tools/scenes/paint.py; the cast is drawn from shapes, larger
--- than the game sprites, in colours the backdrops leave alone (all but 1, 5, 7 and 11).
+-- fade. Backdrops and the cast are painted by tools/scenes/paint.py and cast.py; the cast keeps
+-- to the colours the backdrops leave alone (all but 1, 5, 7 and 11).
 
 local sin,cos=math.sin,math.cos
 
--- scenes.bin sits in MAP RAM; a shot's backdrop is unpacked into MUSIC PATTERNS RAM (the
--- tracker plays PCM, so TIC-80's own music never reads it) and copied to the screen each frame
+-- scenes.bin sits in MAP RAM; a shot's backdrop is unpacked into MUSIC PATTERNS RAM (free once
+-- the story code has been loaded from it) and copied to the screen each frame
 local ART_RAM,BACKDROP_RAM,BACKDROP_BYTES=0x08000,0x11164,11520
 local BACKDROPS={"rynek","workshop","road","sleza","wawel","hall","cellars","night"}
 local BAR=20  -- letterbox bar height; the backdrop fills the 96 rows between the bars
@@ -2054,6 +2054,38 @@ local function fadePal(k)
 end
 
 local function rgbAt(p) return {peek(p),peek(p+1),peek(p+2)} end
+local function word(p) return peek(p)|peek(p+1)<<8 end
+
+-- the cast by name: {address of the runs, width, height, x, y}
+CAST=nil
+local function loadCast()
+  CAST={}
+  for k=0,peek(ART_RAM+1)-1 do
+    local p=ART_RAM+word(ART_RAM+2+peek(ART_RAM)*20+k*2)
+    local name={}
+    for i=1,peek(p) do name[i]=string.char(peek(p+i)) end
+    p=p+peek(p)+1
+    CAST[table.concat(name)]={p+4,peek(p),peek(p+1),peek(p+2),peek(p+3)}
+  end
+end
+
+-- a sprite with its top left at x,y, s pixels per pixel, mirrored when left; a talk or blink
+-- patch is placed by its offset inside a bust bw pixels wide
+local function sprite(name,x,y,s,left,bw)
+  local sp=CAST[name]
+  if not sp then return end
+  local a,w,h,ox,oy=table.unpack(sp)
+  if left then ox=(bw or w)-ox-w end
+  for j=0,h-1 do
+    local i=0
+    while i<w do
+      local b=peek(a)
+      local c,n=b>>4,(b&15)+1
+      if c~=11 then rect(x+(left and ox+w-i-n or ox+i)*s,y+(oy+j)*s,n*s,s,c) end
+      a,i=a+1,i+n
+    end
+  end
+end
 
 -- unpacks backdrop name, sets its three colours and sky; false when the cart has no art
 local function loadBackdrop(name)
@@ -2062,13 +2094,13 @@ local function loadBackdrop(name)
   local k
   for i,n in ipairs(BACKDROPS) do if n==name then k=i end end
   if not k or peek(ART_RAM)<k then return false end
-  local e=ART_RAM+1+(k-1)*20
+  local e=ART_RAM+2+(k-1)*20
   for i,c in ipairs{1,5,7} do
     for j=0,2 do palShot[c*3+j]=peek(e+2+(i-1)*3+j) end
   end
   sky={rgbAt(e+11),rgbAt(e+14),rgbAt(e+17)}
   -- byte RLE: c<128 copies the next c+1 bytes, c>=128 repeats the next byte c-126 times
-  local src,dst=ART_RAM+(peek(e)|peek(e+1)<<8),BACKDROP_RAM
+  local src,dst=ART_RAM+word(e),BACKDROP_RAM
   while dst<BACKDROP_RAM+BACKDROP_BYTES do
     local c=peek(src)
     if c<128 then memcpy(dst,src+1,c+1) src,dst=src+c+2,dst+c+1
@@ -2087,65 +2119,32 @@ function BDR(row)
   for c=1,3 do poke(0x03FC0+32+c,(a[c]+(b[c]-a[c])*f)*fadeK//1) end
 end
 
--- figure units: feet at (x,y), about 25 units tall, s pixels per unit, mirrored when left
-local function fig(who,x,y,s,t,left,walk,fire)
-  local m=left and -1 or 1
-  local function R(dx,dy,w,h,c) if left then dx=-dx-w end rect(x+dx*s,y+dy*s,w*s,h*s,c) end
-  local function C(dx,dy,r,c) circ(x+dx*m*s,y+dy*s,r*s,c) end
-  local function T(a,b,c,d,e,f,col) tri(x+a*m*s,y+b*s,x+c*m*s,y+d*s,x+e*m*s,y+f*s,col) end
-  local step=walk and t//6%2*2-1 or 0
-  local function face(c)
-    C(0,-17,4,c)
-    R(1,-18,1,1,0) R(3,-18,1,1,0)
+local SPEAKER_WHO={DRATEWKA="dratewka",WANDA="wanda",KRAK="krak",TWARDOWSKI="twardowski",
+  DEVIL="devil",["BABA JAGA"]="jaga"}
+
+-- an actor with its feet at x,y (a close-up stands on the bottom bar); talking moves the mouth
+local function drawCast(who,x,y,s,t,left,walk,talking)
+  if s>=4 then
+    local b=CAST["bust_"..who]
+    if not b then return end
+    local bx,by=x-b[2],136-BAR-b[3]*2
+    sprite("bust_"..who,bx,by,2,left)
+    if talking and t//5%2==0 then sprite("talk_"..who,bx,by,2,left,b[2]) end
+    if t%170<6 then sprite("blink_"..who,bx,by,2,left,b[2]) end
+    return
   end
-  if who=="dratewka" then
-    R(-3+step,-5,2,5,14) R(1-step,-5,2,5,14) R(-3+step,-1,2,1,0) R(1-step,-1,2,1,0)
-    R(-4,-13,8,8,12) R(-3,-11,6,7,8)
-    face(SKIN)
-    R(-4,-19,2,3,8) R(-4,-22,8,3,2) R(2,-20,4,1,2)
-    C(7,-9,3,12) C(9,-11,2,12) R(10,-11,2,2,0) R(6,-14,1,2,13)
-    if t%8<4 then R(6,-15,1,1,4) end
-  elseif who=="wanda" then
-    R(-5,-19,4,13,4)
-    T(-6,0,6,0,0,-12,2) R(-2,-13,4,4,12)
-    face(SKIN)
-    R(-4,-21,8,2,4) R(-4,-22,8,1,6) R(-3,-23,1,1,2) R(0,-23,1,1,9) R(3,-23,1,1,12)
-  elseif who=="krak" then
-    T(-7,0,7,0,0,-14,2) R(-7,-1,14,1,12) R(-1,-12,2,11,12)
-    face(SKIN)
-    T(-3,-15,3,-15,0,-9,12)
-    R(-3,-23,7,2,4) R(-3,-24,1,1,4) R(0,-25,1,2,4) R(3,-24,1,1,4)
-  elseif who=="twardowski" then
-    T(-6,0,6,0,0,-14,9) R(-1,-13,2,13,2) R(-4,-8,8,2,4)
-    face(SKIN)
-    R(-2,-15,7,1,0)
-    R(-4,-25,8,5,8) R(-3,-26,6,1,2) R(3,-29,1,4,12)
-  elseif who=="devil" then
-    T(-7,0,7,0,0,-15,2) T(-6,0,6,0,0,-14,0)
-    R(-9,-4,3,1,2) R(-9,-8,1,4,2) T(-10,-8,-8,-8,-9,-10,2)
-    C(0,-17,4,2) R(1,-18,1,1,4) R(3,-18,1,1,4) R(-1,-15,7,1,0)
-    T(-3,-20,-1,-20,-4,-25,0) T(1,-20,3,-20,4,-25,0)
-  elseif who=="jaga" then
-    R(-6,-16,1,16,8) T(-8,0,-4,0,-6,-5,4)
-    T(-6,0,6,0,0,-12,14)
-    C(0,-15,5,2) C(1,-14,4,SKIN) R(4,-14,2,1,3) R(2,-15,1,1,0) R(-2,-12,5,1,13)
-  elseif who=="dwarf" then
-    R(-2,-2,1,2,0) R(1,-2,1,2,0) R(-3,-6,6,4,9)
-    C(0,-10,3,SKIN) T(-3,-9,3,-9,0,-4,12) R(1,-11,1,1,0)
-    T(-4,-12,4,-12,0,-20,2)
-  elseif who=="rooster" then
-    T(-4,-8,-13,-20,-6,-4,6) T(-4,-8,-11,-15,-4,-4,0)
-    C(0,-8,5,3) C(4,-14,3,3) R(3,-18,3,2,2) R(6,-13,1,2,2) T(7,-15,10,-14,7,-13,4)
-    R(5,-15,1,1,0) R(-1,-3,1,3,4) R(1,-3,1,3,4)
-  elseif who=="dragon" then
-    local flap=sin(t/6)*6
-    T(-6,-9,-6,-4,-22,-3,2)
-    T(-7,-13,-6,-36+flap,14,-13,0) T(-5,-14,-5,-32+flap,10,-14,2)
-    C(0,-10,9,2) C(2,-8,5,3)
-    R(-6,-3,3,3,2) R(3,-3,3,3,2)
-    T(4,-16,9,-16,10,-26,2) C(11,-26,5,2) R(13,-27,7,4,2)
-    R(11,-29,2,2,4) R(12,-29,1,2,0) T(8,-30,10,-31,6,-36,13)
-    if fire then T(20,-26,44,-34,44,-18,3) T(20,-26,36,-29,36,-23,4) end
+  local name=walk and t//8%2==1 and CAST[who.."_step"] and who.."_step" or who
+  local sp=CAST[name]
+  if not sp then return end
+  sprite(name,x-sp[2]*s//2,y-sp[3]*s,s,left)
+end
+
+-- the dragon's breath from its snout, flickering
+local function dragonFire(x,y,s,t)
+  local mx,my=x+30*s,y-32*s
+  for k=0,2 do
+    local l=(24+k*6+t%4*2)*s
+    tri(mx,my,mx+l,my-(10-k*3)*s,mx+l,my+(10-k*3)*s,({2,3,4})[k+1])
   end
 end
 
@@ -2286,6 +2285,7 @@ function playScene(name,after)
     palBase={}
     for i=0,47 do palBase[i]=peek(0x03FC0+i) end
   end
+  if not CAST then loadCast() end
   scene={shots=SCENES[name],n=0,after=after}
   nextShot()
   state="scene"
@@ -2312,9 +2312,12 @@ function drawScene()
   elseif backdrop then memcpy((BAR+dy)*120,BACKDROP_RAM,BACKDROP_BYTES) end
   if OVERLAYS[sh.bd] then OVERLAYS[sh.bd](t) end
   if sh.fx=="fireworks" then fireworks(t) end
+  local l=t>=s.start and sh.say and sh.say[s.line]
+  local talker=l and s.lineT//2<#l[2] and SPEAKER_WHO[l[1]]
   for _,a in ipairs(sh.act or {}) do
     local who,x,y,sc,left,moving=drawActor(a,t)
-    fig(who,x-cx,y+dy,sc,t,left,moving,sh.fx=="fire")
+    drawCast(who,x-cx,y+dy,sc,t,left,moving,who==talker)
+    if who=="dragon" and sh.fx=="fire" then dragonFire(x-cx,y+dy,sc,t) end
   end
   local title=sh.title
   if title then
