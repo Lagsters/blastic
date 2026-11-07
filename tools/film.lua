@@ -49,7 +49,13 @@ env.circ=function(x,y,r,c)
   x,y,r=math.floor(x),math.floor(y),math.floor(r)
   for j=-r,r do for i=-r,r do if i*i+j*j<=r*r+r then px(x+i,y+j,c) end end end
 end
-env.circb=env.circ
+env.circb=function(x,y,r,c)
+  x,y,r=math.floor(x),math.floor(y),math.floor(r)
+  for j=-r,r do for i=-r,r do
+    local d=i*i+j*j
+    if d<=r*r+r and d>(r-1)*(r-1)+(r-1) then px(x+i,y+j,c) end
+  end end
+end
 env.line=function(x0,y0,x1,y1,c)
   local n=math.max(math.abs(x1-x0),math.abs(y1-y0),1)
   for k=0,n do px(x0+(x1-x0)*k/n,y0+(y1-y0)*k/n,c) end

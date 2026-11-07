@@ -345,9 +345,8 @@ def figure_dratewka(pose=0):
     c.px([(11, 9), (13, 9)], K)
     c.px([(14, 11)], ORANGE)
     c.px([(11, 13), (12, 13)], RED)
-    # the sheep under his arm
-    c.ellipse(15, 20, 4, 3, WHITE)
-    c.rect(18, 19, 20, 22, K)
+    c.poly([(13, 16), (16, 23), (14, 24), (12, 18)], WHITE, light=False)
+    c.ellipse(15, 24, 1.5, 1.5, SKIN, shade=False)
     return c.outline()
 
 

@@ -1768,6 +1768,17 @@ do
     if not (g.CAST["talk_"..who] and g.CAST["blink_"..who]) then missing[#missing+1]=who end
   end
   check("every close-up can talk and blink", #missing==0, table.concat(missing," "))
+  local dancer={"witch",0,104,0,104,0,0,2,orbit={112,84,124,0}}
+  local xs,turned,ok={},{},true
+  for t=1,123,4 do
+    local _,x,_,_,left=g.actorAt(dancer,t)
+    local _,nx=g.actorAt(dancer,t+1)
+    ok=ok and math.abs(x-112)<=84 and (nx<x)==left
+    xs[#xs+1]=x//1
+    turned[left]=true
+  end
+  check("a dancer circles the fire, facing where it goes", ok and turned[true] and turned[false]
+    and math.max(table.unpack(xs))-math.min(table.unpack(xs))>150, table.concat(xs,","))
 end
 
 end)()

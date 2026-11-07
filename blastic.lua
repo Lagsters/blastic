@@ -2359,6 +2359,8 @@ end
 -- fx: flash | shake | fire | fireworks | soot | idea; lines start once every actor stands still
 local function closeUp(who,x,left) return {{who,x,126,x,126,0,0,4,left}} end
 local SPEAKER_PL={DEVIL="DIABEŁ",DRAGON="SMOK",DWARF="KRASNAL"}
+-- {centre x, radius, frames per turn, phase}: two witches dancing round Jaga's fire
+local WITCH_A,WITCH_B={112,84,124,-0.84},{112,84,124,-3.1416}
 SCENES={
   wroclaw={
     {bd="odra",len=230,pan=60,cap={"WROCLAW","WROCŁAW"}},
@@ -2385,12 +2387,12 @@ SCENES={
     {bd="sleza_far",len=220,pan=50,cap={"MOUNT SLEZA","ŚLĘŻA"}},
     {bd="forest",len=210,act={{"fox",-30,106,280,106,0,70,2,anim=true},
       {"dratewka",-10,108,130,108,80,200},{"sheep",-28,108,112,108,80,200}}},
-    {bd="sleza",len=200,cap={"KUPALA NIGHT","NOC KUPAŁY"},magic={150,84},
-      act={{"witch",56,108,56,108,0,0,2,false,anim=true},{"witch",196,108,196,108,0,0,2,true,anim=true},
+    {bd="sleza",len=200,cap={"KUPALA NIGHT","NOC KUPAŁY"},magic={124,80,150,88},
+      act={{"witch",56,104,56,104,0,0,2,anim=true,orbit=WITCH_A},{"witch",196,104,196,104,0,0,2,anim=true,orbit=WITCH_B},
         {"jaga",112,108,112,108,0,0,2,false,anim=true},{"wanda",150,108,150,108,0,0,2,true}}},
     {bd="sleza",len=80,act={{"sheep",120,104,120,104,0,0,2,spark=0}}},
-    {bd="sleza",len=140,magic={150,84},act={{"wanda",150,108,150,108,0,0,2,true},
-      {"witch",56,108,56,108,0,0,2,false,anim=true,hide=62},{"witch",196,108,196,108,0,0,2,true,anim=true,hide=62},
+    {bd="sleza",len=140,magic={124,80,150,88,60},act={{"wanda",150,108,150,108,0,0,2,true},
+      {"witch",56,104,56,104,0,0,2,anim=true,hide=62,orbit=WITCH_A},{"witch",196,104,196,104,0,0,2,anim=true,hide=62,orbit=WITCH_B},
       {"jaga",112,108,112,108,0,0,2,false,anim=true,hide=62},{"dratewka",-20,108,24,108,0,20},
       {"sheep",36,94,112,100,24,60,2,arc=30,spark=0,hide=60},
       {"witch_fly",56,90,-60,10,62,110,2,true,show=62},{"witch_fly",196,90,320,0,62,110,2,false,show=62},
@@ -2414,6 +2416,8 @@ SCENES={
     {bd="black",len=120,title=3},
   },
   cellars={
+    {bd="black",fx="stairs",len=240,cap={"DOWN TO HELL","ZEJŚCIE DO PIEKŁA"},
+      act={{"dratewka",-10,39,250,120,0,220},{"sheep",-28,34,232,115,10,230},{"wanda",-40,30,220,111,30,240}}},
     {bd="cellars",len=190,pan=50,cap={"THE DEVIL'S CELLARS","PIEKIELNE LOCHY"},act={{"devil",214,108,214,108,0,0,2,true}}},
     {bd="cellars",fx="flash",act=closeUp("devil",120,true),
       say={{"DEVIL","A shoemaker? Against me?","Szewczyk? Przeciwko mnie?"}}},
@@ -2512,9 +2516,14 @@ function playScene(name,after)
   state="scene"
 end
 
-local function drawActor(a,t)
+function actorAt(a,t)
   local who,x0,y0,x1,y1,t0,t1,sc,left=table.unpack(a)
   if t<(a.show or 0) or t>=(a.hide or math.huge) then return end
+  local o=a.orbit
+  if o then
+    local p=t/o[3]*6.283+o[4]
+    return who,o[1]+cos(p)*o[2],y0+sin(p)*6,sc or 2,sin(p)>0,true,a
+  end
   local k=t1>t0 and math.max(0,math.min(1,(t-t0)/(t1-t0))) or 1
   local e=a.arc and k or k*k*(3-2*k)
   if left==nil then left=x1<x0 end
@@ -2527,12 +2536,51 @@ local function fuse(x,y,t)
   for k=0,4 do pix(x+sin(t*2+k*2)*2,y-(t+k*3)%6,({4,3,12,4,2})[k+1]) end
 end
 
--- a spell: green sparks swirling up around x,y
-local function magic(x,y,t)
-  for k=0,15 do
-    local p=(t*2+k*17)%64
-    pix(x+sin(t/9+k)*(10+p/5),y-p,k%3==0 and 12 or k%3==1 and 6 or 13)
+-- a spell {from x,y, to x,y, last frame}: green lightning in bursts, a ring and sparks around
+-- the one it binds
+local function magic(m,cx,t)
+  if t>=(m[5] or math.huge) then return end
+  local x0,y0,x,y=m[1]-cx,m[2],m[3]-cx,m[4]
+  if t//20%3>0 then
+    local px,py=x0,y0
+    for k=1,6 do
+      local nx,ny=x0+(x-x0)*k/6,y0+(y-y0)*k/6+(k<6 and sin(t*3+k*7)*5 or 0)
+      line(px,py,nx,ny,k%2==0 and 12 or 6)
+      px,py=nx,ny
+    end
   end
+  circb(x,y,7+t//3%4,6)
+  for k=0,15 do
+    local p=(t*2+k*17)%48
+    pix(x+sin(t/9+k)*(8+p/5),y+16-p,k%3==0 and 12 or k%3==1 and 6 or 5)
+  end
+end
+
+-- the stair down into the devil's cellars: stone walls, torches, hell glowing below
+local function glow(x,y,r,c,step)
+  for j=-r,r do for i=-r,r do
+    if (i+j)%step==0 and i*i+j*j<r*r then pix(x+i,y+j,c) end
+  end end
+end
+local function stairs(t)
+  for y=BAR,116,8 do
+    line(0,y,239,y,15)
+    for x=(y//8%2)*12,239,24 do line(x,y,x,y+7,15) end
+  end
+  glow(236,118,56,2,4)
+  glow(236,118,30,2,2)
+  for k=0,2 do
+    local x,y=56+k*72,30+k*22
+    glow(x,y-3,11+t//5%2,2,2)
+    rect(x,y,2,7,14)
+    circ(x,y-2,2,3) pix(x,y-4-t//4%2,4) pix(x+1,y-2,12)
+  end
+  for k=0,15 do
+    local x,y=k*16-16,40+k*5
+    rect(x,y,16,120-y,15)
+    line(x,y,x+15,y,13)
+  end
+  rising(t,24,120,116,120,70,3,2)
 end
 
 -- a sheep going off: a white flash, a fireball, then smoke drifting up
@@ -2563,7 +2611,7 @@ function drawScene()
   if sh.fx=="flash" and t<8 then cls(12)
   elseif backdrop then memcpy((BAR+dy)*120,BACKDROP_RAM,BACKDROP_BYTES) end
   if OVERLAYS[sh.bd] then OVERLAYS[sh.bd](t) end
-  if sh.fx=="fireworks" then fireworks(t) end
+  if sh.fx=="fireworks" then fireworks(t) elseif sh.fx=="stairs" then stairs(t) end
   local l=t>=s.start and sh.say and sh.say[s.line]
   local text=l and L(l[2],l[3])
   local talker=l and s.lineT//2<#text and SPEAKER_WHO[l[1]]
@@ -2573,18 +2621,19 @@ function drawScene()
   end
   if sh.fx=="flash" then puff(t-8) end
   local close=false
-  for _,a in ipairs(sh.act or {}) do
-    local who,x,y,sc,left,moving,act=drawActor(a,t)
+  -- dancers on the near half of their circle come in a second pass, in front of the rest
+  for pass=1,2 do for _,a in ipairs(sh.act or {}) do
+    local who,x,y,sc,left,moving,act=actorAt(a,t)
     close=close or sc==4
-    if who then
+    if who and (pass==2)==(a.orbit~=nil and y>a[3]) then
       drawCast(who,x-cx,y+dy,sc,t,left,moving,who==talker,sh.fx=="fire",act.anim)
       if act.spark and t>=act.spark then fuse(x-cx+(left and 3 or -3),y+dy-(sc==1 and 13 or 26),t) end
       if who=="dragon" and sh.fx=="fire" then dragonFire(x-cx,y+dy,sc==1 and 1 or 2,t) end
     end
-  end
+  end end
   for _,b in ipairs(sh.booms or {}) do boom(b[1]-cx,b[2]+dy,t-b[3]) end
   if FOREGROUNDS[sh.bd] and not close then FOREGROUNDS[sh.bd](cx*16//10,t) end
-  if sh.magic then magic(sh.magic[1]-cx,sh.magic[2],t) end
+  if sh.magic then magic(sh.magic,cx,t) end
   if sh.label and t>20 then print(sh.label[3],sh.label[1],sh.label[2],2,false,2,true) end
   if sh.fx=="soot" then
     for k=0,34 do rect(92+(k*37)%40,48+(k*23)%30,2,2,k%3==0 and 0 or 15) end
