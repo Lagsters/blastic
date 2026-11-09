@@ -112,29 +112,6 @@ class Canvas:
         return self.img
 
 
-# ── full figures: about 20x34, feet on the bottom row ────────────────────────
-# pose 0 stands, 1 is the stride of a step (feet apart), 2 its passing moment (feet together,
-# the back foot lifted); a walk alternates 1 and 2, and blastic.lua lifts the body on 2
-
-def legs(c, cx, hip, foot, pose, col, shoe=K, w=3):
-    """Two legs from hip down to the soles at row foot, facing right."""
-    if pose == 1:
-        c.poly([(cx - 2, hip), (cx + 1, hip), (cx - 2, foot), (cx - 5, foot)], col, light=False)
-        c.poly([(cx - 1, hip), (cx + 2, hip), (cx + 6, foot), (cx + 3, foot)], col, light=False)
-        c.rect(cx - 6, foot, cx - 1, foot + 2, shoe)
-        c.rect(cx + 3, foot, cx + 8, foot + 2, shoe)
-    elif pose == 2:
-        c.rect(cx - 2, hip, cx - 2 + w, foot - 2, col, light=False)
-        c.rect(cx - 4, foot - 2, cx + 1, foot, shoe)
-        c.rect(cx, hip, cx + w, foot, col, light=False)
-        c.rect(cx, foot, cx + 5, foot + 2, shoe)
-    else:
-        c.rect(cx - 3, hip, cx - 3 + w, foot, col, light=False)
-        c.rect(cx + 1, hip, cx + 1 + w, foot, col, light=False)
-        c.rect(cx - 4, foot, cx, foot + 2, shoe)
-        c.rect(cx + 1, foot, cx + 5, foot + 2, shoe)
-
-
 # ── people: realistic figures, from the skeleton in body.py ──────────────────
 import body as B
 

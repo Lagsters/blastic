@@ -127,7 +127,7 @@ end
 -- perkusja, wybuch) i oscylatory padu i melodii, miksowane w kanale PCM TIC-80 1.4, który gra
 -- co klatkę 128 bajtów z 0x14E24 (7680 Hz) i sam je zeruje. 12 utworów gra po kolei; ostatnie
 -- dwa takty utworu przenikają się z początkiem następnego.
--- Próbki leżą w TILES+SPRITES: tych obszarów nie wolno używać na grafikę.
+-- Próbki leżą w TILES i na początku SPRITES (do 0x06400): tam nie wolno kłaść grafiki.
 local PCM,RATE,MUSIC_RAM=0x14E24,7680,0x04000
 local ADPCM_STEPS={7,8,9,10,11,12,13,14,16,17,19,21,23,25,28,31,34,37,41,45,50,55,
   60,66,73,80,88,97,107,118,130,143,157,173,190,209,230,253,279,307,337,
@@ -1648,7 +1648,7 @@ local function drawHUD()
 end
 
 -- ── campaign: "The Sulphur Legend" ───────────────────────────────────────────
--- Kuba, a Wroclaw shoemaker with sulphur bombs, goes after the dragon of Krakow and finds
+-- Dratewka, a Wroclaw shoemaker with sulphur bombs, goes after the dragon of Krakow and finds
 -- the devil behind it; from chapter 2 Princess Wanda fights along (P2 in Story 2P, a bot
 -- ally otherwise).
 
@@ -1701,7 +1701,7 @@ local function heroAt(c,r)
   return nil
 end
 
-local function aldric() return players[1] end
+local function dratewka() return players[1] end
 
 -- random cells passing ok, as far from the heroes' corner as `minDist`
 local function farCells(ok,minDist)
@@ -1830,7 +1830,7 @@ end
 
 local function bossTeleport(b)
   local spots=farCells(function(c,r) return bossFree(c,r) end,0)
-  local a=aldric()
+  local a=dratewka()
   for _,s in ipairs(spots) do
     if math.abs(s[1]-a.c)+math.abs(s[2]-a.r)>=6 then
       b.c,b.r,b.x,b.y=s[1],s[2],gpx(s[1]),gpy(s[2])
@@ -1842,7 +1842,7 @@ end
 -- the dragon's breath: a row (or column) through a hero, warned a second before it burns
 local function bossFire(b)
   if not b.warn then
-    local a=aldric()
+    local a=dratewka()
     b.warn={row=math.random()<0.5,c=a.c,r=a.r,t=60}
   else
     b.warn.t=b.warn.t-1
@@ -1872,7 +1872,7 @@ local function updateBoss()
   local kind=b.kind
   if kind=="devil" then kind=b.hp>4 and "jaga" or b.hp>2 and "summon" or "dragon" end
   if kind=="utopek" and b.t%3==0 then
-    local a=aldric()
+    local a=dratewka()
     if b.x==gpx(b.c) and b.y==gpy(b.r) then
       b.d={0,0}
       for _,d in ipairs(BOT_DIRS) do
@@ -2297,7 +2297,7 @@ function BDR(row)
   for c=1,3 do poke(0x03FC0+32+c,(a[c]+(b[c]-a[c])*f)*fadeK//1) end
 end
 
-local SPEAKER_WHO={DRATEWKA="dratewka",WANDA="wanda",KRAK="krak",TWARDOWSKI="twardowski",
+SPEAKER_WHO={DRATEWKA="dratewka",WANDA="wanda",KRAK="krak",TWARDOWSKI="twardowski",
   DEVIL="devil",["BABA JAGA"]="jaga"}
 
 -- an actor with its feet at x,y: scale 1 is a far shot (the small sprites), 4 a close-up

@@ -64,10 +64,10 @@ Format wpisu: **FAKT** / **DECYZJA** / **ŚLEPA ULICZKA**, data, jedno–dwa zda
   mieści się 15,8 s; pętla ma 8 taktów (13,8 s, 139 BPM, SNR 21 dB względem 7680 Hz).
 - **ŚLEPA ULICZKA** 2026-11-06: dłuższa pętla przez podmianę podobnych taktów lub beatów jedną
   próbką (k-medoids na log-mel, lista kolejności jak w module Amigi): SNR ok. 0 dB, bo muzyka z
-  MusicGen nigdy nie powtarza się próbka w próbkę; zostaje jako opcja `--slice` dla dłuższych utworów.
+  MusicGen nigdy nie powtarza się próbka w próbkę.
 - **FAKT** 2026-11-06: `initAudio` w `blastic.lua` pisze fale pod `0x14000` i SFX pod `0x14100`;
   w TIC-80 1.x to głośność stereo i pamięć trwała (pmem). Fale są pod `0x0FFE4`, SFX pod `0x100E4`.
-  Błąd nienaprawiony (osobne zadanie).
+  Naprawione w commicie 24fa0c3 (testy `initAudio` w `test_blastic.lua`).
 - **FAKT** 2026-11-06: w TIC-80 1.4.1 na Windows przechwytywanie okna przez gdigrab po tytule daje
   stałą klatkę; zrzut pulpitu (`-i desktop`) pokazuje stan faktyczny.
 - **ŚLEPA ULICZKA** 2026-11-06: muzyka z MusicGen-small (dwie serie po kilka prób, także z opisem
@@ -105,3 +105,13 @@ Format wpisu: **FAKT** / **DECYZJA** / **ŚLEPA ULICZKA**, data, jedno–dwa zda
 - **DECYZJA** 2026-11-07: scenki w stylu: postacie kreskówkowe (rysowane ręcznie, zbliżenia
   przez Scale2x z tego samego rysunku), tła szczegółowe i realistyczne; tła, które nie mieszczą
   się w banku 0, idą do MAP banków 1–7 (decyzja właściciela).
+- **DECYZJA** 2026-11-06: zamykanie areny wydłużone: pierwszy krok po 1800 klatkach
+  (`SHRINK_DELAY`), miganie 300 (`SHRINK_WARN`), krok co 420 (`SHRINK_CYCLE`); zastępuje czasy
+  z 2026-11-02 (commit 07a5b66).
+- **FAKT** 2026-11-07: tracker zastąpił pętlę PCM, a `tools/music/compose.py` i `wav2tic.py`
+  usunięto (commit 2102bc0); próbki robi `tools/music/instruments.py`.
+- **DECYZJA** 2026-11-07: kampania to „Legenda o siarce” (szewc Dratewka, królewna Wanda,
+  smok wawelski, Twardowski, diabeł); zastępuje „Not Your Princess” z Eleną.
+- **DECYZJA** 2026-11-09: postacie scenek realistyczne ze szkieletu (`tools/scenes/body.py`):
+  proporcje człowieka, chód biomechaniczny w 8 klatkach, zbliżenia z tego samego modelu
+  (decyzja właściciela); zastępuje postacie kreskówkowe z 2026-11-07.

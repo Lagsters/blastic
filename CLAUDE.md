@@ -51,6 +51,7 @@ Rozstrzygają każdy spór, w tej kolejności.
 | `scenes.bin` | tła i postacie scenek (4 bity, LZ): w banku 0 MAP, koniec SPRITES i wolne sloty SFX, reszta teł w MAP banków 1–7, wczytywana przez `sync` |
 | `tools/scenes/paint.py` | maluje tła scenek w indeksach palety i pakuje je z postaciami do `scenes.bin` (numpy, Pillow) |
 | `tools/scenes/cast.py` | postacie scenek: zbliżenia i sylwetki w ruchu |
+| `tools/scenes/body.py` | szkielet człowieka, chód i ubrania postaci, z których `cast.py` renderuje klatki |
 | `tools/cart_run.lua` | test zbudowanego carta: chunki jak w TIC-80 (z bankami), intro, scenki w obu językach, bitwa |
 | `tools/film.lua`, `tools/film.py` | narzędzie dev: nagrywa intro i wszystkie scenki do MP4 albo arkusza klatek |
 | `tools/film_reel.lua` | doklejany przez `make_tic.py --films` do carta dev `films.tic` (scenki w pętli, nie do releasu) |

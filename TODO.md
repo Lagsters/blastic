@@ -10,13 +10,16 @@
 - Narzędzia dev: `lua tools/film.lua <dir>` + `python tools/film.py` (MP4 z dźwiękiem),
   `python make_tic.py --films` (cart `films.tic`).
 - Do oceny przez człowieka: wygląd postaci i zbliżeń, tempo filmów, hejnał jako dźwięk.
-- NASTĘPNY KROK: ocena właściciela; issue dla scenek; sprawdzenie banków w Melancholy; PR po `audit`.
+- PR po `audit`. Odłożone z audytu: wiersze w `DEVIATIONS.md` (tracker PCM, polskie litery w
+  czcionce, fabuła LZ w MUSIC PATTERNS, grafika w bankach przez `sync`) do decyzji właściciela;
+  issue dla tej pracy.
+- NASTĘPNY KROK: ocena właściciela na stronie; sprawdzenie banków w Melancholy.
 
 ## Sesja 2026-11-06 (gałąź `amiga-music`)
 - Zrobione: 60-sekundowa piosenka w klimacie Jaguar XJ220 (bas z próbek, synth, perkusja) z
   `tools/music/compose.py`, konwerter WAV → IMA ADPCM z listą kolejności taktów
   (`tools/music/wav2tic.py`), odtwarzanie przez kanał PCM TIC-80 1.4, `music.bin` w carcie.
-  Brzmienie zaakceptowane przez właściciela (odsłuch).
+  Brzmienie zaakceptowane przez właściciela (odsłuch). Później zastąpione trackerem (`HISTORY.md`).
 - Do oceny przez człowieka: głośność muzyki względem efektów (`--gain` 1.0, mało zapasu dla SFX).
 - Do sprawdzenia: czy rdzeń libretro TIC-80 w Melancholy to wersja 1.4+ (starsza nie ma PCM: cisza).
 - NASTĘPNY KROK: issue dla tej zmiany i dla błędnych adresów SFX w `initAudio`, potem PR po `audit`.

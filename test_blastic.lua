@@ -1449,11 +1449,11 @@ check("story start saves the chapter", env.pmem(env.SAVE_SLOT)==1)
 check("the intro ends on the world map", skip_to("map"))
 check("the world map leads into stage 1", skip_to("game") and env.camp.stage==1)
 check("stage 1 scrolls vertically on a taller map", env.W==32 and env.H==34, ("W=%d H=%d"):format(env.W,env.H))
-check("chapter 1 has only Aldric", #env.players==1 and env.players[1].team==1)
+check("chapter 1 has only Dratewka", #env.players==1 and env.players[1].team==1)
 check("stage 1 has its dwarves", #env.monsters==env.STAGES[1][4], "monsters="..#env.monsters)
 check("stage 1 hides an exit", has_hidden("X"))
 
--- the camera follows Aldric along the stage's one axis, within the map
+-- the camera follows Dratewka along the stage's one axis, within the map
 local hero=env.players[1]
 hero.y=env.gpy(25); hero.r=25
 env.TIC()
@@ -1536,23 +1536,23 @@ env.zoneSteps=env.SURVIVE_STEPS
 env.TIC()
 check("surviving the zone's steps clears a survive stage", env.state=="clear")
 
--- chapter 2+: Elena fights along, a bot ally unless Story 2P
+-- chapter 2+: Wanda fights along, a bot ally unless Story 2P
 local ch2=find_stage(function(st) return st[1]==2 and not st[7] end)
 env.camp.coop=false
 env.startStage(ch2)
-local elena=env.players[2]
-check("Elena joins from chapter 2 as a bot ally", elena and elena.team==1 and not elena.human)
+local wanda=env.players[2]
+check("Wanda joins from chapter 2 as a bot ally", wanda and wanda.team==1 and not wanda.human)
 env.camp.coop=true
 env.startStage(ch2)
-check("in Story 2P Elena is player 2", env.players[2].human==true and env.players[2].id==2)
+check("in Story 2P Wanda is player 2", env.players[2].human==true and env.players[2].id==2)
 env.camp.coop=false
 
--- teams: the ally hunts monsters and skeletons, never Aldric; skeletons hunt the heroes
+-- teams: the ally hunts monsters and skeletons, never Dratewka; skeletons hunt the heroes
 env.startStage(find_stage(function(st) return st[6]>0 end))
 local al,el,sk=env.players[1],env.players[2],env.players[3]
 env.monsters={{kind="g",c=al.c+3,r=al.r,x=0,y=0,d={0,0}}}
-check("Elena does not target Aldric", not env.foeAt(el,al.c,al.r))
-check("Elena targets monsters", env.foeAt(el,al.c+3,al.r))
+check("Wanda does not target Dratewka", not env.foeAt(el,al.c,al.r))
+check("Wanda targets monsters", env.foeAt(el,al.c+3,al.r))
 check("skeletons target the heroes", sk and sk.team==2 and env.foeAt(sk,al.c,al.r))
 env.monsters={}
 env.powerups={{c=sk.c,r=sk.r,kind="K"}}
@@ -1633,7 +1633,7 @@ local ha,he=env.players[1],env.players[2]
 ha.shield,ha.invul=false,0
 env.blasts={{c=ha.c,r=ha.r,t=10,owner=he}}
 env.TIC()
-check("a fellow hero's blast spares Aldric", ha.alive)
+check("a fellow hero's blast spares Dratewka", ha.alive)
 env.blasts={{c=ha.c,r=ha.r,t=10,owner=ha}}
 env.TIC()
 check("his own blast still kills him", not ha.alive)
@@ -1825,6 +1825,28 @@ do
   end
   check("thrown things fall with earth's gravity and nobody walks faster than a brisk pace",
     #unreal==0, table.concat(unreal,", "))
+  local speakers={}
+  for _,who in pairs(g.SPEAKER_WHO) do speakers[who]=true end
+  local offscreen,through={},{}
+  for name,shots in pairs(g.SCENES) do
+    for n,sh in ipairs(shots) do
+      local talking={}
+      for _,l in ipairs(sh.say or {}) do talking[g.SPEAKER_WHO[l[1]] or ""]=true end
+      for _,a in ipairs(sh.act or {}) do
+        local who,x=g.actorAt(a,math.max(a[7],a.show or 0))  -- where it stops: lines come after the entrance
+        if who and talking[who] and (x<0 or x>239) then offscreen[name..n..":"..who]=true end
+        for _,b in ipairs(sh.act) do
+          local lo,hi=math.min(a[2],a[4]),math.max(a[2],a[4])
+          if b~=a and speakers[a[1]] and speakers[b[1]] and b[2]==b[4] and not b.orbit
+            and math.abs(a[3]-b[3])<4 and lo<b[2] and b[2]<hi then through[#through+1]=name..n..":"..a[1].."/"..b[1] end
+        end
+      end
+    end
+  end
+  local out={}
+  for k in pairs(offscreen) do out[#out+1]=k end
+  check("whoever speaks in a shot stops inside it", #out==0, table.concat(out," "))
+  check("nobody walks through a person standing in the way", #through==0, table.concat(through," "))
   local jumper={"devil",100,108,100,108,0,0,2,hop=6}
   local ground,top={},108
   for t=0,200 do
