@@ -1,7 +1,8 @@
 # BlasTIC — gra TIC-80 (Lua)
 
 Arena dla czterech graczy (P1, P2 ludzie; P3, P4 boty). Kod to jeden plik `blastic.lua`,
-cart `.tic` budowany z niego przez `make_tic.py`. Grafika i muzyka powstają w kodzie.
+cart `.tic` budowany z niego przez `make_tic.py`. Grafika i efekty dźwiękowe powstają w kodzie;
+muzyka to tracker w Lua grający 12 utworów z próbek w `music.bin` (`tools/music/instruments.py`).
 Cart pobiera aplikacja Melancholy z releasów tego repo.
 
 ## Zasady nadrzędne
@@ -21,9 +22,10 @@ Rozstrzygają każdy spór, w tej kolejności.
 
 ## Autonomia i weryfikacja
 
-- Bramka „gotowe”: `python check.py` (kod wyjścia 0). Uruchamia testy logiki
-  (`lua test_blastic.lua`), symulację botów (`lua sim_blastic.lua 300 1`), build carta i sprawdza
-  limit kodu 65535 B. Kodu wyjścia nie maskuj potokiem (`| tail`).
+- Bramka „gotowe”: `python check.py` (kod wyjścia 0). Uruchamia testy minifikatora, testy logiki
+  na źródle i na kodzie zminifikowanym, build carta i sprawdza limit 65535 B kodu po minifikacji.
+  `python check.py --sim` dokłada symulację botów (`lua sim_blastic.lua 300 1`): tylko gdy zmiana
+  dotyka zachowania botów albo zasad, na które reagują. Kodu wyjścia nie maskuj potokiem (`| tail`).
 - Zmiana funkcji nie jest skończona bez testu w `test_blastic.lua`, który ją pokrywa.
 - Błąd: **najpierw test, który go odtwarza (czerwony), potem poprawka.** Zielony test dowodzi,
   że poprawka pomogła.
@@ -42,12 +44,23 @@ Rozstrzygają każdy spór, w tej kolejności.
 | `blastic.lua` | cała gra; globalne `TIC()` i `init()` wymagane przez TIC-80 |
 | `test_blastic.lua` | testy logiki, API TIC-80 zamockowane, ziarno stałe |
 | `sim_blastic.lua` | symulator czterech botów bez grafiki, z niezmiennikami |
-| `make_tic.py` | buduje `.tic` (tylko chunk kodu; wolny TIC-80 nie zapisuje `.lua`) |
+| `make_tic.py` | buduje `.tic`: zminifikowany kod (`DEVIATIONS.md`) i `music.bin` (wolny TIC-80 nie zapisuje `.lua`) |
+| `test_make_tic.py` | testy minifikatora |
+| `music.bin` | próbki instrumentów (bas, perkusja, wybuch): IMA ADPCM, 7680 Hz, w RAM od `0x04000` |
+| `tools/music/instruments.py` | renderuje próbki (bas z GeneralUser GS, perkusja i wybuch z syntezy) do `music.bin` |
+| `scenes.bin` | tła i postacie scenek (4 bity, LZ): w banku 0 MAP, koniec SPRITES i wolne sloty SFX, reszta teł w MAP banków 1–7, wczytywana przez `sync` |
+| `tools/scenes/paint.py` | maluje tła scenek w indeksach palety i pakuje je z postaciami do `scenes.bin` (numpy, Pillow) |
+| `tools/scenes/cast.py` | postacie scenek: zbliżenia i sylwetki w ruchu |
+| `tools/scenes/body.py` | szkielet człowieka, chód i ubrania postaci, z których `cast.py` renderuje klatki |
+| `tools/cart_run.lua` | test zbudowanego carta: chunki jak w TIC-80 (z bankami), intro, scenki w obu językach, bitwa |
+| `tools/film.lua`, `tools/film.py` | narzędzie dev: nagrywa intro i wszystkie scenki do MP4 albo arkusza klatek |
+| `tools/film_reel.lua` | doklejany przez `make_tic.py --films` do carta dev `films.tic` (scenki w pętli, nie do releasu) |
+| `sim_campaign.lua` | boty grają etapy kampanii: przejścia, czas, przyczyny śmierci |
 | `check.py` | bramka „gotowe” |
 
 - Statystyki gracza (`stats.bombs`, `stats.len`) są w `players[i].stats`; `humans[i]` mówi, czy
   gracz jest człowiekiem. Symulator ustawia wszystkich na boty.
-- Limit kodu carta to 65535 B. Mierz po każdej większej zmianie.
+- Limit kodu carta to 65535 B po minifikacji (komentarze się nie liczą). Mierz po każdej większej zmianie.
 - Teksty dla gracza po angielsku (ekran 240×136).
 
 ## Narzędzia
@@ -58,6 +71,11 @@ Rozstrzygają każdy spór, w tej kolejności.
 | `lua test_blastic.lua` | testy logiki |
 | `lua sim_blastic.lua [rund] [ziarno]` | symulacja botów |
 | `python make_tic.py` | build `blastic.tic` |
+| `python tools/music/instruments.py GeneralUser-GS.sf2 music.bin` | próbki muzyki (numpy, scipy, soundfile, tinysoundfont; SoundFont spoza repo) |
+| `lua sim_campaign.lua [od] [do] [prób] [limit klatek]` | symulacja kampanii (długa: kilka minut na etap) |
+| `python tools/scenes/paint.py scenes.bin [--preview dir]` | tła scenek |
+| `lua tools/film.lua <dir>` + `python tools/film.py <dir> <out.mp4>` (albo `<out.png> --sheet N`) | filmy do oceny (ffmpeg) |
+| `python make_tic.py --films` | cart dev `films.tic` ze scenkami w pętli |
 | `lua tools/shot.lua <dir>` + `python tools/shot.py <dir> <out>` | screeny tytułu i rozgrywki z kodu gry (napisy dorysowuje Pillow, więc krój pisma różni się od TIC-80) |
 
 Lua 5.4, jak `lua5.4` w CI na Ubuntu 24.04. Windows: `winget install DEVCOM.Lua`.

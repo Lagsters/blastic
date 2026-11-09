@@ -12,6 +12,10 @@ env.cls   = function() end
 env.rect  = function() end
 env.rectb = function() end
 env.circ  = function() end
+env.circb = function() end
+env.tri   = function() end
+local _pmem={}
+env.pmem  = function(i,v) if v then _pmem[i]=v end return _pmem[i] or 0 end
 env.line  = function() end
 env.pix   = function() end
 env.print = function() end  -- TIC-80 screen draw, shadows Lua's print inside game
@@ -23,7 +27,8 @@ setmetatable(env, {__index = _G})
 
 -- ── Load game ────────────────────────────────────────────────────────────────
 
-local f = io.open("blastic.lua")
+-- the source by default; check.py also passes the minified code that goes into the cart
+local f = io.open(arg and arg[1] or "blastic.lua")
 if not f then error("run from the repository root") end
 local src = f:read("*a"); f:close()
 local chunk, err = load(src, "blastic", "t", env)
@@ -69,17 +74,19 @@ end
 
 -- ── TEST: title screen ────────────────────────────────────────────────────────
 
-io.write("\n=== title screen ===\n")
-check("initial state is title", env.state=="title", "got: "..tostring(env.state))
+io.write("\n=== intro and title screen ===\n")
+check("the game opens with the intro", env.state=="intro", "got: "..tostring(env.state))
+run_frames(400)
+check("the intro hands over to the title", env.state=="title", "got: "..tostring(env.state))
+local t0=env.titleTimer
 run_frames(5)
-check("stays title first 5 frames", env.state=="title")
-check("titleTimer increments", env.titleTimer==5, "got: "..tostring(env.titleTimer))
-
--- ── TEST: title auto-start ────────────────────────────────────────────────────
+check("titleTimer increments", env.titleTimer==t0+5, "got: "..tostring(env.titleTimer))
 
 io.write("\n=== auto-start ===\n")
-run_frames(296)  -- total titleTimer becomes 301
-check("auto-starts at titleTimer>300", env.state=="game", "state="..tostring(env.state))
+run_frames(env.TITLE_IDLE-env.titleTimer)
+check("stays on the title until idle", env.state=="title", "state="..tostring(env.state))
+run_frames(1)
+check("auto-starts the battle demo when idle", env.state=="game", "state="..tostring(env.state))
 
 -- ── TEST: initial game state ──────────────────────────────────────────────────
 
@@ -302,13 +309,13 @@ check("adjacent bomb chains in the same tick", not bomb_at(6,5),
 -- three-bomb chain A->B->C resolves in one tick, each bomb explodes once
 open_arena({3,4})
 local explosions=0
-local real_sfx=env.sfx
-env.sfx=function(id) if id==0 then explosions=explosions+1 end end
+local real_boom=env.sndExplosion
+env.sndExplosion=function() explosions=explosions+1 end
 local ca=add_bomb(env.players[1],5,5,1)
 add_bomb(env.players[2],6,5,env.BOMB_TIMER)   -- covered by A (BLAST_LEN reach)
 add_bomb(env.players[1],8,5,env.BOMB_TIMER)   -- covered by B only
 run_frames(1)
-env.sfx=real_sfx
+env.sndExplosion=real_boom
 check("three-bomb chain resolves in one tick", #env.bombs==0,
       "pending="..#env.bombs)
 check("each chained bomb explodes exactly once", explosions==3,
@@ -379,7 +386,7 @@ check("no second shield: hit after invulnerability kills", not sp.alive)
 new_game()
 env.players[3].alive=false; env.players[4].alive=false
 env.powerups={{c=3,r=3,kind="B"},{c=4,r=3,kind="R"}}
-env.map[3][4]=env.T_EMPTY
+env.map[3][4]=env.T_EMPTY; env.map[3][5]=env.T_EMPTY  -- a block in reach would drop a new item
 env.bombs={{c=3,r=3,t=1,len=2}}
 env.TIC()
 local left={}
@@ -414,61 +421,145 @@ local function open_count()
   return n
 end
 
-local function first_open()
-  for _,cell in ipairs(env.shrinkOrder) do
-    if env.mget(cell[1],cell[2])~=env.T_WALL then return cell end
+local function line_open(is_member)
+  local n=0
+  for r=0,env.H-1 do
+    for c=0,env.W-1 do
+      if is_member(c,r) and env.mget(c,r)~=env.T_WALL then n=n+1 end
+    end
   end
+  return n
+end
+local function col_open(x) return line_open(function(c) return c==x end) end
+local function row_open(y) return line_open(function(_,r) return r==y end) end
+
+local function close_steps(n)
+  new_game()
+  env.players[3].alive=false; env.players[4].alive=false
+  env.players[1].alive=false; env.players[2].alive=false
+  for _=1,n do
+    env.roundFrames=env.shrinkAt-1
+    env.updateShrink()
+  end
+end
+
+local function tinted_tiles()
+  local n=0
+  local real_rect=env.rect
+  env.rect=function(_,_,_,_,col) if col==9 then n=n+1 end end
+  env.TIC()
+  env.rect=real_rect
+  return n
 end
 
 new_game()
 env.players[3].alive=false; env.players[4].alive=false
 local open_before=open_count()
-run_frames(env.SHRINK_DELAY-1)
-check("no shrink before delay", open_count()==open_before,
+run_frames(env.SHRINK_DELAY+env.SHRINK_CYCLE-2)
+check("no tile shrinks before the cycle ends", open_count()==open_before,
       ("open %d->%d"):format(open_before, open_count()))
 run_frames(1)
-check("one tile shrinks at delay", open_count()==open_before-1,
-      ("open %d->%d"):format(open_before, open_count()))
+check("the whole outline closes at once",
+      col_open(1)==0 and col_open(env.W-2)==0 and row_open(1)==0 and row_open(env.H-2)==0
+      and col_open(2)>0 and row_open(2)>0,
+      ("col1=%d row1=%d col2=%d"):format(col_open(1), row_open(1), col_open(2)))
 
-local order_a=env.buildShrinkOrder()
-local order_b=env.buildShrinkOrder()
-local same_order=#order_a==#order_b
-for i=1,#order_a do
-  if not same_order then break end
-  same_order=order_a[i][1]==order_b[i][1] and order_a[i][2]==order_b[i][2]
+close_steps(3)
+check("each step closes the next ring, keeping a rectangle",
+      col_open(3)==0 and row_open(3)==0 and col_open(env.W-4)==0 and row_open(env.H-4)==0
+      and col_open(4)>0 and row_open(4)>0)
+
+-- the arena fills the screen under the HUD; its edge is one thin line on all four sides
+new_game()
+local ring_walls,frame_line=0,false
+do
+  local real_rect,real_rectb=env.rect,env.rectb
+  env.rect=function(x,y,w,h,col)
+    local ring=x<0 or x>=240 or y<env.TILE or y>=136
+    if w==env.TILE and col==13 and ring then ring_walls=ring_walls+1 end
+  end
+  env.rectb=function(x,y,w,h,col)
+    if x==0 and y==env.TILE and w==240 and h==136-env.TILE then  -- on the edge tiles, like the other sides
+      frame_line=true
+    end
+  end
+  env.state="game"
+  env.TIC()
+  env.rect,env.rectb=real_rect,real_rectb
 end
-check("spiral order is deterministic", same_order)
-local seen,unique=({}),0
-for _,cell in ipairs(order_a) do
-  local key=cell[2]*env.W+cell[1]
-  if not seen[key] then seen[key]=true; unique=unique+1 end
+check("the outer wall ring is not drawn as wall tiles", ring_walls==0, "ring wall tiles="..ring_walls)
+check("one even line frames the arena on all four sides", frame_line)
+check("the arena fills the screen below the HUD",
+      env.gpx(1)==0 and env.gpx(env.W-2)==240-env.TILE and env.gpy(1)==env.TILE
+      and env.gpy(env.H-2)==136-env.TILE)
+
+-- the ring blinks faster as it nears closing
+new_game()
+env.players[3].alive=false; env.players[4].alive=false
+local function toggles(from_frame,n)
+  env.roundFrames=from_frame
+  local count,last=0,nil
+  for _=1,n do
+    local on=tinted_tiles()>0
+    if last~=nil and on~=last then count=count+1 end
+    last=on
+  end
+  return count
 end
-check("spiral visits every tile once", #order_a==env.W*env.H and unique==env.W*env.H,
-      ("len=%d unique=%d"):format(#order_a, unique))
+local warn_start=env.shrinkAt-env.SHRINK_WARN
+local early=toggles(warn_start,40)
+local late=toggles(warn_start+env.SHRINK_WARN-41,40)
+check("ring blinks faster near closing", late>early, ("early=%d late=%d"):format(early, late))
+env.roundFrames=env.shrinkAt-env.SHRINK_WARN-10
+check("nothing blinks during the pause", tinted_tiles()==0)
+
+-- the zone stops at a small strip in the middle, so it never kills everyone at once
+new_game()
+for _=1,env.SHRINK_DELAY+env.SHRINK_CYCLE*(env.W+env.H) do env.updateShrink() end
+local left_open,minc,maxc,minr,maxr=0,99,0,99,0
+for r=1,env.H-2 do for c=1,env.W-2 do
+  if env.mget(c,r)~=env.T_WALL then
+    left_open=left_open+1
+    minc,maxc=math.min(minc,c),math.max(maxc,c); minr,maxr=math.min(minr,r),math.max(maxr,r)
+  end
+end end
+check("the zone stops at a small strip in the middle",
+      left_open>0 and maxc-minc+1<=4 and maxr-minr+1<=2
+      and minc+maxc==env.W-1 and minr+maxr==env.H-1,
+      ("open=%d cols %d-%d rows %d-%d"):format(left_open,minc,maxc,minr,maxr))
 
 new_game()
-for _=1,env.SHRINK_DELAY+env.SHRINK_EVERY*(#env.shrinkOrder+1) do env.updateShrink() end
-check("shrink eventually walls every tile", open_count()==0, "open="..open_count())
-
-new_game()
-env.roundFrames=env.SHRINK_DELAY-1
-local cell=first_open()
+env.roundFrames=env.shrinkAt-1
 local victim=env.players[1]
-victim.c,victim.r=cell[1],cell[2]
-victim.x,victim.y=env.gpx(cell[1]),env.gpy(cell[2])
+victim.c,victim.r=1,1
+victim.x,victim.y=env.gpx(1),env.gpy(1)
 env.updateShrink()
-check("player on next tile dies", not victim.alive)
-check("shrunk tile becomes wall", env.mget(cell[1],cell[2])==env.T_WALL)
+check("player in the closing step dies", not victim.alive)
+check("closed tile becomes wall", env.mget(1,1)==env.T_WALL)
 
 new_game()
-env.roundFrames=env.SHRINK_DELAY-1
-cell=first_open()
+env.roundFrames=env.shrinkAt-1
 local owner=env.players[2]
 owner.bombs=1
-env.bombs={{c=cell[1],r=cell[2],t=env.BOMB_TIMER,owner=owner}}
+env.bombs={{c=1,r=1,t=env.BOMB_TIMER,owner=owner}}
 env.updateShrink()
-check("bomb on next tile removed", #env.bombs==0, "bombs="..#env.bombs)
+check("bomb in the closing step removed", #env.bombs==0, "bombs="..#env.bombs)
 check("bomb owner slot freed", owner.bombs==0, "bombs="..owner.bombs)
+
+-- a bot standing in the blinking side column walks inward and survives the closing
+new_game()
+for _,id in ipairs({1,4}) do env.players[id].alive=false end
+env.bombs={}; env.powerups={}
+for r=1,env.H-2 do for c=1,env.W-2 do env.map[r][c]=env.T_WALL end end
+for r=1,7 do env.map[r][1]=env.T_EMPTY end
+for c=1,4 do env.map[7][c]=env.T_EMPTY end
+local shrink_bot=env.players[3]
+shrink_bot.c,shrink_bot.r=1,1
+shrink_bot.x,shrink_bot.y=env.gpx(1),env.gpy(1)
+env.roundFrames=env.shrinkAt-env.SHRINK_WARN
+for _=1,env.SHRINK_WARN do env.TIC() end
+check("bot leaves the closing step and survives", shrink_bot.alive and shrink_bot.c>1,
+      ("alive=%s c=%d"):format(tostring(shrink_bot.alive), shrink_bot.c))
 
 new_game()
 local frames=0
@@ -507,6 +598,108 @@ env.bombs[1]={c=1, r=15, t=60, owner=flee_bot}
 run_frames(65)  -- bomb explodes at frame 60, blast lasts BLAST_TIME
 check("bot flees ticking bomb and survives blast", flee_bot.alive,
       ("c=%d r=%d"):format(flee_bot.c, flee_bot.r))
+
+io.write("\n=== bot wanders clear of a ticking bomb's blast line ===\n")
+new_game()
+for r=1,env.H-2 do
+  for c=1,env.W-2 do env.map[r][c]=env.T_WALL end
+end
+for c=1,10 do env.map[15][c]=env.T_EMPTY end
+only_bot_alive(3)
+env.players[2].alive=true
+env.bombs={}; env.blasts={}
+local wander_bot=env.players[3]
+wander_bot.c, wander_bot.r = 9, 15
+wander_bot.x, wander_bot.y = env.gpx(9), env.gpy(15)
+wander_bot.botDir={-1,0}
+wander_bot.botDirTimer=60
+env.bombs[1]={c=6, r=15, t=100, owner=env.players[2], len=2}
+local entered_blast_line=false
+for _=1,95 do
+  env.TIC()
+  if wander_bot.c>=4 and wander_bot.c<=8 then entered_blast_line=true end
+end
+check("wandering bot stays out of the blast line", not entered_blast_line and wander_bot.alive,
+      "c="..wander_bot.c)
+
+io.write("\n=== bot picks up items and bombs enemies in line ===\n")
+local function bot_arena()
+  new_game()
+  open_arena()
+  only_bot_alive(3)
+  env.players[2].alive=true
+  env.bombs={}; env.blasts={}; env.powerups={}
+  local b=env.players[3]
+  b.c, b.r = 10, 5
+  b.x, b.y = env.gpx(10), env.gpy(5)
+  return b
+end
+
+local pick_bot=bot_arena()
+env.players[2].c, env.players[2].r = 25, 12
+env.players[2].x, env.players[2].y = env.gpx(25), env.gpy(12)
+env.powerups={{c=14,r=5,kind="S"}}
+run_frames(120)
+check("bot walks to a nearby item and takes it", pick_bot.shield==true and #env.powerups==0,
+      "shield="..tostring(pick_bot.shield))
+
+local hunt_bot=bot_arena()
+env.players[2].c, env.players[2].r = 12, 5
+env.players[2].x, env.players[2].y = env.gpx(12), env.gpy(5)
+run_frames(5)
+local hunt_bombs=0
+for _,b in ipairs(env.bombs) do if b.owner==hunt_bot then hunt_bombs=hunt_bombs+1 end end
+check("bot lays a bomb when an enemy stands in its blast line", hunt_bombs==1, "bombs="..hunt_bombs)
+
+io.write("\n=== bot route tie-break order ===\n")
+new_game()
+local orders_ok,distinct={}
+orders_ok=true
+local seen_orders={}
+local real_time=env.time
+local tick=0
+env.time=function() tick=tick+1; return tick end
+for _=1,20 do
+  env.init()
+  local p=env.players[3]
+  local keys={}
+  for _,d in ipairs(p.botOrder) do keys[#keys+1]=d[1]..","..d[2] end
+  local sorted={table.unpack(keys)}
+  table.sort(sorted)
+  if #p.botOrder~=4 or table.concat(sorted,";")~="-1,0;0,-1;0,1;1,0" then orders_ok=false end
+  seen_orders[table.concat(keys,";")]=true
+end
+env.time=real_time
+local n_orders=0
+for _ in pairs(seen_orders) do n_orders=n_orders+1 end
+check("each bot gets all four directions in some order", orders_ok)
+check("the order differs between rounds", n_orders>1, "distinct="..n_orders)
+
+io.write("\n=== bot heads for the nearest enemy ===\n")
+local chase_bot=bot_arena()
+env.map[9][5]=env.T_BLOCK
+env.players[2].c, env.players[2].r = 20, 5
+env.players[2].x, env.players[2].y = env.gpx(20), env.gpy(5)
+run_frames(80)
+check("bot walks towards the enemy instead of the block", chase_bot.c>=8 and chase_bot.r==5,
+      ("c=%d r=%d"):format(chase_bot.c, chase_bot.r))
+
+io.write("\n=== bot traps an enemy in a dead end ===\n")
+new_game()
+for r=1,env.H-2 do
+  for c=1,env.W-2 do env.map[r][c]=env.T_WALL end
+end
+for c=1,8 do env.map[15][c]=env.T_EMPTY end
+env.players[1].alive=false; env.players[2].alive=false
+env.bombs={}; env.blasts={}; env.powerups={}
+local hunter,prey=env.players[3],env.players[4]
+hunter.c, hunter.r = 5, 15
+hunter.x, hunter.y = env.gpx(5), env.gpy(15)
+prey.c, prey.r = 1, 15
+prey.x, prey.y = env.gpx(1), env.gpy(15)
+run_frames(400)
+check("bot kills an enemy it has trapped and survives", not prey.alive and hunter.alive,
+      "prey="..tostring(prey.alive).." hunter="..tostring(hunter.alive))
 
 io.write("\n=== bot does not suicide in dead-end ===\n")
 new_game()
@@ -637,7 +830,7 @@ check("death animation timer decays to 0", env.players[1].deathT==0,
       "deathT="..tostring(env.players[1].deathT))
 check("death keeps alive=false", not env.players[1].alive)
 
-for _,st in ipairs({"title","game","over"}) do
+for _,st in ipairs({"intro","title","game","over"}) do
   new_game()
   env.titleTimer=0; env.restartTimer=100
   env.bombs[#env.bombs+1]={c=3,r=3,t=10}
@@ -684,6 +877,22 @@ for r=0,env.H-1 do
   end
 end
 check("walls mirror left-right", asym==nil, asym and ("first mismatch at "..asym))
+asym=nil
+for r=0,env.H-1 do
+  for c=0,env.W-1 do
+    local a=env.mget(c,r)==env.T_WALL
+    local b=env.mget(c,env.H-1-r)==env.T_WALL
+    if a~=b and not asym then asym=c..","..r end
+  end
+end
+check("walls mirror top-bottom", asym==nil, asym and ("first mismatch at "..asym))
+local mid_pillars=0
+for c=1,env.W-2 do
+  for _,r in ipairs({env.H//2-1,env.H//2}) do
+    if env.mget(c,r)==env.T_WALL then mid_pillars=mid_pillars+1 end
+  end
+end
+check("no pillars in the two middle rows", mid_pillars==0, "pillars="..mid_pillars)
 
 -- ── TEST: tuning (one starting bomb, half walking speed) ──────────────────────
 
@@ -728,7 +937,10 @@ local function icon_pixels(kind)
   env.powerups={{c=5,r=5,kind=kind}}
   local seen={}
   local real_pix,real_rect,real_print=env.pix,env.rect,env.print
-  env.pix=function(x,y,col) seen[#seen+1]=x..","..y..","..col end
+  local x0,y0=env.gpx(5),env.gpy(5)-1  -- the item's tile, bobbing one pixel up
+  env.pix=function(x,y,col)
+    if x>=x0 and x<x0+8 and y>=y0 and y<y0+9 then seen[#seen+1]=x..","..y..","..col end
+  end
   env.rect=function() end
   env.print=function() end
   env.TIC()
@@ -750,6 +962,187 @@ local function uses_colour(px,col)
 end
 check("no icon uses the lit bomb red", not uses_colour(a,env.BOMB_COL or 2)
       and not uses_colour(b,env.BOMB_COL or 2) and not uses_colour(c,env.BOMB_COL or 2))
+
+-- ── TEST: shield bubble and HUD items ─────────────────────────────────────────
+
+io.write("\n=== shield and HUD ===\n")
+
+-- Draws one game frame; returns pix() calls in the HUD bar and the drawing calls by name.
+local function draw_frame(setup)
+  new_game()
+  env.state="game"
+  setup(env.players[1])
+  local hud,calls={},{circb={},rectb={}}
+  local saved={env.pix,env.circb,env.rectb}
+  env.pix=function(x,y,col) if y<7 then hud[#hud+1]={x=x,y=y,col=col} end end
+  env.circb=function(...) calls.circb[#calls.circb+1]={...} end
+  env.rectb=function(...) calls.rectb[#calls.rectb+1]={...} end
+  env.TIC()
+  env.pix,env.circb,env.rectb=saved[1],saved[2],saved[3]
+  return hud,calls
+end
+
+local function hud_colour_in(hud,col,x0,x1)
+  for _,p in ipairs(hud) do
+    if p.col==col and p.x>=x0 and p.x<x1 then return true end
+  end
+  return false
+end
+
+local hud_plain,plain=draw_frame(function(p) p.shield=false end)
+local hud_shield,shielded=draw_frame(function(p) p.shield=true; p.invul=0 end)
+local p1=env.players[1]
+local round=false
+for _,c in ipairs(shielded.circb) do
+  if math.abs(c[1]-(p1.x+3))<=1 and math.abs(c[2]-(p1.y+3))<=1 and c[3]>=5 then round=true end
+end
+check("an active shield is a round bubble around the player", round)
+check("an active shield draws no square frame", #shielded.rectb==#plain.rectb,
+      "rectb "..#plain.rectb.." -> "..#shielded.rectb)
+check("HUD shows bomb and range icons for every player",
+      hud_colour_in(hud_plain,13,2,62) and hud_colour_in(hud_plain,3,2,62)
+      and hud_colour_in(hud_plain,13,182,240) and hud_colour_in(hud_plain,3,182,240))
+local hud_text,hud_heads={},{}
+do
+  new_game()
+  env.state="game"
+  local saved_print,saved_pix=env.print,env.pix
+  env.print=function(t,x,y) if y and y<7 then hud_text[#hud_text+1]={t=tostring(t),x=x} end return 0 end
+  env.pix=function(x,y,col) if y<7 then hud_heads[col]=(hud_heads[col] or 0)+1 end end
+  env.TIC()
+  env.print,env.pix=saved_print,saved_pix
+end
+local function label_in(t,x0,x1)
+  for _,h in ipairs(hud_text) do if h.t==t and h.x>=x0 and h.x<x1 then return true end end
+  return false
+end
+check("HUD marks humans P and bots C",
+      label_in("P",0,60) and label_in("P",60,120) and label_in("C",120,180) and label_in("C",180,240))
+local heads=true
+for _,pl in ipairs(env.players) do if (hud_heads[pl.color] or 0)<4 then heads=false end end
+check("HUD shows a little head in each player's colour", heads)
+-- HUD: wins as dots, the zone countdown in the middle, maximum bombs, a crossed-out dead head
+local hud_rects,hud_prints,hud_lines={}, {}, {}
+do
+  new_game()
+  env.state="game"
+  env.score={2,0,0,0}
+  env.players[1].stats.bombs=3; env.players[1].bombs=1
+  env.players[4].alive=false
+  env.roundFrames=0
+  local sr,sp,sl,spix=env.rect,env.print,env.line,env.pix
+  env.rect=function(x,y,w,h,col) if y<7 then hud_rects[#hud_rects+1]={x=x,w=w,col=col} end end
+  env.print=function(t,x,y,col) if y and y<7 then hud_prints[#hud_prints+1]={t=tostring(t),x=x,col=col} end return 0 end
+  env.line=function(x0,y0,x1,y1,col) if y0<7 then hud_lines[#hud_lines+1]={x=x0,col=col} end end
+  env.pix=function() end
+  env.TIC()
+  env.rect,env.print,env.line,env.pix=sr,sp,sl,spix
+  env.score={0,0,0,0}
+end
+local won=0
+for _,r in ipairs(hud_rects) do if r.w==3 and r.col==4 and r.x<56 then won=won+1 end end
+check("HUD shows wins as filled dots", won==2, "filled="..won)
+local timer=nil
+for _,p in ipairs(hud_prints) do if p.x>=112 and p.x<128 and p.t:match("^%d+$") then timer=tonumber(p.t) end end
+check("HUD counts down to the next zone step", timer and timer>=30 and timer<=40, "timer="..tostring(timer))
+local max_shown=false
+for _,p in ipairs(hud_prints) do if p.t=="3" and p.x<56 then max_shown=true end end
+check("HUD shows how many bombs a player can hold", max_shown)
+local crossed=false
+for _,l in ipairs(hud_lines) do if l.x>=184 and l.col==2 then crossed=true end end
+check("HUD crosses out a dead player's head", crossed)
+check("HUD shows the shield icon only while the player has one",
+      hud_colour_in(hud_shield,11,2,62) and not hud_colour_in(hud_plain,11,2,62))
+
+-- ── TEST: corner assist and zone items ───────────────────────────────────────
+
+io.write("\n=== corner assist ===\n")
+
+-- 1-wide corridor going right from (3,5); the player stands half a tile below its axis
+new_game()
+env.state="game"
+for id=2,3 do env.players[id].alive=false end  -- P4 stays, or the round would end at once
+env.bombs={}; env.powerups={}
+for r=1,env.H-2 do for c=1,env.W-2 do env.map[r][c]=env.T_WALL end end
+env.map[env.H-2][env.W-2]=env.T_EMPTY
+for c=3,8 do env.map[5][c]=env.T_EMPTY end
+env.map[6][3]=env.T_EMPTY
+local walker=env.players[1]
+walker.x,walker.y=env.gpx(3),env.gpy(5)+4
+walker.c,walker.r=3,5
+for _=1,40 do _held={[3]=true}; env.TIC() end
+clear_inputs()
+check("a player off the corridor axis slides into it", walker.c>=5 and walker.y==env.gpy(5),
+      ("c=%d y-off=%d"):format(walker.c, walker.y-env.gpy(5)))
+
+-- the closing zone takes the items lying on it
+new_game()
+env.powerups={{c=1,r=1,kind="B"},{c=5,r=5,kind="R"}}
+env.roundFrames=env.shrinkAt-1
+env.updateShrink()
+check("items in the closing zone disappear", #env.powerups==1 and env.powerups[1].c==5,
+      "items="..#env.powerups)
+
+-- a block is plain light brown with a dark brown outline
+new_game()
+env.state="game"
+env.map[3][5]=env.T_BLOCK
+local fill,edge=false,false
+do
+  local sr,sb=env.rect,env.rectb
+  env.rect=function(x,y,w,h,col) if x==env.gpx(5) and y==env.gpy(3) and col==1 then fill=true end end
+  env.rectb=function(x,y,w,h,col) if x==env.gpx(5) and y==env.gpy(3) and col==8 then edge=true end end
+  env.TIC()
+  env.rect,env.rectb=sr,sb
+end
+check("blocks are plain light brown with an outline", fill and edge)
+
+-- ── TEST: player sprite ───────────────────────────────────────────────────────
+
+io.write("\n=== player sprite ===\n")
+
+-- pixels of P1 facing down, relative to its tile
+local function player_pixels()
+  new_game()
+  env.state="game"
+  local p=env.players[1]
+  p.dir={0,1}; p.walkAnim=0
+  local px={}
+  local saved=env.pix
+  env.pix=function(x,y,col)
+    local dx,dy=x-p.x,y-p.y
+    if dx>=0 and dx<8 and dy>=0 and dy<8 then px[#px+1]={x=dx,y=dy,col=col} end
+  end
+  env.TIC()
+  env.pix=saved
+  return px
+end
+
+local sprite=player_pixels()
+local eye_cols,face,body={},0,0
+for _,q in ipairs(sprite) do
+  if q.col==10 then face=face+1 end
+  if q.y>=6 then body=body+1 end
+  if q.col==0 and q.y<6 then eye_cols[q.x]=true end
+end
+local eyes={}
+for x in pairs(eye_cols) do eyes[#eyes+1]=x end
+table.sort(eyes)
+check("the face has two separate eyes", #eyes==2 and eyes[2]-eyes[1]>=2,
+      "eye columns "..table.concat(eyes,","))
+local colour=0
+for _,q in ipairs(sprite) do if q.col==env.players[1].color then colour=colour+1 end end
+check("a small face in a lot of player colour", face>=6 and face<=12 and colour>=30,
+      ("face=%d colour=%d"):format(face,colour))
+local legs=0
+for _,q in ipairs(sprite) do if q.y==7 and q.col~=0 then legs=legs+1 end end
+check("the legs show on the dark floor", legs>=2, "visible leg pixels="..legs)
+
+-- player colours chosen by the owner: white, green, blue, red; faces stay skin-toned
+local want={12,5,9,2}
+local wrong=nil
+for i,p in ipairs(env.players) do if p.color~=want[i] then wrong=i end end
+check("players are white, green, blue and red", wrong==nil, wrong and ("player "..wrong))
 
 -- ── TEST: helpers covered directly ────────────────────────────────────────────
 
@@ -815,18 +1208,20 @@ check("bot lays a bomb next to a block when it can escape", bot_bombs>=1,
 
 -- shrinkWarnTiles: the next tiles to shrink are tinted once the delay has passed
 new_game()
-env.roundFrames=env.SHRINK_DELAY
+env.state="game"
+env.roundFrames=env.shrinkAt-env.SHRINK_WARN
 local warn_rects=0
 local real_rect=env.rect
 env.rect=function(_,_,_,_,col) if col==9 then warn_rects=warn_rects+1 end end
-env.TIC()
+for _=1,30 do env.TIC() end  -- a full blink period, the ring is lit in half of it
 env.rect=real_rect
 check("shrink warns about the next tiles", warn_rects>=1, "rects="..warn_rects)
 
 -- initAudio / updateMusic need a fresh game instance: initAudio runs once per instance
 local function fresh_game(poke_fn,sfx_fn)
   local e={}
-  for _,n in ipairs({"cls","rect","rectb","circ","line","pix","print"}) do e[n]=function() end end
+  for _,n in ipairs({"cls","rect","rectb","circ","circb","line","pix","print","tri"}) do e[n]=function() end end
+  e.pmem=function() return 0 end
   e.btn=function() return false end
   e.btnp=function() return false end
   e.time=function() return 42 end
@@ -841,13 +1236,643 @@ end
 local pokes={}
 local audio_game=fresh_game(function(addr,v) pokes[addr]=v end,function() end)
 audio_game.init()
-check("initAudio writes the bomb-placed sound slot", pokes[0x14100+66*5]~=nil)
-check("initAudio writes the shield-break sound slot", pokes[0x14100+66*7]~=nil)
+-- TIC-80 1.x RAM: WAVEFORMS at 0x0FFE4, SFX at 0x100E4 (66 bytes per slot); 0x14000.. is
+-- stereo volume and persistent memory, which audio must never touch.
+check("initAudio writes the bomb-placed sound slot", pokes[0x100E4+66*5]~=nil)
+check("initAudio writes the shield-break sound slot", pokes[0x100E4+66*7]~=nil)
+check("initAudio writes the death slot", pokes[0x100E4+66]~=nil)
+check("initAudio writes the waveforms", pokes[0x0FFE4]~=nil and pokes[0x0FFE4+16*3]~=nil)
+local stray=false
+for addr in pairs(pokes) do if addr>=0x14000 and addr<0x14404 then stray=true end end
+check("faces are skin-toned: palette colour 10 is set warm",
+      pokes[0x03FC0+30] and pokes[0x03FC0+30]>pokes[0x03FC0+32])
+local function brown(i)
+  local r,g,b=pokes[0x03FC0+i*3],pokes[0x03FC0+i*3+1],pokes[0x03FC0+i*3+2]
+  return r and r>g and g>b
+end
+check("blocks are wood brown", brown(1) and brown(8))
+check("initAudio leaves stereo volume and persistent memory alone", not stray)
+-- SFX slot format: per tick byte0 = attenuation (0 loudest) | wave<<4, byte1 = chord | pitch<<4
+local blip=0x100E4+66*5
+check("SFX ticks after the sound are silent", pokes[blip+20] and pokes[blip+20]&15==15,
+      "tick 10 byte0="..tostring(pokes[blip+20]))
+local arp=0
+for t=0,3 do arp=arp|((pokes[blip+t*2+1] or 0)&15) end
+check("the bomb-placed blip has no arpeggio", arp==0)
+local flat=true
+for i=0,15 do if pokes[0x0FFE4+i]~=0 then flat=false end end
+check("wave 0 is TIC-80 noise (a flat zero wave)", flat)
 
-local played={}
-local music_game=fresh_game(function() end,function(id) played[id]=true end)
-for _=1,60 do music_game.TIC() end
-check("title music plays the bass line", played[3]==true)
+-- Muzyka: próbki z tools/music/instruments.py w pamięci od 0x04000; zbieramy bajty kanału PCM.
+local PCM=0x14E24
+local function music_game(blob)
+  local mem={}
+  for i=1,#blob do mem[0x04000+i-1]=blob:byte(i) end
+  local stream={}
+  local e=fresh_game(function(addr,v)
+    if addr>=PCM and addr<PCM+128 then stream[#stream+1]=v end
+  end,function() end)
+  e.peek=function(addr) return mem[addr] or 0 end
+  return e,stream
+end
+
+-- 8 próbek po 4 kody 7,15,0,8 z pred 0 i indeksem 88: 32767, -28669, -24574, -28298 (krok
+-- spada do 87 po kodzie 0), czyli po //256: 127, -112, -96, -111
+local tiny={8}
+for k=1,8 do local o=33+(k-1)*5 tiny[#tiny+1]=o&255 tiny[#tiny+1]=o>>8 tiny[#tiny+1]=4 tiny[#tiny+1]=0 end
+for _=1,8 do for _,v in ipairs({0,0,88,0xF7,0x80}) do tiny[#tiny+1]=v end end
+local te=music_game(string.char(table.unpack(tiny)))
+te.startMusic()
+check("samples decode from IMA ADPCM", te.SMP.kick and table.concat(te.SMP.kick,",")=="127,-112,-96,-111",
+      te.SMP.kick and table.concat(te.SMP.kick,","))
+
+local f=io.open("music.bin","rb")
+local blob=f:read("a"); f:close()
+local me,stream=music_game(blob)
+me.sndExplosion=function() end  -- bots' bombs would mix into the stream
+me.startMusic()
+local all=true
+for _,name in ipairs({"bass","slap","ghost","kick","snare","hat","ohat","boom"}) do
+  if not me.SMP[name] or #me.SMP[name]<100 then all=false end
+end
+check("music.bin holds every instrument sample", all)
+for _=1,60 do me.TIC() end
+local varies=false
+for i=2,#stream do if stream[i]~=stream[1] then varies=true break end end
+check("the tracker plays", #stream==60*128 and varies)
+
+-- short songs: the next one starts two bars before the end and they cross-fade
+me.SONG_BARS=4
+me.musicSeqs={}
+me.startSong(1,false)
+for _=1,300 do me.TIC() end
+local s1,s2=me.musicSeqs[1],me.musicSeqs[2]
+check("the next song cross-fades in", #me.musicSeqs==2 and s1.n==1 and s2.n==2
+      and s1.gain<1 and s2.gain>0 and math.abs(s1.gain+s2.gain-1)<0.05,
+      ("seqs=%d"):format(#me.musicSeqs))
+for _=1,900 do me.TIC() end
+local old=false
+for _,s in ipairs(me.musicSeqs) do if s.n==1 then old=true end end
+check("songs follow one another instead of looping", not old and me.musicSeqs[1].n>=3)
+me.musicSeqs={}
+me.startSong(#me.SONGS,false)
+for _=1,600 do me.TIC() end
+local wrapped=false
+for _,s in ipairs(me.musicSeqs) do if s.n==1 then wrapped=true end end
+check("after the last song the first comes back", wrapped)
+
+-- a scene's mood: its own song fades in over the playlist, and the playlist comes back after
+do
+  local e=music_game(blob)
+  e.startMusic()
+  for _=1,10 do e.TIC() end
+  local before=e.musicSeqs[1]
+  e.musicMood("calm")
+  local mood=e.musicSeqs[#e.musicSeqs]
+  check("a mood starts its own song", mood.song==e.MOODS.calm and mood.fade>0)
+  check("a mood fades the playlist out", before.fade<0)
+  for _=1,120 do e.TIC() end
+  local alive=false
+  for _,s in ipairs(e.musicSeqs) do if s==before then alive=true end end
+  check("the faded playlist song stops", not alive)
+  e.musicMood(nil)
+  local back=e.musicSeqs[#e.musicSeqs]
+  check("after the mood the playlist plays on", back.song==e.SONGS[before.n%#e.SONGS+1] and mood.fade<0,
+    tostring(back.n))
+end
+
+-- the music ducks to half under an explosion
+local function frame_after(boom_it)
+  local e,st=music_game(blob)
+  e.startMusic()
+  for _=1,30 do e.TIC() end
+  local from=#st
+  if boom_it then e.sndExplosion() end
+  e.TIC()
+  local out={}
+  for i=from+1,#st do out[#out+1]=st[i]-128 end
+  return out,e.SMP.boom
+end
+local plain=frame_after(false)
+local mixed,bs=frame_after(true)
+local ducked=#plain==128
+for i=1,128 do
+  local want=math.max(-128,math.min(127,(plain[i]/2+bs[i]*0.6)//1))
+  if math.abs(mixed[i]-want)>1 then ducked=false end
+end
+check("the explosion plays at 0.6 over the music ducked to half", ducked)
+
+-- Polish letters: the plain letter from the font plus its mark, in control codes 1..18
+do
+  local F=0x14604
+  local mem={}
+  local g=fresh_game(function(a,v) mem[a]=v end,function() end)
+  g.peek=function(a) return mem[a] or 0 end
+  -- a 3x5 stand-in for the plain letters: a box from row 1 to row 5, columns 1..3
+  for _,ch in ipairs({"a","c","e","l","n","o","s","z","A","C","E","L","N","O","S","Z"}) do
+    for _,base in ipairs({ch:byte(),ch:byte()+128}) do
+      for r=1,5 do mem[F+base*8+r]=0x0E end
+    end
+  end
+  g.initFont()
+  local function row(code,r) return mem[F+code*8+r] or 0 end
+  check("a gets an ogonek under its right side", row(1,6)==0x08 and row(1,7)==0x10, row(1,6)..","..row(1,7))
+  check("l gets a stroke through its middle", row(4,3)~=0x0E and row(4,3)&0x0E==0x0E, tostring(row(4,3)))
+  check("S moves down a row and gets an acute above", row(16,1)==0 and row(16,6)==0x0E and row(16,0)~=0,
+    row(16,0)..","..row(16,1)..","..row(16,6))
+  check("the small font gets the same letters", row(128+4,3)==row(4,3))
+  check("L() writes Polish text in those codes", (function() g.LANG="pl" local r=g.L("x","łą") g.LANG="en" return r end)()==string.char(4,1))
+end
+
+-- ── TEST: campaign ────────────────────────────────────────────────────────────
+
+io.write("\n=== campaign ===\n")
+;(function()  -- own function: the main chunk is near Lua's 200-local limit
+
+-- press Z every frame until the state is `want` (scenes and the world map wait for it)
+local function skip_to(want,max)
+  for _=1,max or 3000 do
+    if env.state==want then return true end
+    press_frame(4)
+  end
+  return env.state==want
+end
+
+-- the first stage matching pred(stage definition)
+local function find_stage(pred)
+  for n,st in ipairs(env.STAGES) do if pred(st,n) then return n end end
+end
+
+local function has_hidden(kind)
+  for _,k in pairs(env.hidden) do if k==kind then return true end end
+  for _,pu in ipairs(env.powerups) do if pu.kind==kind then return true end end
+  return false
+end
+
+-- menu: up wraps to the last item (the language), Z on BATTLE starts a battle
+for k in pairs(_pmem) do _pmem[k]=nil end
+env.state,env.titleTimer,env.menuSel="title",2,1
+press_frame(0)
+check("menu: up from the first item wraps to LANGUAGE", env.titleMenu()[env.menuSel][1]=="LANGUAGE: ENGLISH", "sel="..env.menuSel)
+press_frame(4)
+check("menu: LANGUAGE switches to Polish and remembers it", env.LANG=="pl" and env.pmem(env.LANG_SLOT)==1)
+check("menu: in Polish the menu speaks Polish", env.titleMenu()[2][1]=="OPOWIE"..string.char(16,11).." 2P", env.titleMenu()[2][1])
+press_frame(4)
+check("menu: LANGUAGE switches back to English", env.LANG=="en" and env.pmem(env.LANG_SLOT)==0)
+press_frame(0)
+press_frame(4)
+check("menu: BATTLE starts a battle", env.state=="game" and env.mode=="pvp")
+
+-- with a save the menu continues it or starts over; starting over clears the save
+_pmem[env.SAVE_SLOT]=7
+local labels={}
+for _,it in ipairs(env.titleMenu()) do labels[#labels+1]=it[1] end
+check("menu with a save: continue, continue 2P, new story, battle, language",
+  table.concat(labels,"|")=="CONTINUE (STAGE 7)|CONTINUE 2P|NEW STORY|BATTLE|LANGUAGE: ENGLISH", table.concat(labels,"|"))
+env.state,env.titleTimer,env.menuSel="title",2,1
+press_frame(4)
+check("menu: CONTINUE resumes the saved stage", env.mode=="camp" and env.camp.stage==7)
+_pmem[env.SAVE_SLOT]=7
+env.mode,env.state,env.titleTimer,env.menuSel="pvp","title",2,3
+press_frame(4)
+check("menu: NEW STORY clears the save", env.pmem(env.SAVE_SLOT)==0 and env.state=="title")
+check("menu: after NEW STORY the cursor is on STORY", env.titleMenu()[env.menuSel][1]=="STORY")
+press_frame(4)
+check("menu: STORY after NEW STORY opens the intro", env.state=="scene" and env.camp.stage==1)
+env.mode="pvp"
+
+-- a new story opens with the intro scene, then the world map, then stage 1
+for k in pairs(_pmem) do _pmem[k]=nil end
+env.startCampaign(false)
+check("story opens with the intro scene", env.state=="scene" and env.mode=="camp")
+check("story start saves the chapter", env.pmem(env.SAVE_SLOT)==1)
+check("the intro ends on the world map", skip_to("map"))
+check("the world map leads into stage 1", skip_to("game") and env.camp.stage==1)
+check("stage 1 scrolls vertically on a taller map", env.W==32 and env.H==34, ("W=%d H=%d"):format(env.W,env.H))
+check("chapter 1 has only Dratewka", #env.players==1 and env.players[1].team==1)
+check("stage 1 has its dwarves", #env.monsters==env.STAGES[1][4], "monsters="..#env.monsters)
+check("stage 1 hides an exit", has_hidden("X"))
+
+-- the camera follows Dratewka along the stage's one axis, within the map
+local hero=env.players[1]
+hero.y=env.gpy(25); hero.r=25
+env.TIC()
+check("the camera follows the hero along one axis",
+      env.camY>0 and env.camY<=(env.H-2)*env.TILE-128 and env.camX==0,
+      ("camX=%d camY=%d"):format(env.camX,env.camY))
+
+-- a crate hiding the exit drops it, and a later blast does not destroy it
+env.monsters={}
+hero=env.players[1]
+local ec,er=10,5
+for dc=-3,4 do for dr=-2,2 do env.map[er+dr][ec+dc]=env.T_EMPTY end end
+env.map[er][ec+2]=env.T_BLOCK
+env.hidden={[(ec+2)*100+er]="X"}
+env.powerups={}
+env.bombs={{c=ec+1,r=er,t=1,len=2}}
+hero.c,hero.r,hero.x,hero.y=ec-3,er-2,env.gpx(ec-3),env.gpy(er-2)
+env.TIC()
+local exit_item=nil
+for _,pu in ipairs(env.powerups) do if pu.kind=="X" then exit_item=pu end end
+check("a destroyed crate reveals the hidden exit", exit_item and exit_item.c==ec+2)
+env.bombs={{c=ec+1,r=er,t=1,len=2}}
+for _=1,40 do env.TIC() end
+check("blasts do not destroy quest items", has_hidden("X"))
+
+-- stepping on the exit clears the stage; then the map shows stage 2
+hero.c,hero.r,hero.x,hero.y=ec+2,er,env.gpx(ec+2),env.gpy(er)
+env.TIC()
+check("the exit clears the stage", env.state=="clear", "state="..env.state)
+check("after the stage clear comes the world map", skip_to("map") and env.camp.stage==2)
+
+-- monsters: a blast kills one, touching one kills the hero and costs a life (stage 1: its
+-- goal is the exit, so an empty monster list does not end it)
+env.startStage(1)
+env.monsters={{kind="g",c=5,r=5,x=env.gpx(5),y=env.gpy(5),d={0,0}}}
+env.blasts={{c=5,r=5,t=10}}
+env.TIC()
+check("a blast kills a monster", #env.monsters==0)
+env.blasts={}
+local lives=env.camp.lives
+hero=env.players[1]
+hero.shield,hero.invul=false,0
+env.monsters={{kind="g",c=hero.c,r=hero.r,x=hero.x,y=hero.y,d={0,0}}}
+env.TIC()
+check("touching a monster kills the hero", not hero.alive)
+check("a dead hero costs a life", env.camp.lives==lives-1 and env.state=="lost")
+check("the stage restarts after a lost life", skip_to("game") and env.camp.stage==1 and env.camp.tries==1)
+
+-- a bat walks towards the hero
+hero=env.players[1]
+for r=1,env.H-2 do for c=1,env.W-2 do
+  if env.map[r][c]==env.T_BLOCK then env.map[r][c]=env.T_EMPTY end
+end end
+local bc,br=hero.c+4,hero.r
+env.map[br][bc]=env.T_EMPTY
+env.monsters={{kind="b",c=bc,r=br,x=env.gpx(bc),y=env.gpy(br),d={0,0}}}
+local d0=math.abs(bc-hero.c)+math.abs(br-hero.r)
+for _=1,20 do env.TIC() end
+local bat=env.monsters[1]
+check("a bat chases the hero", bat and math.abs(bat.c-hero.c)+math.abs(bat.r-hero.r)<d0)
+
+-- goals: keys, all enemies, surviving the walls
+env.startStage(find_stage(function(st) return st[2]=="keys" end))
+for _=1,3 do
+  local h=env.players[1]
+  env.powerups={{c=h.c,r=h.r,kind="K"}}
+  env.TIC()
+end
+check("three keys clear a keys stage", env.state=="clear", "keys="..env.camp.keys)
+env.startStage(find_stage(function(st) return st[2]=="enemies" end))
+env.monsters={}
+env.TIC()
+check("no monsters left clears an enemies stage", env.state=="clear")
+env.startStage(find_stage(function(st) return st[2]=="survive" end))
+env.monsters={}
+env.zoneSteps=env.SURVIVE_STEPS-1
+env.TIC()
+check("a survive stage goes on until the zone has stepped in enough", env.state=="game")
+env.zoneSteps=env.SURVIVE_STEPS
+env.TIC()
+check("surviving the zone's steps clears a survive stage", env.state=="clear")
+
+-- chapter 2+: Wanda fights along, a bot ally unless Story 2P
+local ch2=find_stage(function(st) return st[1]==2 and not st[7] end)
+env.camp.coop=false
+env.startStage(ch2)
+local wanda=env.players[2]
+check("Wanda joins from chapter 2 as a bot ally", wanda and wanda.team==1 and not wanda.human)
+env.camp.coop=true
+env.startStage(ch2)
+check("in Story 2P Wanda is player 2", env.players[2].human==true and env.players[2].id==2)
+env.camp.coop=false
+
+-- teams: the ally hunts monsters and skeletons, never Dratewka; skeletons hunt the heroes
+env.startStage(find_stage(function(st) return st[6]>0 end))
+local al,el,sk=env.players[1],env.players[2],env.players[3]
+env.monsters={{kind="g",c=al.c+3,r=al.r,x=0,y=0,d={0,0}}}
+check("Wanda does not target Dratewka", not env.foeAt(el,al.c,al.r))
+check("Wanda targets monsters", env.foeAt(el,al.c+3,al.r))
+check("skeletons target the heroes", sk and sk.team==2 and env.foeAt(sk,al.c,al.r))
+env.monsters={}
+env.powerups={{c=sk.c,r=sk.r,kind="K"}}
+env.camp.keys=0
+env.TIC()
+check("skeletons leave quest items", env.camp.keys==0 and #env.powerups>=1)
+
+-- bosses: blasts hurt them with a pause between hits; the dragon's egg wins too
+env.startStage(5)
+local b=env.boss
+check("stage 5 is the first Utopek fight", b and b.kind=="utopek" and b.hp==env.BOSS_HP.utopek)
+env.blasts={{c=b.c,r=b.r,t=30}}
+env.TIC()
+check("a blast hurts the boss once", b.hp==env.BOSS_HP.utopek-1 and b.inv>0)
+env.TIC()
+check("the boss is briefly invulnerable", b.hp==env.BOSS_HP.utopek-1)
+b.hp,b.inv=1,0
+env.blasts={{c=b.c,r=b.r,t=30}}
+env.TIC()
+check("defeating the boss clears the stage", env.state=="clear")
+env.startStage(find_stage(function(st) return st[7]=="dragon" end))
+check("the dragon's egg is hidden", has_hidden("E"))
+local h=env.players[1]
+env.powerups={{c=h.c,r=h.r,kind="E"}}
+env.TIC()
+check("returning the egg befriends the dragon", env.camp.friend and env.state=="clear")
+env.camp.friend=false
+
+-- running out of lives ends the story; it continues from the saved chapter
+env.startStage(ch2)
+env.camp.lives=1
+for _,p in ipairs(env.players) do p.alive=false end
+env.TIC()
+check("losing the last life is game over", env.state=="gameover")
+check("game over returns to the title", skip_to("title"))
+_pmem[env.SAVE_SLOT]=30
+env.startCampaign(false)
+check("the story continues from the saved stage", env.camp.stage==30 and env.state=="map")
+_pmem[env.SAVE_SLOT]=26
+env.startCampaign(false)
+check("a saved chapter start replays its scene", env.camp.stage==26 and env.state=="scene")
+
+-- 100 stages in 4 chapters; every 5th a boss, the chapter's own at its end, Morgath last
+local bosses,last_ok=0,true
+for n,st in ipairs(env.STAGES) do
+  if (n%5==0)~=(st[2]=="boss") then last_ok=false end
+  if st[7] then bosses=bosses+1 end
+end
+check("100 stages, a boss on every 5th", #env.STAGES==100 and bosses==20 and last_ok)
+check("chapter bosses end their chapters", env.STAGES[25][7]=="utopek" and env.STAGES[50][7]=="jaga"
+      and env.STAGES[75][7]=="dragon" and env.STAGES[100][7]=="devil")
+local m1,m99=env.STAGES[1][4]+env.STAGES[1][5]+env.STAGES[1][6],env.STAGES[99][4]+env.STAGES[99][5]+env.STAGES[99][6]
+check("later stages have more monsters", m99>m1, ("%d -> %d"):format(m1,m99))
+
+-- a hero bot digs towards the sparkling crate that hides a quest item
+env.startStage(1)
+local digger=env.players[1]
+for r=1,env.H-2 do for c=1,env.W-2 do env.map[r][c]=env.T_EMPTY end end
+for r=1,env.H-2 do env.map[r][8]=env.T_BLOCK end
+env.hidden={[8*100+20]="X"}
+env.monsters,env.bombs,env.powerups={},{},{}
+local qd=env.botQuestDir(digger,{})
+check("a hero bot heads for the sparkling crate", qd and qd[2]==1,
+      qd and ("dir %d,%d"):format(qd[1],qd[2]) or "nil")
+
+-- the closing zone crushes monsters too
+env.startStage(1)
+env.monsters={{kind="g",c=1,r=1,x=env.gpx(1),y=env.gpy(1),d={0,0}},{kind="b",c=5,r=5,x=0,y=0,d={0,0}}}
+env.roundFrames=env.shrinkAt-1
+env.shrinkAt=env.roundFrames+1
+env.updateShrink()
+check("the closing zone crushes monsters on it", #env.monsters==1 and env.monsters[1].c==5)
+
+-- friendly fire: in the campaign a fellow hero's blast spares you, your own does not
+env.startStage(find_stage(function(st) return st[1]==2 and st[2]=="exit" end))
+env.monsters={}
+local ha,he=env.players[1],env.players[2]
+ha.shield,ha.invul=false,0
+env.blasts={{c=ha.c,r=ha.r,t=10,owner=he}}
+env.TIC()
+check("a fellow hero's blast spares Dratewka", ha.alive)
+env.blasts={{c=ha.c,r=ha.r,t=10,owner=ha}}
+env.TIC()
+check("his own blast still kills him", not ha.alive)
+
+-- bosses are not hurt by their own fire
+env.startStage(find_stage(function(st) return st[7]=="jaga" end))
+local wb=env.boss
+env.blasts={{c=wb.c,r=wb.r,t=20,owner=env.BOSS_FIRE}}
+env.TIC()
+check("a boss's own blast does not hurt it", wb.hp==wb.max)
+
+-- a hero bot keeps out of the row the dragon is about to burn
+env.startStage(find_stage(function(st) return st[7]=="dragon" end))
+local dk=env.players[1]
+for r=1,env.H-2 do for c=1,env.W-2 do if env.map[r][c]~=env.T_WALL then env.map[r][c]=env.T_EMPTY end end end
+env.monsters,env.bombs,env.powerups,env.hidden={},{},{},{}
+env.boss.warn={row=true,c=dk.c,r=dk.r,t=60}
+dk.human=false
+for _=1,50 do env.TIC() end
+check("a hero bot leaves the row the dragon warns about", dk.alive and dk.r~=env.boss.warn.r or not env.boss.warn,
+      ("hero row %d"):format(dk.r))
+
+-- a hero bot keeps away from monsters
+env.camp.coop=false
+env.startStage(ch2)
+local ally=env.players[2]
+for r=1,env.H-2 do for c=1,env.W-2 do if env.map[r][c]~=env.T_WALL then env.map[r][c]=env.T_EMPTY end end end
+env.monsters={{kind="g",c=ally.c+1,r=ally.r,x=0,y=0,d={0,0}}}
+env.bombs,env.powerups={},{}
+for _=1,16 do env.TIC() end
+local mon=env.monsters[1]
+check("a hero bot steps away from a monster",
+      ally.alive and math.abs(ally.c-mon.c)+math.abs(ally.r-mon.r)>=2, ("ally %d,%d"):format(ally.c,ally.r))
+
+-- the last boss leads into the ending, which clears the save
+env.startStage(#env.STAGES)
+env.boss.hp=0
+env.TIC()
+check("beating Morgath clears the last stage", env.state=="clear")
+check("the ending scene follows", skip_to("scene"))
+check("the ending returns to the title", skip_to("title") and env.pmem(env.SAVE_SLOT)==0)
+
+-- scenes animate: the dialogue types out letter by letter
+env.playScene("sleza",function() env.state="title" end)
+local shown={}
+do
+  local sp=env.print
+  env.print=function(t,x,y) if y==env.SUB_Y then shown[#shown+1]=t end return 0 end
+  for _=1,3000 do
+    if #shown>0 then break end
+    env.TIC()
+  end
+  for _=1,3 do env.TIC() end  -- a letter every second frame
+  env.print=sp
+end
+check("scene dialogue types out", #shown==4 and #shown[4]>#shown[1])
+skip_to("title")
+env.mode="pvp"
+
+-- painted backdrops: scenes.bin in MAP RAM, unpacked into their own buffer, copied under the
+-- letterbox; the sky colour follows the scanline
+do
+  local f=io.open("scenes.bin","rb")
+  local blob=f:read("a") f:close()
+  local mem,banks={},{}
+  local i=1
+  while i<=#blob do  -- scenes.bin: pieces of RAM, u8 bank, u24 address, u16 length, bytes
+    local bank,at=blob:byte(i),blob:byte(i+1)|blob:byte(i+2)<<8|blob:byte(i+3)<<16
+    local n=blob:byte(i+4)|blob:byte(i+5)<<8
+    banks[bank]=banks[bank] or {}
+    table.insert(banks[bank],{at,blob:sub(i+6,i+5+n)})
+    i=i+6+n
+  end
+  local function loadBank(bank,mapOnly)
+    if mapOnly then for a=0x08000,0x08000+32639 do mem[a]=nil end end
+    for _,piece in ipairs(banks[bank] or {}) do
+      if not mapOnly or piece[1]==0x08000 then
+        for k=1,#piece[2] do mem[piece[1]+k-1]=piece[2]:byte(k) end
+      end
+    end
+  end
+  loadBank(0)
+  local outside,syncs=0,0
+  local g=fresh_game(function(a,v) mem[a]=v end,function() end)
+  g.peek=function(a) return mem[a] or 0 end
+  local lastSync,synced=nil,{}
+  g.sync=function(mask,bank)  -- the MAP of a memory bank replaces the MAP in RAM, once a frame
+    if lastSync==g.frame then return end
+    lastSync,syncs=g.frame,syncs+1
+    synced[#synced+1]=bank
+    if mask&4~=0 then loadBank(bank,true) end
+  end
+  g.memset=function(d,v,n)
+    if d<0x11164 or d+n>0x11164+11520 then outside=outside+1 end
+    for i=0,n-1 do mem[d+i]=v end
+  end
+  g.memcpy=function(d,src,n)
+    if d>=0x11164 and d+n>0x11164+11520 then outside=outside+1 end
+    for i=0,n-1 do mem[d+i]=mem[src+i] end
+  end
+  local done=false
+  local seen={}
+  for _,name in ipairs({"wroclaw","sleza","krakow","cellars","ending"}) do
+    done=false
+    g.playScene(name,function() done=true end)
+    g.btnp=function(b) return b==4 end
+    for _=1,4000 do
+      if done then break end
+      g.TIC()
+      if g.state=="scene" and mem[20*120] then seen[mem[20*120]]=true end
+    end
+  end
+  check("every scene plays to its end with backdrops", done)
+  check("backdrops unpack inside their buffer", outside==0, "outside="..outside)
+  g.btnp=function() return false end
+  g.playScene("wroclaw",function() end)
+  for _=1,30 do g.TIC() end
+  check("the opening backdrop has sky at the top left", mem[20*120]==0xBB, tostring(mem[20*120]))
+  local extra=0
+  for b in pairs(banks) do if b>0 then extra=extra+1 end end
+  check("backdrops in other memory banks come in with sync", extra==0 or syncs>=extra, syncs.." syncs, "..extra.." banks")
+  loadBank(0,true)
+  local painted,p={},0x08002
+  for _=1,mem[0x08000] do
+    local n=mem[p]
+    local name={}
+    for k=1,n do name[k]=string.char(mem[p+k]) end
+    painted[table.concat(name)]=p+1+n  -- its bank, address, colours 1, 5, 7, sky stops
+    p=p+1+n+22
+  end
+  local function sky(row) g.BDR(row) return ("%d,%d"):format(mem[0x03FC0+33] or 0,mem[0x03FC0+34] or 0) end
+  check("the sky colour changes down the screen", sky(4+20)~=sky(4+110), sky(4+20).." / "..sky(4+110))
+  local e=painted[g.SCENES.wroclaw[1].bd]
+  check("the sky starts from the backdrop's top colour", sky(4+20)==mem[e+13]..","..mem[e+14], sky(4+20))
+  local unknown={}
+  for name,shots in pairs(g.SCENES) do
+    for _,sh in ipairs(shots) do
+      if sh.bd~="black" and not painted[sh.bd] then unknown[#unknown+1]=name..":"..sh.bd end
+    end
+  end
+  check("every shot's backdrop is painted", #unknown==0, table.concat(unknown," "))
+  local odra,night=mem[painted.odra],mem[painted.night]
+  g.showBackdrop("night")
+  g.playScene("wroclaw",function() end)  -- the same frame: the Oder's bank must wait for the next
+  for _=1,3 do g.TIC() end
+  check("a backdrop in another bank waits a frame for its sync", odra==night or synced[#synced]==odra,
+    "banks "..tostring(night).."/"..tostring(odra)..", last sync "..tostring(synced[#synced]))
+  local missing={}
+  for name,shots in pairs(g.SCENES) do
+    for _,sh in ipairs(shots) do
+      for _,a in ipairs(sh.act or {}) do
+        local who,sc=a[1],a[8] or 2
+        if not g.CAST[sc>=4 and "bust_"..who or sc==1 and who.."_far" or who] then missing[#missing+1]=name..":"..who end
+      end
+    end
+  end
+  check("every actor of every scene has its sprite", #missing==0, table.concat(missing," "))
+  for who in pairs({dratewka=1,wanda=1,krak=1,twardowski=1,devil=1,jaga=1}) do
+    if not (g.CAST["talk_"..who] and g.CAST["blink_"..who]) then missing[#missing+1]=who end
+  end
+  check("every close-up can talk and blink", #missing==0, table.concat(missing," "))
+  local sliding={}
+  for name,shots in pairs(g.SCENES) do
+    for n,sh in ipairs(shots) do
+      for _,a in ipairs(sh.pan and sh.act or {}) do
+        if a[2]==a[4] and not a.orbit then sliding[#sliding+1]=name..n..":"..a[1] end
+      end
+    end
+  end
+  -- the camera pans over actors only, the backdrop stays put
+  check("nobody stands still in a panning shot", #sliding==0, table.concat(sliding," "))
+  local unreal={}
+  for name,shots in pairs(g.SCENES) do
+    for n,sh in ipairs(shots) do
+      for _,a in ipairs(sh.act or {}) do
+        local who,x0,_,x1,_,t0,t1,sc=table.unpack(a)
+        sc=sc or 2
+        if a.arc then  -- a throw falls with the one gravity, whatever its length
+          local t=(t0+t1)//2
+          local y=function(f) return select(3,g.actorAt(a,f)) end
+          local fall=y(t+1)-2*y(t)+y(t-1)
+          if math.abs(fall-g.GRAVITY*sc/2)>1e-6 then unreal[#unreal+1]=name..n..":"..who.." falls "..fall end
+        elseif t1>t0 and not a.hop and not a.anim and who~="dragon" and (g.CAST[who..(sc==1 and "_far" or "").."_a"] or g.CAST[who..(sc==1 and "_far" or "").."_w0"]) then
+          local pace=math.abs(x1-x0)/(t1-t0)
+          if pace>1.3*sc/2 then unreal[#unreal+1]=("%s%d:%s walks %.2f px/frame"):format(name,n,who,pace) end
+        end
+      end
+    end
+  end
+  check("thrown things fall with earth's gravity and nobody walks faster than a brisk pace",
+    #unreal==0, table.concat(unreal,", "))
+  local speakers={}
+  for _,who in pairs(g.SPEAKER_WHO) do speakers[who]=true end
+  local offscreen,through={},{}
+  for name,shots in pairs(g.SCENES) do
+    for n,sh in ipairs(shots) do
+      local talking={}
+      for _,l in ipairs(sh.say or {}) do talking[g.SPEAKER_WHO[l[1]] or ""]=true end
+      for _,a in ipairs(sh.act or {}) do
+        local who,x=g.actorAt(a,math.max(a[7],a.show or 0))  -- where it stops: lines come after the entrance
+        if who and talking[who] and (x<0 or x>239) then offscreen[name..n..":"..who]=true end
+        for _,b in ipairs(sh.act) do
+          local lo,hi=math.min(a[2],a[4]),math.max(a[2],a[4])
+          if b~=a and speakers[a[1]] and speakers[b[1]] and b[2]==b[4] and not b.orbit
+            and math.abs(a[3]-b[3])<4 and lo<b[2] and b[2]<hi then through[#through+1]=name..n..":"..a[1].."/"..b[1] end
+        end
+      end
+    end
+  end
+  local out={}
+  for k in pairs(offscreen) do out[#out+1]=k end
+  check("whoever speaks in a shot stops inside it", #out==0, table.concat(out," "))
+  check("nobody walks through a person standing in the way", #through==0, table.concat(through," "))
+  local jumper={"devil",100,108,100,108,0,0,2,hop=6}
+  local ground,top={},108
+  for t=0,200 do
+    local _,_,y=g.actorAt(jumper,t)
+    top=math.min(top,y)
+    if t>5 and y>107.5 then ground[#ground+1]=t end
+  end
+  local flight=2*math.sqrt(2*6/g.GRAVITY)
+  check("a jump lasts as long as a fall from its height takes there and back",
+    math.abs(top-102)<0.2 and math.abs(ground[1]-flight)<1.5, ("top %.1f, lands at %s, should %.1f"):format(top,ground[1],flight))
+  local _,x,_,_,_,walked=g.actorAt({"dratewka",0,108,100,108,0,100},40)
+  check("a walker's steps follow the ground it covers", walked==x and x==40, tostring(walked))
+  local dancer={"witch",0,104,0,104,0,0,2,orbit={112,84,124,0}}
+  local xs,turned,ok={},{},true
+  for t=1,123,4 do
+    local _,x,_,_,left=g.actorAt(dancer,t)
+    local _,nx=g.actorAt(dancer,t+1)
+    ok=ok and math.abs(x-112)<=84 and (nx<x)==left
+    xs[#xs+1]=x//1
+    turned[left]=true
+  end
+  check("a dancer circles the fire, facing where it goes", ok and turned[true] and turned[false]
+    and math.max(table.unpack(xs))-math.min(table.unpack(xs))>150, table.concat(xs,","))
+end
+
+end)()
 
 -- ── Summary ───────────────────────────────────────────────────────────────────
 

@@ -82,7 +82,7 @@ for _=1,9000 do
     if not covered then free=free+1 end
   end
   if alive>=3 and fresh>=7 and #env.bombs>=1 and free>=2 then picked=true; break end
-  if env.state~="game" then env.init(); env.humans={false,false,false,false} end
+  if env.state~="game" then env.humans={false,false,false,false}; env.init() end
 end
 assert(picked,"no interesting frame found")
 dump("game")

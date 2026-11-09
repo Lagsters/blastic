@@ -6,8 +6,11 @@
 ![game](docs/screenshot-game.png)
 
 Four-player arena game for [TIC-80](https://tic80.com): drop blasts, break blocks and be the
-last one standing. P1 and P2 are human, P3 and P4 are bots. Graphics and music are generated
-in Lua; the cart contains only the code chunk.
+last one standing. P1 and P2 are human, P3 and P4 are bots. Graphics and sound effects are generated
+in Lua. The music is a Lua tracker in the Amiga style: 12 songs
+played one after another with cross-fades, mixed from instrument samples (a sampled bass guitar,
+drums, the explosion; `tools/music/instruments.py`) through the PCM channel of TIC-80 1.4.
+Battle is the four-player mode; Story is a 100-stage campaign for one or two players.
 
 Melancholy (Android TV libretro frontend by Lagsters) downloads the cart from this
 repository's releases and uses it in its instrumented tests.
